@@ -1,0 +1,48 @@
+/* 中文備註：styles/layout.css，此樣式檔已加入中文說明，方便後續維護。 */
+#app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
+.sidebar{background:#0f172a;color:#fff;padding:24px;display:flex;flex-direction:column;gap:12px}
+.brand{font-size:20px;font-weight:800;margin-bottom:8px}
+.nav-btn{background:rgba(255,255,255,.08);color:#fff;text-align:left}
+.nav-btn.active,.nav-btn:hover{background:#1d4ed8}
+.main{padding:24px}
+.view{display:none}
+.view.active{display:block}
+.topbar{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap}
+.topbar-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.content-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:20px}
+.content-grid.one{grid-template-columns:1fr}
+.content-grid.two{grid-template-columns:1fr 1fr}
+.card{background:var(--card);border-radius:24px;padding:20px;box-shadow:0 8px 30px rgba(15,23,42,.06)}
+.row{display:flex;align-items:center}
+.row.between{justify-content:space-between}
+.row.gap{gap:12px}
+.row.wrap{flex-wrap:wrap}
+.stack{display:flex;flex-direction:column;gap:12px}
+.stack.small{gap:8px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.responsive-filters{display:grid !important;grid-template-columns:repeat(6,minmax(0,1fr));width:100%;gap:12px}
+.responsive-filters > *{min-width:0}
+.synced-filters{width:100%;align-items:stretch !important;}
+.synced-filters input,.synced-filters button,.synced-filters .upload-btn,.synced-filters select{min-height:48px}
+.list-row{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:16px;padding:12px}
+.modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:999}
+.modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}
+.modal-dialog{position:relative;background:#fff;border-radius:24px;padding:20px;max-width:720px;width:min(92vw,720px);max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(15,23,42,.2)}
+.modal-dialog.wide{max-width:860px;width:min(94vw,860px)}
+.small-btn{padding:10px 12px;border-radius:12px}
+.toolbar{margin-bottom:16px}
+.hidden-mobile{display:block}
+@media (max-width:1280px){.responsive-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:1024px){
+  #app{grid-template-columns:1fr}
+  .sidebar{position:sticky;top:0;z-index:10;flex-direction:row;flex-wrap:wrap;padding:14px}
+  .brand{width:100%}
+  .content-grid,.content-grid.two,.grid2{grid-template-columns:1fr}
+  .main{padding:16px}
+}
+@media (max-width:768px){
+  .responsive-filters{grid-template-columns:1fr 1fr}
+}
+@media (max-width:560px){
+  .responsive-filters{grid-template-columns:1fr}
+}

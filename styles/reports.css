@@ -1,0 +1,6 @@
+/* 中文備註：styles/reports.css，此樣式檔已加入中文說明，方便後續維護。 */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
+.stat-card{background:#fff;border-radius:20px;padding:18px;border:1px solid var(--line)}
+.stat-card .label{color:var(--muted);font-size:14px}
+.stat-card .value{font-size:28px;font-weight:800;margin-top:8px}
+@media (max-width:1024px){.stats-grid{grid-template-columns:1fr}}

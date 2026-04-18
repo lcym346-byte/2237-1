@@ -1,0 +1,36 @@
+/* 中文備註：styles/pos.css，此樣式檔已加入中文說明，方便後續維護。 */
+.category-tabs{display:flex;gap:10px;flex-wrap:wrap}
+.category-chip{background:#fff;border:1px solid #c7d2fe;color:#1d4ed8;padding:10px 16px;border-radius:999px}
+.category-chip.active{background:#dbeafe;border-color:#93c5fd}
+.product-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:14px}
+.product-card{border:1px solid var(--line);border-radius:18px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:12px}
+.product-card h3{font-size:20px}
+.product-card .price{font-size:22px;font-weight:800;color:#1d4ed8}
+.product-card .meta{font-size:13px;color:var(--muted)}
+.product-card.disabled{opacity:.7;background:var(--disabled-bg);border-style:dashed}
+.product-card.disabled .price{color:var(--disabled-text)}
+.product-card.disabled button{background:#e2e8f0;color:#64748b;cursor:not-allowed}
+.cart-panel{display:flex;flex-direction:column}
+.cart-list{min-height:240px;display:flex;flex-direction:column;gap:12px;margin:16px 0}
+.cart-list.empty{color:var(--muted)}
+.cart-item{border:1px solid var(--line);border-radius:16px;padding:12px}
+.cart-item .name{font-weight:800}
+.cart-item .sub{font-size:13px;color:var(--muted);margin-top:4px}
+.summary{display:flex;flex-direction:column;gap:12px;margin-top:auto}
+.discount-toggle{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.discount-btn{background:#eef2ff;color:#1e3a8a;border:1px solid #c7d2fe}
+.discount-btn.active{background:#2563eb;color:#fff;border-color:#2563eb}
+.module-block{border:1px solid var(--line);border-radius:18px;padding:14px;background:#fff}
+.module-header{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap}
+.option-list{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
+.option-chip{display:flex;justify-content:space-between;align-items:center;gap:12px;border:1px solid var(--line);border-radius:16px;padding:14px;background:#fff}
+.option-chip.active{border-color:#2563eb;background:#eff6ff}
+.payment-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:16px}
+.pay-btn{background:#eff6ff;color:#1d4ed8;padding:18px;font-weight:800}
+.pay-btn.pending{background:#fef3c7;color:#92400e}
+@media (max-width:768px){.discount-toggle,.payment-grid{grid-template-columns:1fr}}
+.product-card-image-wrap{width:100%;aspect-ratio:1/1;overflow:hidden;border-radius:14px;background:#f8fafc;border:1px solid var(--line)}
+.product-card-image{width:100%;height:100%;object-fit:cover;display:block}
+
+.product-card{overflow:hidden}
+.product-card h3{line-height:1.2}

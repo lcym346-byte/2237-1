@@ -1,0 +1,4 @@
+.ocr-preview{min-height:280px;border:1px dashed var(--line);border-radius:18px;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:var(--muted);padding:12px;overflow:hidden}
+.ocr-preview img{max-width:100%;max-height:420px;border-radius:12px}
+.ocr-result{width:100%;min-height:280px;border:1px solid var(--line);border-radius:18px;padding:14px;resize:vertical;background:#fff}
+.import-grid{align-items:start}

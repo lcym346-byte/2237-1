@@ -1,0 +1,7 @@
+/* 中文備註：styles/orders.css，此樣式檔已加入中文說明，方便後續維護。 */
+.order-card{border:1px solid var(--line);border-radius:18px;padding:14px;background:#fff}
+.order-card.pending{border-color:#fbbf24;background:#fffbeb}
+.page-block{width:100%}
+#pendingOrdersList,#completedOrdersList{width:100%}
+#ordersView .order-card{width:100%}
+.order-card button{white-space:nowrap}

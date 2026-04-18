@@ -1,0 +1,468 @@
+<!doctype html>
+<!-- 中文備註：主畫面結構檔。此版只在商品管理頁加入 Excel 匯入功能，其餘頁面不更動。 -->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>餐廳 POS V2.1.23 接單自動印單通知版</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="assets/icon-192.png" />
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/layout.css" />
+  <link rel="stylesheet" href="styles/pos.css" />
+  <link rel="stylesheet" href="styles/orders.css" />
+  <link rel="stylesheet" href="styles/reports.css" />
+  <link rel="stylesheet" href="styles/products.css" />
+  <link rel="stylesheet" href="styles/settings.css" />
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand">餐廳 POS V2.1.23 接單自動印單通知版</div>
+    <button class="nav-btn active" data-view="posView">點餐</button>
+    <button class="nav-btn" data-view="ordersView">訂單查詢</button>
+    <button class="nav-btn" data-view="reportsView">報表</button>
+    <button class="nav-btn" data-view="productsView">商品管理</button>
+    <button class="nav-btn" data-view="settingsView">設定</button>
+    <button id="installBtn" class="secondary-btn hidden">安裝到桌面</button>
+  </aside>
+
+  <main class="main">
+    <section id="posView" class="view active">
+      <header class="topbar">
+        <h1>點餐</h1>
+        <div class="topbar-actions">
+          <select id="orderType">
+            <option value="內用">內用</option>
+            <option value="外帶">外帶</option>
+            <option value="線上點餐">線上點餐</option>
+          </select>
+          <input id="tableNo" placeholder="桌號 / 取餐號 / 訂單號">
+        </div>
+      </header>
+
+      <div class="content-grid">
+        <section class="card">
+          <div class="toolbar stack">
+            <input id="productSearch" placeholder="搜尋商品">
+            <div id="categoryTabs" class="category-tabs"></div>
+          </div>
+          <div id="productGrid" class="product-grid"></div>
+        </section>
+
+        <section class="card cart-panel">
+          <div class="row between wrap">
+            <h2>購物車</h2>
+            <button id="clearCartBtn" class="danger-btn">清空</button>
+          </div>
+          <div id="cartList" class="cart-list empty">尚未加入商品</div>
+
+          <div class="summary">
+            <div class="row between"><span>小計</span><strong id="subtotalText">$0</strong></div>
+            <div class="stack">
+              <div>
+                <label>折扣類型</label>
+                <div class="discount-toggle">
+                  <button type="button" id="discountAmountBtn" class="discount-btn active">金額折扣</button>
+                  <button type="button" id="discountPercentBtn" class="discount-btn">百分比折扣</button>
+                </div>
+              </div>
+              <div>
+                <label>折扣值</label>
+                <input id="discountValue" type="number" min="0" value="0">
+              </div>
+            </div>
+            <div class="row between"><span>折扣後</span><strong id="totalText">$0</strong></div>
+            <div class="row gap wrap">
+              <button id="printCartReceiptBtn" class="secondary-btn full">列印顧客單</button>
+              <button id="printCartLabelBtn" class="secondary-btn full">列印標籤</button>
+              <button id="checkoutBtn" class="primary-btn full">結帳</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <section id="ordersView" class="view">
+      <header class="topbar">
+        <h1>訂單查詢</h1>
+        <div class="topbar-actions responsive-filters synced-filters">
+          <input id="orderItemSearch" placeholder="品項搜尋">
+          <input id="orderDateFrom" type="date">
+          <input id="orderDateTo" type="date">
+          <input id="orderMinAmount" type="number" min="0" placeholder="最低金額">
+          <input id="orderMaxAmount" type="number" min="0" placeholder="最高金額">
+          <select id="orderPaymentMethodFilter">
+            <option value="">全部付款方式</option>
+            <option value="現金">現金</option>
+            <option value="刷卡">刷卡</option>
+            <option value="Line Pay">Line Pay</option>
+            <option value="其他">其他</option>
+            <option value="待付款">待付款</option>
+          </select>
+          <button id="clearOrderFiltersBtn" class="secondary-btn">清除篩選</button>
+        </div>
+      </header>
+      <div class="content-grid one">
+        <section class="card page-block">
+          <h2>線上待確認</h2>
+          <div id="incomingOnlineOrdersList" class="stack"></div>
+        </section>
+        <section class="card page-block">
+          <h2>待付款</h2>
+          <div id="pendingOrdersList" class="stack"></div>
+        </section>
+        <section class="card page-block">
+          <h2>已完成</h2>
+          <div id="completedOrdersList" class="stack"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="reportsView" class="view">
+      <header class="topbar">
+        <h1>報表</h1>
+        <div class="topbar-actions responsive-filters synced-filters">
+          <button id="reportStartBtn" class="primary-btn">開始</button>
+          <button id="reportEndBtn" class="danger-btn">結束</button>
+          <button id="reportBackLiveBtn" class="secondary-btn">返回目前</button>
+          <input id="reportDateFrom" type="date">
+          <input id="reportDateTo" type="date">
+          <button id="applyReportRangeBtn" class="secondary-btn">套用日期</button>
+          <button id="saveReportSnapshotBtn" class="secondary-btn">儲存報表</button>
+          <button id="exportTodayBtn" class="secondary-btn">匯出今日 CSV</button>
+        </div>
+      </header>
+      <div id="reportCards" class="stats-grid"></div>
+      <div class="content-grid two">
+        <section class="card">
+          <h2>熱銷商品</h2>
+          <div id="topProducts" class="stack small"></div>
+        </section>
+        <section class="card">
+          <h2>付款方式統計</h2>
+          <div id="paymentStats" class="stack small"></div>
+        </section>
+        <section class="card">
+          <h2>商品販賣分析</h2>
+          <div id="productAnalysis" class="stack small"></div>
+        </section>
+        <section class="card">
+          <h2>時段販售狀況</h2>
+          <div id="hourAnalysis" class="stack small"></div>
+        </section>
+      </div>
+      <section class="card" style="margin-top:20px">
+        <h2>開始 / 結束紀錄</h2>
+        <div id="reportSessionList" class="stack"></div>
+      </section>
+    </section>
+
+    <section id="productsView" class="view">
+      <header class="topbar">
+        <h1>商品管理</h1>
+        <div class="topbar-actions">
+          <button id="saveAllBtn" class="secondary-btn">儲存設定</button>
+        </div>
+      </header>
+
+      <div class="products-layout">
+        <section class="card stack">
+          <div class="panel-section">
+            <h2>分類管理</h2>
+            <div class="row gap wrap" style="margin-top:12px">
+              <input id="newCategoryInput" placeholder="新增分類">
+              <button id="addCategoryBtn" class="secondary-btn">新增分類</button>
+            </div>
+            <div id="categoryList" class="stack" style="margin-top:12px"></div>
+          </div>
+
+          <div class="panel-section">
+            <h2>模組管理</h2>
+            <div class="row gap wrap" style="margin-top:12px">
+              <input id="newModuleInput" placeholder="新增模組名稱">
+              <button id="addModuleBtn" class="secondary-btn">新增模組</button>
+            </div>
+            <div id="moduleLibraryList" class="stack" style="margin-top:12px"></div>
+          </div>
+        </section>
+
+        <section class="card stack">
+          <section class="panel-section">
+            <h2>商品編輯</h2>
+            <form id="productForm" class="stack" style="margin-top:12px">
+              <input type="hidden" id="productId">
+              <div class="grid2">
+                <div>
+                  <label>商品名稱</label>
+                  <input id="productName" required>
+                  <div id="productNameError" class="field-error hidden">請輸入商品名稱</div>
+                </div>
+                <div>
+                  <label>價格</label>
+                  <input id="productPrice" type="number" min="0" required>
+                  <div id="productPriceError" class="field-error hidden">請輸入正確商品價格</div>
+                </div>
+              </div>
+              <div class="grid2">
+                <div>
+                  <label>分類</label>
+                  <select id="productCategory"></select>
+                </div>
+                <div>
+                  <label>狀態</label>
+                  <select id="productEnabled">
+                    <option value="true">啟用</option>
+                    <option value="false">停用</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label>商品別名（逗號分隔）</label>
+                <input id="productAliases" placeholder="香雞排, 大雞排">
+              </div>
+              <div class="stack">
+                <label>商品圖片</label>
+                <input id="productImageInput" type="file" accept="image/*">
+                <input id="productImageData" type="hidden">
+                <div id="productImagePreview" class="product-image-preview muted">尚未上傳圖片</div>
+                <div class="row gap wrap">
+                  <button type="button" id="removeProductImageBtn" class="secondary-btn">移除圖片</button>
+                </div>
+              </div>
+              <div class="stack">
+                <div class="row between wrap">
+                  <label>已套用模組</label>
+                  <div class="row gap wrap">
+                    <select id="moduleSelect"></select>
+                    <button type="button" id="attachModuleBtn" class="secondary-btn">加入模組</button>
+                  </div>
+                </div>
+                <div id="productModulesEditor" class="stack"></div>
+              </div>
+              <div class="row gap wrap">
+                <button type="button" id="excelTemplateBtn" class="secondary-btn">新增範本</button>
+                <button type="button" id="excelImportBtn" class="secondary-btn">Excel匯入菜單</button>
+                <input id="excelImportInput" type="file" accept=".xlsx,.xls,.csv" hidden>
+                <button type="submit" class="primary-btn">保存商品</button>
+                <button type="button" id="deleteProductBtn" class="danger-btn">刪除商品</button>
+                <button type="button" id="resetProductBtn" class="secondary-btn">清空表單</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel-section">
+            <div class="row between wrap">
+              <h2>待處理菜單</h2>
+              <div class="muted">Excel匯入結果先放這裡，確認後才正式納入菜單</div>
+            </div>
+            <div id="pendingMenuList" class="products-table" style="margin-top:12px"></div>
+          </section>
+
+          <section class="panel-section">
+            <div class="row between wrap">
+              <h2>商品列表</h2>
+              <div class="muted">正式菜單</div>
+            </div>
+            <div id="productsTable" class="products-table" style="margin-top:12px"></div>
+          </section>
+        </section>
+      </div>
+    </section>
+
+    <section id="settingsView" class="view">
+      <header class="topbar">
+        <h1>設定</h1>
+      </header>
+      <div class="content-grid two">
+        <section class="card settings-list">
+          <h2>本機資料</h2>
+          <button id="exportJsonBtn" class="secondary-btn">匯出本機 JSON</button>
+          <label class="upload-btn">
+            匯入 JSON
+            <input id="importJsonInput" type="file" accept="application/json" hidden>
+          </label>
+          <button id="seedDemoBtn" class="secondary-btn">重建預設資料</button>
+          <label class="inline-check"><input id="showProductImagesToggle" type="checkbox"> 點餐頁顯示商品圖片</label>
+        </section>
+        <section class="card settings-list">
+          <h2>Google Drive 備份 / 還原</h2>
+          <label>Google OAuth Client ID
+            <input id="googleClientId" placeholder="貼上 Google OAuth Client ID">
+          </label>
+          <label>Google Drive 資料夾 ID（可留空，留空則存到根目錄）
+            <input id="googleFolderId" placeholder="可留空">
+          </label>
+          <label class="inline-check"><input id="googleAutoBackupEnabled" type="checkbox"> 啟用定期自動備份</label>
+          <label>定期備份分鐘數
+            <input id="googleAutoBackupMinutes" type="number" min="5" max="1440">
+          </label>
+          <div class="row gap wrap">
+            <button id="saveGoogleBackupSettingsBtn" class="primary-btn">儲存 Google 設定</button>
+            <button id="googleLoginBtn" class="secondary-btn">登入 Google</button>
+            <button id="googleLogoutBtn" class="secondary-btn">登出 Google</button>
+            <button id="manualGoogleBackupBtn" class="secondary-btn">立即備份到 Google Drive</button>
+            <button id="manualGoogleRestoreBtn" class="secondary-btn">從 Google Drive 還原</button>
+          </div>
+          <div id="googleDriveAccountBox" class="muted"></div>
+          <div id="googleBackupFileList" class="muted"></div>
+          <div id="googleBackupStatusBox" class="muted"></div>
+          <div class="muted">此功能改為 Google OAuth + Drive API 直連，不使用 Apps Script，也不支援手動輸入 Google 帳號密碼。</div>
+        </section>
+        <section class="card settings-list">
+          <h2>即時接單設定</h2>
+          <label class="inline-check"><input id="realtimeOrderEnabled" type="checkbox"> 啟用 Firebase 即時接單</label>
+          <label>Firebase API Key<input id="firebaseApiKey"></label>
+          <label>Firebase Auth Domain<input id="firebaseAuthDomain"></label>
+          <label>Firebase Realtime Database URL<input id="firebaseDatabaseUrl" placeholder="https://xxx-default-rtdb.firebaseio.com"></label>
+          <label>Firebase Project ID<input id="firebaseProjectId"></label>
+          <label>Firebase Storage Bucket<input id="firebaseStorageBucket"></label>
+          <label>Firebase Messaging Sender ID<input id="firebaseMessagingSenderId"></label>
+          <label>Firebase App ID<input id="firebaseAppId"></label>
+          <label>Firebase Measurement ID（可選）<input id="firebaseMeasurementId"></label>
+          <label>線上點餐頁店名<input id="onlineStoreTitle"></label>
+          <label>線上點餐頁副標<input id="onlineStoreSubtitle"></label>
+          <label class="inline-check"><input id="onlineConfirmAutoPrintKitchen" type="checkbox"> 線上訂單確認後自動列印廚房單</label>
+          <label class="inline-check"><input id="onlineConfirmAutoPrintReceipt" type="checkbox"> 線上訂單確認後自動列印顧客單</label>
+          <label class="inline-check"><input id="onlineIncomingSoundEnabled" type="checkbox"> 線上新單播放提醒聲</label>
+          <div class="row gap wrap">
+            <button id="saveRealtimeOrderSettingsBtn" class="primary-btn">儲存即時接單設定</button>
+            <button id="posGoogleLoginBtn" class="secondary-btn">POS Google 登入</button>
+            <button id="posGoogleLogoutBtn" class="secondary-btn">POS Google 登出</button>
+          </div>
+          <div id="posGoogleAccountBox" class="muted"></div>
+          <div id="realtimeOrderStatusBox" class="muted"></div>
+          <div class="muted">外部顧客頁與 POS 都要填相同 Firebase 設定，顧客送單後 POS 會即時收到，店家確認後顧客才完成訂購。</div>
+        </section>
+        <section class="card settings-list">
+          <h2>列印設定</h2>
+          <label>店名<input id="printStoreName"></label>
+          <label>電話<input id="printStorePhone"></label>
+          <label>地址<input id="printStoreAddress"></label>
+          <label>收據備註<input id="printReceiptFooter"></label>
+          <label>顧客單紙寬
+            <select id="printReceiptPaperWidth">
+              <option value="58">58mm</option>
+              <option value="80">80mm</option>
+            </select>
+          </label>
+          <label>標籤寬(mm)<input id="printLabelPaperWidth" type="number" min="30" max="120"></label>
+          <label>標籤高(mm)<input id="printLabelPaperHeight" type="number" min="20" max="120"></label>
+          <label>顧客單字體大小<input id="printReceiptFontSize" type="number" min="8" max="24"></label>
+          <label>標籤字體大小<input id="printLabelFontSize" type="number" min="8" max="24"></label>
+          <label>顧客單水平位移(mm)<input id="printReceiptOffsetX" type="number" step="0.5" min="-20" max="20"></label>
+          <label>顧客單垂直位移(mm)<input id="printReceiptOffsetY" type="number" step="0.5" min="-20" max="20"></label>
+          <label>標籤水平位移(mm)<input id="printLabelOffsetX" type="number" step="0.5" min="-20" max="20"></label>
+          <label>標籤垂直位移(mm)<input id="printLabelOffsetY" type="number" step="0.5" min="-20" max="20"></label>
+          <label>廚房單列印份數<input id="printKitchenCopies" type="number" min="1" max="5"></label>
+          <label class="inline-check"><input id="printAutoCheckout" type="checkbox"> 結帳後自動列印顧客單</label>
+          <label class="inline-check"><input id="printAutoKitchen" type="checkbox"> 點餐結帳或待付款時自動列印廚房單</label>
+          <div class="row gap wrap">
+            <button id="savePrintSettingsBtn" class="primary-btn">儲存列印設定</button>
+            <button id="previewReceiptPrintBtn" class="secondary-btn">預覽顧客單</button>
+            <button id="previewLabelPrintBtn" class="secondary-btn">預覽標籤</button>
+          </div>
+          <div class="muted">此版採用瀏覽器列印方式，可搭配已安裝驅動的出單機與標籤機使用。</div>
+        </section>
+        <section class="card settings-list">
+          <h2>這版修正</h2>
+          <ul class="muted">
+            <li>加入 Google 手動備份與還原</li>
+            <li>加入定期備份設定</li>
+            <li>保留顧客單、廚房單、標籤列印</li>
+            <li>支援紙寬、位移、字體大小調整</li>
+            <li>商品管理保留：新增範本、Excel匯入菜單</li>
+            <li>點餐頁可切換是否顯示商品圖片</li>
+          </ul>
+        </section>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="productConfigModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="true"></div>
+  <div class="modal-dialog wide">
+    <div class="row between wrap">
+      <h2 id="productConfigTitle">商品設定</h2>
+      <button id="closeProductConfigModal" class="ghost-btn">✕</button>
+    </div>
+    <div id="productConfigModules" class="stack"></div>
+    <div class="stack">
+      <div>
+        <label>商品備註</label>
+        <input id="itemNoteInput" placeholder="例如：不要胡椒、先做">
+      </div>
+      <div class="grid2">
+        <div>
+          <label>數量</label>
+          <input id="itemQtyInput" type="number" min="1" value="1">
+        </div>
+        <div class="muted" id="itemPricePreview" style="align-self:end;padding-bottom:12px">小計：$0</div>
+      </div>
+    </div>
+    <div class="row between wrap">
+      <button id="saveProductConfigBtn" class="primary-btn">確認</button>
+      <button id="cancelProductConfigBtn" class="secondary-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="categoryManageModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="category-manage"></div>
+  <div class="modal-dialog wide">
+    <div class="row between wrap">
+      <h2 id="categoryManageTitle">分類商品管理</h2>
+      <button id="closeCategoryManageModal" class="ghost-btn">✕</button>
+    </div>
+    <input id="categoryManageSearch" placeholder="搜尋商品" style="margin:12px 0">
+    <div id="categoryManageBody" class="checkbox-grid"></div>
+    <div class="row gap wrap" style="margin-top:16px">
+      <button id="saveCategoryManageBtn" class="primary-btn">儲存</button>
+      <button id="cancelCategoryManageBtn" class="secondary-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="moduleManageModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="module-manage"></div>
+  <div class="modal-dialog wide">
+    <div class="row between wrap">
+      <h2 id="moduleManageTitle">模組套用商品</h2>
+      <button id="closeModuleManageModal" class="ghost-btn">✕</button>
+    </div>
+    <input id="moduleManageSearch" placeholder="搜尋商品" style="margin:12px 0">
+    <div id="moduleManageBody" class="checkbox-grid"></div>
+    <div class="row gap wrap" style="margin-top:16px">
+      <button id="saveModuleManageBtn" class="primary-btn">儲存</button>
+      <button id="cancelModuleManageBtn" class="secondary-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<input type="hidden" id="paymentTargetMode" value="new">
+<input type="hidden" id="paymentTargetOrderId" value="">
+<div id="paymentModal" class="modal hidden">
+  <div class="modal-backdrop" data-close="payment"></div>
+  <div class="modal-dialog">
+    <div class="row between wrap">
+      <h2>選擇支付方式</h2>
+      <button id="closePaymentModal" class="ghost-btn">✕</button>
+    </div>
+    <div class="payment-grid">
+      <button class="pay-btn" data-payment="現金">現金</button>
+      <button class="pay-btn" data-payment="刷卡">刷卡</button>
+      <button class="pay-btn" data-payment="Line Pay">Line Pay</button>
+      <button class="pay-btn" data-payment="其他">其他</button>
+      <button class="pay-btn pending" data-payment="待付款">待付款</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>

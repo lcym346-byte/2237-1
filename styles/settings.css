@@ -1,0 +1,2 @@
+/* 中文備註：styles/settings.css，此樣式檔已加入中文說明，方便後續維護。 */
+.settings-list{display:flex;flex-direction:column;gap:12px}

@@ -1,0 +1,113 @@
+<!doctype html>
+<!-- 中文備註：給外部顧客直接使用的線上點餐頁面。 -->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>線上點餐</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/online-order.css" />
+</head>
+<body>
+  <div class="online-shell">
+    <header class="online-hero">
+      <div>
+        <div class="online-badge">線上點餐</div>
+        <h1 id="onlineStoreName">立即點餐</h1>
+        <p id="onlineStoreMeta" class="muted">外帶 / 外送皆可</p>
+      </div>
+      <button id="openCartBtn" class="primary-btn online-cart-btn">購物車 <span id="cartQtyBadge">0</span></button>
+    </header>
+
+    <main class="online-layout">
+      <aside class="online-left stack">
+        <section class="card stack">
+          <label>搜尋商品
+            <input id="onlineSearchInput" placeholder="搜尋品項">
+          </label>
+          <div id="onlineCategoryTabs" class="online-category-tabs"></div>
+        </section>
+
+        <section class="card stack">
+          <h2>顧客資訊</h2>
+          <label>訂單類型
+            <select id="onlineOrderType">
+              <option value="外帶">外帶</option>
+              <option value="外送">外送</option>
+            </select>
+          </label>
+          <label>姓名
+            <input id="onlineCustomerName" placeholder="請輸入姓名">
+          </label>
+          <label>電話
+            <input id="onlineCustomerPhone" placeholder="請輸入電話">
+          </label>
+          <label>顧客備註
+            <textarea id="onlineCustomerNote" rows="3" placeholder="例如：晚點取餐、餐具需求、桌號"></textarea>
+          </label>
+        </section>
+      </aside>
+
+      <section class="online-right">
+        <div id="onlineProductGrid" class="online-product-grid"></div>
+      </section>
+    </main>
+  </div>
+
+  <div id="onlineCartDrawer" class="online-drawer hidden">
+    <div class="online-drawer-backdrop"></div>
+    <div class="online-drawer-panel">
+      <div class="row between wrap">
+        <h2>購物車</h2>
+        <button id="closeCartBtn" class="ghost-btn">✕</button>
+      </div>
+      <div id="onlineCartList" class="stack"></div>
+      <div class="online-summary">
+        <div class="row between"><span>小計</span><strong id="onlineSubtotalText">$0</strong></div>
+        <div class="row between"><span>總數量</span><strong id="onlineTotalQtyText">0</strong></div>
+        <button id="submitOnlineOrderBtn" class="primary-btn full">送出訂單</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="onlineProductModal" class="modal hidden">
+    <div class="modal-backdrop"></div>
+    <div class="modal-dialog wide">
+      <div class="row between wrap">
+        <h2 id="onlineModalTitle">商品設定</h2>
+        <button id="closeOnlineProductModal" class="ghost-btn">✕</button>
+      </div>
+      <div id="onlineModalImageWrap" class="online-modal-image hidden"></div>
+      <div id="onlineModalModules" class="stack"></div>
+      <div class="stack">
+        <div>
+          <label>商品備註</label>
+          <input id="onlineItemNoteInput" placeholder="例如：不要胡椒、先做">
+        </div>
+        <div class="grid2">
+          <div>
+            <label>數量</label>
+            <input id="onlineItemQtyInput" type="number" min="1" value="1">
+          </div>
+          <div class="muted" id="onlineItemPricePreview" style="align-self:end;padding-bottom:12px">小計：$0</div>
+        </div>
+      </div>
+      <div class="row between wrap">
+        <button id="saveOnlineProductBtn" class="primary-btn">加入購物車</button>
+        <button id="cancelOnlineProductBtn" class="secondary-btn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/pages/online-order-page.js"></script>
+  <div id="onlineOrderStatusOverlay" class="online-status-overlay hidden">
+    <div class="online-status-card">
+      <div class="online-badge">訂單處理中</div>
+      <h2 id="onlineOrderStatusTitle">等待店家確認訂單</h2>
+      <p id="onlineOrderStatusText" class="muted">送出後請稍候，店家確認後才算完成訂購。</p>
+      <button id="closeOnlineStatusBtn" class="secondary-btn hidden">關閉</button>
+    </div>
+  </div>
+</body>
+</html>

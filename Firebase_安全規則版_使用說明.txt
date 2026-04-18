@@ -1,0 +1,25 @@
+Firebase 安全規則版 + POS Google 登入版 使用說明
+
+1. 在 Firebase Console 啟用：
+- Realtime Database
+- Authentication > Sign-in method > Google
+- Authentication > Sign-in method > Anonymous
+
+2. 在 Realtime Database > Rules 貼上：
+- Firebase_Realtime_Database_安全規則.json 內容
+
+3. 在 POS 設定頁填入 Firebase 設定後，按「POS Google 登入」。
+
+4. 登入成功後，請到 Realtime Database 手動建立 staff 節點：
+staff / 你的uid / role = "admin"
+staff / 你的uid / email = "你的gmail"
+
+5. 如果 POS Google 登入後顯示「沒有權限」，通常代表 staff / 你的uid / role 尚未建立，或不是 admin / staff。
+
+6. 顧客頁會用匿名登入送單，customerUid 會自動寫入。
+
+7. 流程：
+- 顧客送單
+- POS 線上待確認收到
+- POS 輸入備餐時間並確認接單
+- 顧客頁同步顯示已確認與備餐時間
