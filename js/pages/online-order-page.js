@@ -1,4 +1,9 @@
-/* 中文備註：線上點餐頁邏輯，顧客送單後會等待 POS 確認，確認後才完成訂購。 */
+/* 中文備註：線上點餐頁邏輯（多店分流版）。
+ * 變更：
+ *   - 進站讀 URL ?storeId=TWxxx 存到 onlineState.storeCode
+ *   - 沒帶 storeId 顯示提示頁，禁止下單
+ *   - submitOnlineOrder() / watchCustomerOrder() 都帶 storeCode
+ */
 import { state } from '../core/store.js';
 import { escapeHtml, id, money, fmtLocalDateTime} from '../core/utils.js';
 import { getRealtimeConfig, pushOnlineOrder, watchCustomerOrder, fetchMenuFromFirebase, startMenuAutoWatch } from '../modules/realtime-order-service.js';
@@ -8,9 +13,48 @@ const onlineState = {
   selectedCategory: '全部',
   cart: [],
   currentSelections: {},
-  configTarget: null
+  configTarget: null,
+  storeCode: ''      // ← 多店分流：從 URL 取得
 };
 
+// ============================================================
+// 從 URL 取 storeId
+// ============================================================
+function readStoreCodeFromUrl(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const code = String(params.get('storeId') || '').trim();
+    if(!code) return '';
+    if(/[.#$\/\[\]]/.test(code)) return '';
+    return code;
+  }catch(e){
+    return '';
+  }
+}
+
+function showMissingStoreCodePage(){
+  document.body.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#0f172a;color:#e2e8f0;padding:24px;font-family:-apple-system,'Microsoft JhengHei',sans-serif">
+      <div style="max-width:420px;background:#1e293b;border-radius:16px;padding:32px;text-align:center;border:2px solid #ef4444">
+        <div style="font-size:48px;margin-bottom:16px">🚫</div>
+        <h1 style="font-size:22px;margin:0 0 12px">無法直接下單</h1>
+        <p style="color:#94a3b8;margin:0 0 16px;line-height:1.7">
+          此連結缺少店家代碼。請從<br>
+          <strong style="color:#fbbf24">店家提供的 QR code</strong><br>
+          掃描進入點餐頁面。
+        </p>
+        <div style="background:rgba(239,68,68,0.1);border:1px solid #ef4444;border-radius:8px;padding:12px;font-size:13px;color:#fca5a5;margin-top:16px">
+          正確的網址應該長這樣：<br>
+          <code style="color:#fbbf24">online-order.html?storeId=TWxxx</code>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ============================================================
+// 共用 UI
+// ============================================================
 function showOnlineToast(message){
   let toast = document.getElementById('onlineToast');
   if(!toast){
@@ -110,7 +154,7 @@ function renderProducts(){
     const moduleNames = (p.modules||[]).map(att=> state.modules.find(m=>m.id===att.moduleId)?.name).filter(Boolean);
     const card = document.createElement('div');
     card.className = 'online-product-card';
-        card.innerHTML = `
+    card.innerHTML = `
       ${p.image ? `<div class="online-product-image"><img src="${escapeHtml(p.image)}" alt="${escapeHtml(p.name)}"></div>` : '<div class="online-product-image"></div>'}
       <div class="online-product-body">
         <div class="online-product-title-row">
@@ -121,8 +165,6 @@ function renderProducts(){
         <div class="online-product-footer"><button class="primary-btn full">加入購物車</button></div>
       </div>
     `;
-
-
     card.querySelector('button').onclick = ()=> openProductConfigForNew(p.id);
     grid.appendChild(card);
   });
@@ -139,8 +181,8 @@ function updateItemPricePreview(product){
 function renderProductConfig(product){
   document.getElementById('onlineModalTitle').textContent = product.name;
   const imageWrap = document.getElementById('onlineModalImageWrap');
-    imageWrap.innerHTML = '';
-    imageWrap.classList.add('hidden');
+  imageWrap.innerHTML = '';
+  imageWrap.classList.add('hidden');
 
   const wrap = document.getElementById('onlineModalModules');
   wrap.innerHTML = '';
@@ -258,8 +300,7 @@ function renderCart(){
   document.getElementById('onlineSubtotalText').textContent = money(subtotal);
   document.getElementById('onlineTotalQtyText').textContent = String(totalQty);
   document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
-      updateFloatingCartBadge();
-
+  updateFloatingCartBadge();
 }
 
 function openCartDrawer(){ document.getElementById('onlineCartDrawer').classList.remove('hidden'); }
@@ -293,6 +334,7 @@ function buildConfirmedMessage(remote, orderId){
   if(remote.replyMessage) parts.push(remote.replyMessage);
   return parts.join('，');
 }
+
 // ── 預約功能 ──
 const WEEKDAY_MAP = ['sun','mon','tue','wed','thu','fri','sat'];
 
@@ -391,8 +433,13 @@ function toggleReservationBlock(){
   }
 }
 
+// ============================================================
+// 送單（帶 storeCode）
+// ============================================================
 async function submitOnlineOrder(){
   if(!onlineState.cart.length) return alert('請先加入商品');
+  if(!onlineState.storeCode) return alert('缺少店家代碼，請從店家提供的 QR code 重新進入');
+
   const name = document.getElementById('onlineCustomerName').value.trim();
   const phone = document.getElementById('onlineCustomerPhone').value.trim();
   const customerNote = document.getElementById('onlineCustomerNote').value.trim();
@@ -400,7 +447,6 @@ async function submitOnlineOrder(){
   if(!name) return alert('請輸入姓名');
   if(!phone) return alert('請輸入電話');
 
-  // 預約類型必須選時段
   let reservationAt = '';
   if(orderType === '預約'){
     reservationAt = document.getElementById('onlineReservationSlot').value;
@@ -426,7 +472,7 @@ async function submitOnlineOrder(){
 
   try{
     openStatusOverlay('等待店家確認訂單', '送出後請稍候，店家確認後才算完成訂購。');
-    const orderId = await pushOnlineOrder(payload);
+    const orderId = await pushOnlineOrder(payload, onlineState.storeCode);
     localStorage.setItem('online_customer_name', name);
     localStorage.setItem('online_customer_phone', phone);
 
@@ -448,17 +494,38 @@ async function submitOnlineOrder(){
         const pendingText = remote.replyMessage || '訂單已送出，請稍候店家確認。';
         openStatusOverlay('等待店家確認訂單', pendingText);
       }
-    });
+    }, onlineState.storeCode);
   }catch(err){
     closeStatusOverlay();
     alert(err.message || '送出訂單失敗');
   }
 }
 
+// ============================================================
+// 初始化
+// ============================================================
 async function init(){
-  document.getElementById('onlineStoreName').textContent = getStoreName();
-  document.getElementById('onlineStoreMeta').textContent = getStoreMeta();
-    try {
+  // 步驟 1：先檢查 storeId
+  const code = readStoreCodeFromUrl();
+  if(!code){
+    showMissingStoreCodePage();
+    return;
+  }
+  onlineState.storeCode = code;
+
+  // 步驟 2：頁首顯示店名（先用 URL 帶的 storeName，否則顯示 storeCode）
+  try{
+    const params = new URLSearchParams(window.location.search);
+    const urlStoreName = params.get('storeName');
+    document.getElementById('onlineStoreName').textContent = urlStoreName || getStoreName();
+    document.getElementById('onlineStoreMeta').textContent = `${getStoreMeta()}（${code}）`;
+  }catch(e){
+    document.getElementById('onlineStoreName').textContent = getStoreName();
+    document.getElementById('onlineStoreMeta').textContent = getStoreMeta();
+  }
+
+  // 步驟 3：讀雲端菜單
+  try {
     await fetchMenuFromFirebase();
     await startMenuAutoWatch(() => {
       renderCategoryTabs();
@@ -468,36 +535,33 @@ async function init(){
     console.error('讀取雲端菜單失敗：', err);
   }
 
-
-  
   renderCategoryTabs();
   renderProducts();
   renderCart();
-    const _savedName = localStorage.getItem('online_customer_name') || '';
-    const _savedPhone = localStorage.getItem('online_customer_phone') || '';
-    const _nameEl = document.getElementById('onlineCustomerName');
-    const _phoneEl = document.getElementById('onlineCustomerPhone');
-    if(_nameEl && _savedName) _nameEl.value = _savedName;
-    if(_phoneEl && _savedPhone) _phoneEl.value = _savedPhone;
 
-      // 浮動購物車按鈕
-    let floatBtn = document.getElementById('floatingCartBtn');
-    if (!floatBtn) {
-      floatBtn = document.createElement('button');
-      floatBtn.id = 'floatingCartBtn';
-      floatBtn.innerHTML = '🛒<span id="floatingCartBadge" style="display:none;">0</span>';
-      floatBtn.onclick = () => {
-        const drawer = document.getElementById('onlineCartDrawer');
-        if (drawer) drawer.classList.remove('hidden');
-      };
-      document.body.appendChild(floatBtn);
-    }
-    updateFloatingCartBadge();
-  
-  // 訂單類型切換時更新預約區塊
+  const _savedName = localStorage.getItem('online_customer_name') || '';
+  const _savedPhone = localStorage.getItem('online_customer_phone') || '';
+  const _nameEl = document.getElementById('onlineCustomerName');
+  const _phoneEl = document.getElementById('onlineCustomerPhone');
+  if(_nameEl && _savedName) _nameEl.value = _savedName;
+  if(_phoneEl && _savedPhone) _phoneEl.value = _savedPhone;
+
+  // 浮動購物車按鈕
+  let floatBtn = document.getElementById('floatingCartBtn');
+  if (!floatBtn) {
+    floatBtn = document.createElement('button');
+    floatBtn.id = 'floatingCartBtn';
+    floatBtn.innerHTML = '🛒<span id="floatingCartBadge" style="display:none;">0</span>';
+    floatBtn.onclick = () => {
+      const drawer = document.getElementById('onlineCartDrawer');
+      if (drawer) drawer.classList.remove('hidden');
+    };
+    document.body.appendChild(floatBtn);
+  }
+  updateFloatingCartBadge();
+
   document.getElementById('onlineOrderType').addEventListener('change', toggleReservationBlock);
   toggleReservationBlock();
-
 
   document.getElementById('onlineSearchInput').addEventListener('input', renderProducts);
   document.getElementById('onlineItemQtyInput').addEventListener('input', ()=>{
@@ -555,7 +619,6 @@ async function init(){
   if(myOrdersBtn){
     myOrdersBtn.onclick = ()=>{
       const modal = document.getElementById('myOrdersModal');
-      // 預填存過的姓名電話
       try{
         document.getElementById('myOrdersNameInput').value = localStorage.getItem('online_customer_name') || '';
         document.getElementById('myOrdersPhoneInput').value = localStorage.getItem('online_customer_phone') || '';
@@ -571,8 +634,9 @@ async function init(){
   const searchMyBtn = document.getElementById('myOrdersSearchBtn');
   if(searchMyBtn){
     searchMyBtn.onclick = handleMyOrdersSearch;
-   }
   }
+}
+
 async function handleMyOrdersSearch(){
   const btn = document.getElementById('myOrdersSearchBtn');
   const name = document.getElementById('myOrdersNameInput').value.trim();
@@ -588,7 +652,6 @@ async function handleMyOrdersSearch(){
   try{
     const list = await lookupOrdersByCustomer(phone, name);
     renderMyOrdersList(list);
-    // 記住姓名電話，下次預填
     try{
       localStorage.setItem('online_customer_name', name);
       localStorage.setItem('online_customer_phone', phone);
@@ -599,7 +662,7 @@ async function handleMyOrdersSearch(){
     btn.disabled = false;
     btn.textContent = '查詢我的訂單';
   }
- }
+}
 
 function updateFloatingCartBadge() {
   const badge = document.getElementById('floatingCartBadge');
@@ -608,8 +671,6 @@ function updateFloatingCartBadge() {
   badge.textContent = count;
   badge.style.display = count > 0 ? 'flex' : 'none';
 }
-
-
 
 function renderMyOrdersList(list){
   const result = document.getElementById('myOrdersResult');
