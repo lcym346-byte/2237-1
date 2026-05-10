@@ -69,7 +69,7 @@ function localDateKey(input){
   }
 }
 
-// ── 計算今日營業統計（用本機時區比對日期）──
+// ── 計算今日營業統計（含各支付方式分項）──
 function calcTodayStats(){
   const today = todayKey();
   const orders = (state.orders || []).filter(o => {
@@ -81,8 +81,19 @@ function calcTodayStats(){
   const salesTotal = orders.reduce((s,o)=>s + Number(o.total||0), 0);
   const orderCount = orders.length;
   const avgTicket = orderCount > 0 ? Math.round(salesTotal / orderCount) : 0;
-  return { date: today, salesTotal, orderCount, avgTicket };
+
+  // 各支付方式分項統計
+  const payments = {};
+  orders.forEach(o => {
+    const pm = String(o.paymentMethod || '其他').trim() || '其他';
+    if(!payments[pm]) payments[pm] = { amount: 0, count: 0 };
+    payments[pm].amount += Number(o.total || 0);
+    payments[pm].count += 1;
+  });
+
+  return { date: today, salesTotal, orderCount, avgTicket, payments };
 }
+
 
 // ── 計算當前班次摘要 ──
 function calcSessionSummary(){
