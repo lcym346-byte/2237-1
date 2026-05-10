@@ -1,9 +1,10 @@
-/* 中文備註：Firebase 即時接單服務（v2.1.25）。
- * 變更：
- *   1. 自動列印旗標改讀 autoPrintKitchenOnConfirm / autoPrintReceiptOnConfirm
- *   2. pushOnlineOrder 自動加 customerLookupKey（SHA-256 hash 供自助查單）
- *   3. 確認接單後寫入顧客主檔（customer-service.upsertCustomerFromOrder + sync）
- *   4. 公開 _getRef / _dbApi 供 customer-service 使用
+/* 中文備註：Firebase 即時接單服務（v2.2.0 多店分流版）。
+ * 變更（相對 v2.1.25）：
+ *   1. 新增 getStoreCode()：從 state.settings.dashboard.storeId 取得，未設定則拋錯
+ *   2. pushOnlineOrder(order, storeCode) → 寫入 onlineOrders/{storeCode}/<orderId>
+ *   3. startPOSRealtimeListener() → 監聽 onlineOrders/{storeCode}（只收自己店）
+ *   4. confirmOnlineOrder / rejectOnlineOrder / watchCustomerOrder → 路徑帶 storeCode
+ *   5. 菜單 (menu/...) 維持用 projectId，所有店共用
  */
 import { state, persistAll } from '../core/store.js';
 import { getCurrentSession } from './report-session.js';
@@ -51,8 +52,8 @@ function ensureRealtimeConfig(){
     measurementId: String(current.measurementId || '').trim() || DEFAULT_FIREBASE_CONFIG.measurementId,
     onlineStoreTitle: current.onlineStoreTitle || '',
     onlineStoreSubtitle: current.onlineStoreSubtitle || '',
-    autoPrintKitchenOnConfirm: current.autoPrintKitchenOnConfirm !== false,    // 預設 true
-    autoPrintReceiptOnConfirm: current.autoPrintReceiptOnConfirm !== false,    // 預設 true
+    autoPrintKitchenOnConfirm: current.autoPrintKitchenOnConfirm !== false,
+    autoPrintReceiptOnConfirm: current.autoPrintReceiptOnConfirm !== false,
     incomingSoundEnabled: current.incomingSoundEnabled !== false,
     lastSyncStatus: current.lastSyncStatus || '尚未啟用',
     lastOrderAt: current.lastOrderAt || '',
@@ -71,6 +72,35 @@ function updateSyncStatus(message){
 
 export function getRealtimeConfig(){
   return ensureRealtimeConfig();
+}
+
+// ============================================================
+// 店鋪代碼（多店分流核心）
+// ============================================================
+/**
+ * 從 state.settings.dashboard.storeId 讀取店鋪代碼（例如 TW001、TW002）
+ * 未設定則拋錯，避免誤寫到根節點
+ */
+export function getStoreCode(){
+  const code = String(state.settings?.dashboard?.storeId || '').trim();
+  if(!code){
+    throw new Error('尚未設定店鋪代碼（storeId），請連點頁首 5 下開啟設定，輸入 TW001 等代碼');
+  }
+  // 防呆：Firebase key 不能含 . # $ / [ ]
+  if(/[.#$\/\[\]]/.test(code)){
+    throw new Error(`店鋪代碼「${code}」含有非法字元（. # $ / [ ]），請改用英數短代碼如 TW001`);
+  }
+  return code;
+}
+
+/**
+ * 給顧客端用：可手動傳入 storeCode（從 URL 來）
+ */
+function validateStoreCode(code){
+  const c = String(code || '').trim();
+  if(!c) throw new Error('缺少店鋪代碼');
+  if(/[.#$\/\[\]]/.test(c)) throw new Error(`店鋪代碼「${c}」含有非法字元`);
+  return c;
 }
 
 // ============================================================
@@ -109,7 +139,7 @@ async function getRef(path){
   return dbApi.ref(dbInstance, path);
 }
 
-// ── 公開給 customer-service.js 使用 ──
+// ── 公開給 customer-service.js / report-session.js 使用 ──
 export async function _getRef(path){
   return await getRef(path);
 }
@@ -160,13 +190,13 @@ function showOnlineOrderOverlay(orderId){
 
   const order = (state.onlineIncomingOrders || []).find(o => o.id === orderId);
   const isReservation = !!(order && order.reservationAt);
-const reservationText = isReservation ? fmtLocalDateTime(order.reservationAt) : '';
+  const reservationText = isReservation ? fmtLocalDateTime(order.reservationAt) : '';
 
   document.getElementById('overlayOrderNo').textContent = order ? (order.orderNo || order.id) : orderId;
   document.getElementById('overlayTotal').textContent = order
     ? `$${order.total || order.subtotal || order.totalAmount || 0}`
     : '';
-   const baseMeta = order
+  const baseMeta = order
     ? `${order.createdAt ? fmtLocalDateTime(order.createdAt) : ''} · ${order.orderType || '線上點餐'}`
     : '';
   document.getElementById('overlayMeta').textContent = isReservation
@@ -190,7 +220,6 @@ const reservationText = isReservation ? fmtLocalDateTime(order.reservationAt) : 
 
   overlay.style.display = 'flex';
 
-  // 接受按鈕
   const acceptBtn = document.getElementById('overlayAcceptBtn');
   acceptBtn.disabled = false;
   acceptBtn.textContent = isReservation ? '✓ 確認預約' : '確認接單';
@@ -217,7 +246,6 @@ const reservationText = isReservation ? fmtLocalDateTime(order.reservationAt) : 
           cust.syncCustomerToFirebase(posOrder);
         } catch (e) { console.warn('顧客主檔更新失敗：', e); }
 
-        // 預約單接單時不立即列印（等 30 分鐘前再印）
         if(!isReservation){
           try{
             const { printOrderReceipt, printKitchenCopies } = await import('./print-service.js');
@@ -236,7 +264,6 @@ const reservationText = isReservation ? fmtLocalDateTime(order.reservationAt) : 
     }
   };
 
-  // 拒絕按鈕（預約單隱藏）
   const rejectBtn = document.getElementById('overlayRejectBtn');
   if(rejectBtn){
     if(isReservation){
@@ -286,7 +313,6 @@ function startAlarm(orderId){
     }, 3000);
   }, 1000);
 
-  // 60 秒自動接單
   activeAlarmTimeout = setTimeout(async ()=>{
     const autoOrderId = activeAlarmOrderId;
     stopAlarm();
@@ -389,20 +415,21 @@ export async function verifyPOSAccess(){
 }
 
 // ============================================================
-// 訂單操作
+// 訂單操作（多店分流：路徑為 onlineOrders/{storeCode}/{orderId}）
 // ============================================================
 
 /**
- * 顧客送單。會自動加上 customerLookupKey（SHA-256 hash），供顧客自助查詢。
+ * 顧客送單。storeCode 必填（由顧客端從 URL 取得）。
  */
-export async function pushOnlineOrder(order){
+export async function pushOnlineOrder(order, storeCode){
   const cfg = ensureRealtimeConfig();
   if(!cfg.enabled) throw new Error('即時接單尚未啟用');
+  const code = validateStoreCode(storeCode);
+
   const user = await signInCustomerAnonymously();
-  const rootRef = await getRef('onlineOrders');
+  const rootRef = await getRef(`onlineOrders/${code}`);
   const newRef = dbApi.push(rootRef);
 
-  // 算 customerLookupKey（讓顧客之後能自助查單）
   let customerLookupKey = '';
   try {
     const cust = await import('./customer-service.js');
@@ -412,8 +439,9 @@ export async function pushOnlineOrder(order){
   }
 
   await dbApi.set(newRef, Object.assign({}, order, {
+    storeCode: code,
     customerUid: user.uid,
-    customerLookupKey,                   // ← 新增欄位
+    customerLookupKey,
     status: 'pending_confirm',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
@@ -423,14 +451,18 @@ export async function pushOnlineOrder(order){
   }));
 
   cfg.lastOrderAt = new Date().toISOString();
-  cfg.lastSyncStatus = '顧客訂單已送出';
+  cfg.lastSyncStatus = `顧客訂單已送出（${code}）`;
   persistAll();
   return newRef.key;
 }
 
-export async function watchCustomerOrder(orderId, onChange){
+/**
+ * 顧客監聽自己訂單狀態。storeCode 必填。
+ */
+export async function watchCustomerOrder(orderId, onChange, storeCode){
   await loadFirebaseModules();
-  const ref = await getRef(`onlineOrders/${orderId}`);
+  const code = validateStoreCode(storeCode);
+  const ref = await getRef(`onlineOrders/${code}/${orderId}`);
   const callback = snapshot => {
     const val = snapshot.val();
     if(val) onChange(val);
@@ -439,6 +471,9 @@ export async function watchCustomerOrder(orderId, onChange){
   return ()=> dbApi.off(ref, 'value', callback);
 }
 
+/**
+ * POS 啟動監聽自己店的進單。storeCode 由本機 state.settings.dashboard.storeId 取得。
+ */
 export async function startPOSRealtimeListener(onRefresh){
   const cfg = ensureRealtimeConfig();
   if(!cfg.enabled) return;
@@ -451,7 +486,16 @@ export async function startPOSRealtimeListener(onRefresh){
   }
 
   await verifyPOSAccess();
-  const ref = await getRef('onlineOrders');
+
+  let code;
+  try{
+    code = getStoreCode();
+  }catch(err){
+    updateSyncStatus(err.message);
+    return;
+  }
+
+  const ref = await getRef(`onlineOrders/${code}`);
   if(posListenerRef && posListenerCallback){
     dbApi.off(posListenerRef, 'value', posListenerCallback);
   }
@@ -484,7 +528,7 @@ export async function startPOSRealtimeListener(onRefresh){
     }
 
     if(!incoming.some(order => order.status === 'pending_confirm')){
-      cfg.lastSyncStatus = '即時接單監聽中';
+      cfg.lastSyncStatus = `即時接單監聽中（${code}）`;
       stopAlarm();
     }
 
@@ -503,14 +547,18 @@ export async function startPOSRealtimeListener(onRefresh){
     if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
   });
 
-  cfg.lastSyncStatus = '即時接單監聽中';
+  cfg.lastSyncStatus = `即時接單監聽中（${code}）`;
   persistAll();
   if(typeof onRefresh === 'function') onRefresh();
   if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
 }
 
+/**
+ * POS 確認訂單。storeCode 由本機 state 取得。
+ */
 export async function confirmOnlineOrder(orderId, prepTimeMinutes = 0, replyMessage = ''){
-  const ref = await getRef(`onlineOrders/${orderId}`);
+  const code = getStoreCode();
+  const ref = await getRef(`onlineOrders/${code}/${orderId}`);
   const snapshot = await dbApi.get(ref);
   const order = snapshot.val();
   if(!order) throw new Error('找不到訂單');
@@ -543,8 +591,12 @@ export async function confirmOnlineOrder(orderId, prepTimeMinutes = 0, replyMess
   };
 }
 
+/**
+ * POS 拒絕訂單。
+ */
 export async function rejectOnlineOrder(orderId, replyMessage = ''){
-  const ref = await getRef(`onlineOrders/${orderId}`);
+  const code = getStoreCode();
+  const ref = await getRef(`onlineOrders/${code}/${orderId}`);
   const safeReplyMessage = String(replyMessage || '').trim().slice(0, 120);
   await dbApi.update(ref, {
     status: 'rejected',
@@ -572,6 +624,7 @@ export function buildRealtimeOrderForPOS(remote){
     customerPhone: remote.customerPhone || '',
     customerNote: remote.customerNote || '',
     customerLookupKey: remote.customerLookupKey || '',
+    storeCode: remote.storeCode || '',
     prepTimeMinutes: Number(remote.prepTimeMinutes || 0),
     estimatedReadyAt: remote.estimatedReadyAt || '',
     merchantReplyMessage: remote.replyMessage || '',
@@ -586,13 +639,12 @@ export function buildRealtimeOrderForPOS(remote){
 }
 
 // ============================================================
-// 菜單同步
+// 菜單同步（維持用 projectId，所有店共用）
 // ============================================================
 export async function syncMenuToFirebase(){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
 
-  // 角色檢查：只有 master 可上傳
   if(cfg.deviceRole !== 'master'){
     throw new Error('此裝置設定為「從機」，無上傳菜單權限。請改為主機角色或改按「讀取雲端菜單」。');
   }
@@ -601,29 +653,28 @@ export async function syncMenuToFirebase(){
   if(!user) throw new Error('請先使用 POS Google 登入');
   await verifyPOSAccess();
 
-  const storeId = cfg.projectId || 'default';
+  const menuKey = cfg.projectId || 'default';
   const menuData = {
     categories: state.categories || [],
     products: (state.products || []).map(function(p){
-  return {
-    id: p.id,
-    name: p.name,
-    price: p.price,
-    category: p.category,
-    image: p.image || '',
-    description: p.description || '',
-    modules: p.modules || [],
-    sortOrder: p.sortOrder || 0,
-    enabled: p.enabled !== false,
-    soldOut: p.soldOut === true
-  };
-}),
-
+      return {
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        category: p.category,
+        image: p.image || '',
+        description: p.description || '',
+        modules: p.modules || [],
+        sortOrder: p.sortOrder || 0,
+        enabled: p.enabled !== false,
+        soldOut: p.soldOut === true
+      };
+    }),
     modules: state.modules || [],
     updatedAt: new Date().toISOString()
   };
 
-  const menuRef = await getRef('menu/' + storeId);
+  const menuRef = await getRef('menu/' + menuKey);
   await dbApi.set(menuRef, menuData);
   cfg.lastSyncStatus = '菜單同步成功';
   cfg.lastSyncTime = new Date().toISOString();
@@ -634,8 +685,8 @@ export async function syncMenuToFirebase(){
 export async function fetchMenuFromFirebase(){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const storeId = cfg.projectId || 'default';
-  const menuRef = await getRef('menu/' + storeId);
+  const menuKey = cfg.projectId || 'default';
+  const menuRef = await getRef('menu/' + menuKey);
   const snapshot = await dbApi.get(menuRef);
   const data = snapshot.val();
   if(!data) throw new Error('雲端尚無菜單資料，請先在 POS 同步菜單到雲端');
@@ -650,17 +701,12 @@ export async function fetchMenuFromFirebase(){
   }
   return data;
 }
-/**
- * 讀取雲端菜單並 merge 到本地：
- * - 分類：聯集（雲端優先順序，本地獨有附在後面）
- * - 模組：用 id 比對；雲端有的覆蓋本地，本地獨有保留
- * - 商品：用 id 比對；雲端有的覆蓋本地（但本地的 enabled / soldOut 優先保留），本地獨有保留
- */
+
 export async function fetchAndMergeMenuFromFirebase(){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const storeId = cfg.projectId || 'default';
-  const menuRef = await getRef('menu/' + storeId);
+  const menuKey = cfg.projectId || 'default';
+  const menuRef = await getRef('menu/' + menuKey);
   const snapshot = await dbApi.get(menuRef);
   const data = snapshot.val();
   if(!data) throw new Error('雲端尚無菜單資料，請先在主機按「上傳菜單」');
@@ -668,7 +714,6 @@ export async function fetchAndMergeMenuFromFirebase(){
   let cloudCount = 0;
   let localKeptCount = 0;
 
-  // 分類：聯集
   if(Array.isArray(data.categories)){
     const localCats = state.categories || [];
     const merged = [...data.categories];
@@ -677,10 +722,7 @@ export async function fetchAndMergeMenuFromFirebase(){
     state.categories = merged;
   }
 
-  // 模組：雲端覆蓋同 id，本地獨有保留
   if(Array.isArray(data.modules)){
-    const cloudMap = {};
-    data.modules.forEach(m => { if(m && m.id) cloudMap[m.id] = m; });
     const localMods = state.modules || [];
     const merged = [];
     const usedIds = new Set();
@@ -689,7 +731,6 @@ export async function fetchAndMergeMenuFromFirebase(){
     state.modules = merged;
   }
 
-  // 商品：雲端覆蓋同 id（但 enabled / soldOut 用本地優先），本地獨有保留
   if(Array.isArray(data.products)){
     const localProds = state.products || [];
     const localMap = {};
@@ -702,18 +743,17 @@ export async function fetchAndMergeMenuFromFirebase(){
       const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
       const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
       merged.push({
-  id: cp.id,
-  name: cp.name || '',
-  price: Number(cp.price || 0),
-  category: cp.category || '未分類',
-  image: cp.image || '',
-  description: cp.description || '',
-  modules: Array.isArray(cp.modules) ? cp.modules : [],
-  sortOrder: Number(cp.sortOrder || 0),
-  enabled,
-  soldOut
-});
-
+        id: cp.id,
+        name: cp.name || '',
+        price: Number(cp.price || 0),
+        category: cp.category || '未分類',
+        image: cp.image || '',
+        description: cp.description || '',
+        modules: Array.isArray(cp.modules) ? cp.modules : [],
+        sortOrder: Number(cp.sortOrder || 0),
+        enabled,
+        soldOut
+      });
       usedIds.add(cp.id);
       cloudCount++;
     });
@@ -727,18 +767,14 @@ export async function fetchAndMergeMenuFromFirebase(){
   return { cloudCount, localKeptCount };
 }
 
-/**
- * 從機/顧客頁啟動：訂閱雲端菜單變更 + 30 秒 fallback polling
- */
 let menuWatchUnsub = null;
 let menuPollTimer = null;
 export async function startMenuAutoWatch(onUpdate){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const storeId = cfg.projectId || 'default';
-  const menuRef = await getRef('menu/' + storeId);
+  const menuKey = cfg.projectId || 'default';
+  const menuRef = await getRef('menu/' + menuKey);
 
-  // 取消舊監聽
   if(menuWatchUnsub){ try{ menuWatchUnsub(); }catch(e){} menuWatchUnsub = null; }
   if(menuPollTimer){ clearInterval(menuPollTimer); menuPollTimer = null; }
 
@@ -746,7 +782,6 @@ export async function startMenuAutoWatch(onUpdate){
     const data = snapshot.val();
     if(!data) return;
     try {
-      // 從機：用 merge 規則（保留本地獨有 + enabled/soldOut 本地優先）
       applyCloudMenu(data);
       if(typeof onUpdate === 'function') onUpdate();
     } catch(e){ console.warn('menu watch handler failed:', e); }
@@ -754,7 +789,6 @@ export async function startMenuAutoWatch(onUpdate){
   dbApi.onValue(menuRef, handler);
   menuWatchUnsub = ()=> dbApi.off(menuRef, 'value', handler);
 
-  // 30 秒 fallback
   menuPollTimer = setInterval(async ()=>{
     try{
       const snap = await dbApi.get(menuRef);
@@ -765,7 +799,6 @@ export async function startMenuAutoWatch(onUpdate){
 }
 
 function applyCloudMenu(data){
-  // 與 fetchAndMergeMenuFromFirebase 同邏輯但不更新 lastSyncStatus
   if(Array.isArray(data.categories)){
     const localCats = state.categories || [];
     const merged = [...data.categories];
@@ -793,13 +826,12 @@ function applyCloudMenu(data){
       const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
       const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
       merged.push({
-  id: cp.id, name: cp.name || '', price: Number(cp.price || 0),
-  category: cp.category || '未分類', image: cp.image || '',
-  description: cp.description || '',
-  modules: Array.isArray(cp.modules) ? cp.modules : [],
-  sortOrder: Number(cp.sortOrder || 0), enabled, soldOut
-});
-
+        id: cp.id, name: cp.name || '', price: Number(cp.price || 0),
+        category: cp.category || '未分類', image: cp.image || '',
+        description: cp.description || '',
+        modules: Array.isArray(cp.modules) ? cp.modules : [],
+        sortOrder: Number(cp.sortOrder || 0), enabled, soldOut
+      });
       usedIds.add(cp.id);
     });
     localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
@@ -816,8 +848,8 @@ export function stopMenuAutoWatch(){
 export async function watchMenuFromFirebase(callback){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const storeId = cfg.projectId || 'default';
-  const menuRef = await getRef('menu/' + storeId);
+  const menuKey = cfg.projectId || 'default';
+  const menuRef = await getRef('menu/' + menuKey);
   dbApi.onValue(menuRef, (snapshot) => {
     const data = snapshot.val();
     if(!data) return;
@@ -829,7 +861,7 @@ export async function watchMenuFromFirebase(callback){
 }
 
 // ============================================================
-// 06.15/5-B 預約 30 分鐘前提醒
+// 預約 30 分鐘前提醒
 // ============================================================
 let reservationReminderInterval = null;
 
@@ -888,7 +920,6 @@ function showReservationReminderOverlay(order){
 function checkReservationReminders(){
   if(!Array.isArray(state.orders)) return;
   const now = Date.now();
-  // 每次只彈一張（避免多張重疊）；若已有 overlay 顯示中就跳過
   const overlay = document.getElementById('reservationReminderOverlay');
   if(overlay && overlay.style.display === 'flex') return;
 
@@ -908,7 +939,6 @@ function checkReservationReminders(){
 
 export function startReservationReminderLoop(){
   if(reservationReminderInterval) return;
-  // 啟動立即跑一次，之後每 60 秒檢查
   try{ checkReservationReminders(); }catch(e){ console.error(e); }
   reservationReminderInterval = setInterval(()=>{
     try{ checkReservationReminders(); }catch(e){ console.error('reservation reminder check failed:', e); }
