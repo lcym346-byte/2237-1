@@ -101,7 +101,7 @@ function collectDebugInfo(){
     orderNo: o.orderNo || '',
     status: String(o.status || ''),
     createdAt: String(o.createdAt || ''),
-    createdAtSliced: o.createdAt ? String(o.createdAt).slice(0,10) : '',
+    const t = o.createdAt ? new Date(o.createdAt).toLocaleDateString('sv-SE') : '';
     matchToday: o.createdAt ? String(o.createdAt).slice(0,10) === today : false,
     total: Number(o.total || 0),
     subtotal: Number(o.subtotal || 0),
