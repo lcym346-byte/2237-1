@@ -247,7 +247,7 @@ app/src/main/AndroidManifest.xml — INTERNET / BLUETOOTH / FOREGROUND_SERVICE /
 動手前先讀完此文件，禁止憑記憶或猜測修改
 每次只改一個檔案 → 一個 commit → 清楚的 commit message
 改完更新「進度紀錄」段落
-給使用者改動時必含：完整檔案內容（單一程式碼區塊）、檔案路徑、GitHub edit URL、commit message
+給使用者改動時必含：單一程式碼區塊.如修改教複雜直接給完整檔案內容、檔案路徑、GitHub edit URL、commit message
 列印議題先看 APK /logs，不要猜中文編碼問題
 多個頁面禁止綁定同一個 button id 的 click handler；新增 button 前先全 repo 搜尋確認 id 沒重複
 標籤模式 qty 展開要同時改 getLabelHtml（瀏覽器）與 buildBridgePayload（APK 路徑），缺一不可
