@@ -8,6 +8,8 @@
  */
 import { state, persistAll } from '../core/store.js';
 import { deepCopy, money } from '../core/utils.js';
+import { _getRef, _dbApi } from './realtime-order-service.js';
+
 
 // ── 鈔票/硬幣面額（由大至小）──
 export const CASH_DENOMINATIONS = [1000, 500, 100, 50, 10, 5, 1];
@@ -147,8 +149,13 @@ export function endSession(opts){
   cleanupOldSessions();
 
   persistAll();
+
+  // 上傳班次歷史到雲端（非同步、不阻塞關班流程）
+  uploadSessionToCloud(ended);
+
   return ended;
 }
+
 
 // ── 追溯歸班：把未指派 sessionId 的線上 pending 單收進指定班次 ──
 export function attachOrphanOrdersToSession(sessionId){
@@ -221,4 +228,81 @@ export function getSessionListHtml(escapeHtml){
       </div>
     `;
   }).join('');
+}
+// ============================================================
+// 上傳班次歷史到雲端（Firebase Realtime DB）
+// 路徑：sessionHistory/{storeId}/{date}/{sessionId}
+// ============================================================
+function localDateKey(input){
+  if(!input) return '';
+  try{
+    const d = new Date(input);
+    if(isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }catch(e){ return ''; }
+}
+
+export async function uploadSessionToCloud(session){
+  try{
+    if(!session || !session.id) return;
+    const cfg = (state.settings && state.settings.dashboard) || {};
+    if(!cfg.enabled || !cfg.storeId){
+      console.warn('[session-cloud] 未設定 storeId，略過上傳');
+      return;
+    }
+    const dateKey = localDateKey(session.endedAt || session.startedAt) || localDateKey(new Date());
+    const path = `sessionHistory/${cfg.storeId}/${dateKey}/${session.id}`;
+
+    // 把該班所有訂單一起打包（精簡欄位避免肥大）
+    const orders = getSessionOrders(session.id).map(o => ({
+      orderNo: o.orderNo || '',
+      createdAt: o.createdAt || '',
+      total: Number(o.total || 0),
+      subtotal: Number(o.subtotal || 0),
+      discountAmount: Number(o.discountAmount || 0),
+      paymentMethod: o.paymentMethod || '',
+      orderType: o.orderType || '',
+      status: o.status || '',
+      itemCount: Array.isArray(o.items) ? o.items.length : 0,
+      items: (o.items || []).map(it => ({
+        name: it.name || '',
+        qty: Number(it.qty || 1),
+        basePrice: Number(it.basePrice || 0),
+        extraPrice: Number(it.extraPrice || 0),
+        options: it.options || null,
+        note: it.note || ''
+      }))
+    }));
+
+    const payload = {
+      sessionId: session.id,
+      storeId: cfg.storeId,
+      storeName: cfg.storeName || '',
+      staffId: session.staffId || '',
+      endStaffId: session.endStaffId || '',
+      startedAt: session.startedAt || '',
+      endedAt: session.endedAt || '',
+      openingCash: Number(session.openingCash || 0),
+      closingCash: Number(session.closingCash || 0),
+      expectedCash: Number(session.expectedCash || 0),
+      cashDiff: Number(session.cashDiff || 0),
+      note: session.note || '',
+      stats: session.stats || null,
+      orders,
+      uploadedAt: new Date().toISOString()
+    };
+
+    const ref = await _getRef(path);
+    const api = _dbApi();
+    if(!ref || !api){
+      console.warn('[session-cloud] Firebase ref 取得失敗');
+      return;
+    }
+    await api.set(ref, payload);
+    console.log('[session-cloud] 上傳成功', path);
+  }catch(err){
+    console.warn('[session-cloud] 上傳失敗', err);
+  }
 }
