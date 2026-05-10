@@ -1,22 +1,21 @@
-/* 中文備註：多店看板資料 publish 模組 v1
- * 將本店即時狀態（心跳 / 今日營業 / 班次）寫到 Firebase Realtime Database
- * 路徑：dashboards/{storeId}/...
+/* 中文備註：多店看板資料 publish 模組 v1.1-debug
+ * 與 v1 相同邏輯，但額外寫入 dashboards/{storeId}/_debug 節點
+ * 用於診斷 calcTodayStats 為何回傳 0
+ *
+ * _debug 內容（純診斷用，UI 看板不讀）：
+ *   todayKey            : 看板認定的「今天」字串
+ *   ordersInState       : state.orders 總筆數
+ *   sampleOrders        : 最近 3 筆訂單的關鍵欄位（status / createdAt / total / subtotal / paymentMethod）
+ *   matchedToday        : 通過 filter 的訂單筆數
+ *   calcResult          : calcTodayStats 的回傳值
+ *   stateKeys           : state 物件第一層 key 列表（確認訂單是否真的存在 state.orders）
  *
  * 公開 API：
- *   ensureDashboardConfig()          → 取得/初始化 dashboard 設定
- *   startDashboardPublish()          → 啟動心跳（30 秒）+ 立即推一次
- *   stopDashboardPublish()
- *   publishDashboardNow()            → 立即推一次（POS 結帳完、班次變動時呼叫）
- *
- * 寫到 Firebase 的資料：
- *   dashboards/{storeId}/heartbeat   { storeName, lastSeenAt }
- *   dashboards/{storeId}/today       { date, salesTotal, orderCount, avgTicket }
- *   dashboards/{storeId}/session     { staffId, startedAt, openingCash, currentCash }  ← 沒班次時為 null
+ *   ensureDashboardConfig() / startDashboardPublish() / stopDashboardPublish() / publishDashboardNow()
  */
 import { state, persistAll } from '../core/store.js';
 import { getCurrentSession, calcSessionStats } from './report-session.js';
 import { _getRef, _dbApi } from './realtime-order-service.js';
- 
 
 const HEARTBEAT_INTERVAL_MS = 30 * 1000;
 let heartbeatTimer = null;
@@ -24,18 +23,12 @@ let heartbeatTimer = null;
 // ============================================================
 // 設定
 // ============================================================
-
-
-// 中文備註：支援用 URL 設定 storeId，例：
-//   https://.../2234/?storeId=store-001&storeName=1號店
-// T2 沒 console，這是唯一可行的設定入口。設定一次寫入 localStorage 後，
-// 之後不必再帶 query string。也可以用 ?dashboard=off 暫時停用。
 function applyDashboardConfigFromURL(){
   try{
     const params = new URLSearchParams(location.search);
     const sid = params.get('storeId');
     const sname = params.get('storeName');
-    const sw = params.get('dashboard');   // 'off' = 停用
+    const sw = params.get('dashboard');
     if(!sid && !sname && !sw) return false;
     if(!state.settings) state.settings = {};
     const cur = state.settings.dashboard || {};
@@ -54,7 +47,6 @@ function applyDashboardConfigFromURL(){
 
 export function ensureDashboardConfig(){
   if(!state.settings) state.settings = {};
-  // 先處理 URL query（首次進站才有效）
   applyDashboardConfigFromURL();
   const cur = state.settings.dashboard || {};
   state.settings.dashboard = {
@@ -64,7 +56,6 @@ export function ensureDashboardConfig(){
   };
   return state.settings.dashboard;
 }
-
 
 function todayKey(){
   const d = new Date();
@@ -101,6 +92,42 @@ function calcSessionSummary(){
   };
 }
 
+// ── 收集 debug 資訊（不影響原邏輯）──
+function collectDebugInfo(){
+  const today = todayKey();
+  const allOrders = state.orders || [];
+  // 取最近 3 筆訂單的關鍵欄位（不送整筆，避免太大）
+  const sampleOrders = allOrders.slice(0, 3).map(o => ({
+    orderNo: o.orderNo || '',
+    status: String(o.status || ''),
+    createdAt: String(o.createdAt || ''),
+    createdAtSliced: o.createdAt ? String(o.createdAt).slice(0,10) : '',
+    matchToday: o.createdAt ? String(o.createdAt).slice(0,10) === today : false,
+    total: Number(o.total || 0),
+    subtotal: Number(o.subtotal || 0),
+    paymentMethod: String(o.paymentMethod || ''),
+    itemCount: Array.isArray(o.items) ? o.items.length : 0
+  }));
+  const matched = allOrders.filter(o => {
+    if(o.status !== 'completed') return false;
+    const t = o.createdAt ? String(o.createdAt).slice(0,10) : '';
+    return t === today;
+  });
+  return {
+    todayKey: today,
+    nowISO: new Date().toISOString(),
+    ordersInState: allOrders.length,
+    sampleOrders,
+    matchedTodayCount: matched.length,
+    calcResult: calcTodayStats(),
+    stateKeys: Object.keys(state || {}),
+    hasOrdersArray: Array.isArray(state.orders),
+    // 也記錄一下 state.reports 結構，以防訂單存在別處
+    reportsKeys: state.reports ? Object.keys(state.reports) : [],
+    sessionsCount: state.reports && Array.isArray(state.reports.sessions) ? state.reports.sessions.length : 0
+  };
+}
+
 // ============================================================
 // 寫入 Firebase
 // ============================================================
@@ -126,17 +153,19 @@ export async function publishDashboardNow(){
     lastSeenAt: new Date().toISOString()
   };
   const today = calcTodayStats();
-  const session = calcSessionSummary();   // 可能為 null
+  const session = calcSessionSummary();
+  const debugInfo = collectDebugInfo();
 
   await Promise.all([
     writeNode('heartbeat', heartbeat),
     writeNode('today', today),
-    writeNode('session', session)         // null 時 set(null) 會把節點刪掉
+    writeNode('session', session),
+    writeNode('_debug', debugInfo)
   ]);
 }
 
 // ============================================================
-// 心跳
+// 更新
 // ============================================================
 export function startDashboardPublish(){
   stopDashboardPublish();
@@ -152,9 +181,9 @@ export function stopDashboardPublish(){
     heartbeatTimer = null;
   }
 }
+
 // ============================================================
-// 隱藏設定入口：在頁面任何位置快速點 5 下（2 秒內）叫出設定 prompt
-// 設計給 T2 等無法操作網址列、無 console 的裝置
+// 隱藏設定入口：頁首快速點 5 下（2 秒內）叫出設定 prompt
 // ============================================================
 (function setupHiddenConfigTrigger(){
   if(typeof window === 'undefined') return;
@@ -164,7 +193,6 @@ export function stopDashboardPublish(){
     const now = Date.now();
     if(now - lastClickAt > 2000) clickCount = 0;
     lastClickAt = now;
-    // 只計算點到頁首 logo / title 區（避免結帳按鈕被亂觸發）
     const target = ev.target;
     if(!target) return;
     const tag = (target.tagName || '').toLowerCase();
@@ -196,4 +224,3 @@ function openDashboardConfigPrompt(){
   alert('已設定店鋪：' + state.settings.dashboard.storeId + ' / ' + state.settings.dashboard.storeName + '\n即將重新整理');
   location.reload();
 }
-
