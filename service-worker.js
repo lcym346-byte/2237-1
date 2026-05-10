@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v2111-cache';
+const CACHE_NAME = 'pos-v20260606-debug-cache';
 const ASSETS = [
   './',
   './index.html',
@@ -19,7 +19,6 @@ const ASSETS = [
   './js/pages/pos-page.js',
   './js/pages/orders-page.js',
   './js/pages/reports-page.js',
-  './js/pages/import-page.js',
   './js/pages/products-page.js',
   './js/pages/settings-page.js',
   './js/modules/cart-service.js',
@@ -28,6 +27,10 @@ const ASSETS = [
   './js/modules/drag-sort.js',
   './js/modules/product-category-manager.js',
   './js/modules/product-module-manager.js',
+  './js/modules/print-service.js',
+  './js/modules/print-bridge.js',
+  './js/modules/realtime-order-service.js',
+  './js/modules/google-backup-service.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];
@@ -46,14 +49,21 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+
+  // Firebase CDN 和外部 API 不做快取
+  const url = new URL(event.request.url);
+  if (url.origin !== location.origin) return;
+
+  // 127.0.0.1 APK 端不做快取（避免攔截到 ping/print）
+  if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return;
+
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
-        return response;
-      }).catch(() => caches.match('./index.html'));
+    fetch(event.request).then((response) => {
+      const clone = response.clone();
+      caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+      return response;
+    }).catch(() => {
+      return caches.match(event.request).then(cached => cached || caches.match('./index.html'));
     })
   );
 });

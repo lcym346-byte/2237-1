@@ -10,15 +10,17 @@
   <link rel="stylesheet" href="styles/online-order.css" />
 </head>
 <body>
-  <div class="online-shell">
-    <header class="online-hero">
-      <div>
-        <div class="online-badge">線上點餐</div>
-        <h1 id="onlineStoreName">立即點餐</h1>
-        <p id="onlineStoreMeta" class="muted">外帶 / 外送皆可</p>
-      </div>
-      <button id="openCartBtn" class="primary-btn online-cart-btn">購物車 <span id="cartQtyBadge">0</span></button>
-    </header>
+  <header class="online-hero">
+  <div>
+    <div class="online-badge">線上點餐</div>
+    <h1 id="onlineStoreName">立即點餐</h1>
+    <p id="onlineStoreMeta" class="muted">外帶 / 外送皆可</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button id="openMyOrdersBtn" class="secondary-btn">📋 我的訂單</button>
+    <button id="openCartBtn" class="primary-btn online-cart-btn">購物車 <span id="cartQtyBadge">0</span></button>
+  </div>
+</header>
 
     <main class="online-layout">
       <aside class="online-left stack">
@@ -31,18 +33,28 @@
 
         <section class="card stack">
           <h2>顧客資訊</h2>
-          <label>訂單類型
+                    <label>訂單類型
             <select id="onlineOrderType">
               <option value="外帶">外帶</option>
-              <option value="外送">外送</option>
+              <option value="內用">內用</option>
+              <option value="預約">預約</option>
             </select>
           </label>
-          <label>姓名
-            <input id="onlineCustomerName" placeholder="請輸入姓名">
-          </label>
-          <label>電話
-            <input id="onlineCustomerPhone" placeholder="請輸入電話">
-          </label>
+          <div id="onlineReservationBlock" style="display:none">
+            <label>選擇預約取餐時間</label>
+            <select id="onlineReservationSlot" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">
+              <option value="">請選擇時段</option>
+            </select>
+            <div id="onlineReservationHint" class="muted" style="font-size:12px;margin-top:4px">起始時間為 1 小時後，每 15 分鐘一個區間，可預約至 2 天內。</div>
+          </div>
+
+          <div style="display:flex;gap:8px;">
+            <label style="flex:1;">姓名
+              <input id="onlineCustomerName" placeholder="請輸入姓名"></label>
+            <label style="flex:1;">電話
+              <input id="onlineCustomerPhone" placeholder="請輸入電話">
+            </label>
+          </div>
           <label>顧客備註
             <textarea id="onlineCustomerNote" rows="3" placeholder="例如：晚點取餐、餐具需求、桌號"></textarea>
           </label>
@@ -109,5 +121,29 @@
       <button id="closeOnlineStatusBtn" class="secondary-btn hidden">關閉</button>
     </div>
   </div>
+  <!-- 我的訂單查詢 modal -->
+<div id="myOrdersModal" class="modal hidden">
+  <div class="modal-backdrop" onclick="document.getElementById('myOrdersModal').classList.add('hidden');"></div>
+  <div class="modal-dialog" style="max-width:520px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="row between wrap">
+      <h2>📋 我的訂單查詢</h2>
+      <button id="closeMyOrdersBtn" class="ghost-btn">✕</button>
+    </div>
+    <div class="stack" style="margin-top:8px">
+      <label>姓名
+        <input id="myOrdersNameInput" placeholder="請輸入完整姓名">
+      </label>
+      <label>電話
+        <input id="myOrdersPhoneInput" placeholder="請輸入完整電話" inputmode="tel">
+      </label>
+      <button id="myOrdersSearchBtn" class="primary-btn">查詢我的訂單</button>
+      <div id="myOrdersHint" class="muted" style="font-size:12px">
+        請輸入訂購時填寫的完整姓名與電話。為避免濫用，每 30 秒只能查詢一次。
+      </div>
+    </div>
+    <div id="myOrdersResult" class="stack" style="margin-top:12px;overflow-y:auto;flex:1"></div>
+  </div>
+</div>
+
 </body>
 </html>

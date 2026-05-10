@@ -1,58 +1,637 @@
-/* 中文備註：styles/products.css，此樣式檔已加入中文說明，方便後續維護。 */
-.products-layout{display:grid;grid-template-columns:0.9fr 1.1fr;gap:20px}
+/* 中文備註：styles/products.css，卡片式佈局 */
+.products-layout{display:flex;flex-direction:column;gap:20px}
 .panel-section{border:1px solid var(--line);border-radius:18px;padding:14px;background:#fff}
-.entity-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid var(--line);border-radius:14px;padding:12px;background:#fff}
-.entity-row.warning{border-color:#f59e0b;background:#fff7ed}
-.entity-row .meta{font-size:13px;color:var(--muted)}
-.products-table{display:flex;flex-direction:column;gap:12px}
-.product-list-item{width:100%}
-.product-card-row{display:grid;grid-template-columns:40px 1fr 260px;gap:12px;padding:14px;border-radius:16px;border:1px solid #e5e7eb;background:#fff;align-items:center}
-.product-card-row.disabled{background:#f8fafc;opacity:.7}
-.drag-icon{font-size:18px;color:#9ca3af}
-.center .title{font-weight:bold;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.center .price{margin-top:4px;font-weight:600}
-.modules{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
-.inline-edit-row{display:flex;align-items:center;gap:10px;margin-top:6px}
-.inline-label{min-width:32px;font-size:13px;color:var(--muted)}
-.inline-price{width:120px;padding:8px 10px}
-.inline-module-toggle{margin-top:8px;padding:6px 10px;border-radius:8px;border:none;background:#eef2ff;color:#1e3a8a}
-.inline-module-panel{margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:14px;background:#fff}
-.inline-module-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px}
-.inline-module-item{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 10px}
-.inline-module-item input{width:auto}
+
+/* 分類與模組用小卡片 */
+.entity-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.entity-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;font-size:13px}
+.entity-card.warning{border-color:#f59e0b;background:#fff7ed}
+.entity-card strong{font-size:14px;display:block;margin-bottom:4px}
+.entity-card .meta{font-size:12px;color:var(--muted)}
+.entity-card .card-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.entity-card .card-actions button{padding:4px 8px;font-size:11px;border-radius:6px;border:none;background:#e5e7eb;cursor:pointer}
+.entity-card .card-actions .delete{background:#fecaca}
+
+/* 模組小卡片 */
+.module-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;font-size:13px}
+.module-card strong{font-size:14px}
+.module-card .meta{font-size:12px;color:var(--muted)}
+.module-card .card-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:8px}
+.module-card .card-actions button{padding:4px 8px;font-size:11px;border-radius:6px;border:none;background:#e5e7eb;cursor:pointer}
+.module-card .card-actions .delete{background:#fecaca}
+.module-expand{margin-top:8px;padding:10px;border:1px solid var(--line);border-radius:10px;background:#f8fafc}
+
+/* 商品小卡片 */
+.product-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.product-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff;font-size:13px;position:relative}
+.product-card.disabled{background:#f8fafc;opacity:.7}
+.product-card .card-thumb{width:100%;aspect-ratio:1;border-radius:10px;object-fit:cover;margin-bottom:6px}
+.product-card .card-thumb-placeholder{width:100%;aspect-ratio:1;border-radius:10px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:24px;margin-bottom:6px}
+.product-card .card-name{font-weight:bold;font-size:14px;margin-bottom:2px}
+.product-card .card-price{font-weight:600;color:#2563eb;margin-bottom:4px}
+.product-card .card-meta{font-size:11px;color:var(--muted)}
+.product-card .card-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+.product-card .card-actions button{padding:4px 8px;font-size:11px;border-radius:6px;border:none;background:#e5e7eb;cursor:pointer}
+.product-card .card-actions .delete{background:#fecaca}
+.product-card .status{position:absolute;top:8px;right:8px}
+
+/* 商品編輯浮動視窗 */
+.product-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:8000;display:flex;align-items:center;justify-content:center}
+.product-modal{background:#fff;border-radius:18px;padding:20px;max-width:520px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)}
+.product-modal h3{margin:0 0 16px;font-size:18px}
+.product-modal .form-grid{display:flex;flex-direction:column;gap:12px}
+.product-modal .form-row{display:flex;flex-direction:column;gap:4px}
+.product-modal .form-row label{font-size:13px;font-weight:600;color:#334155}
+.product-modal .form-row input,
+.product-modal .form-row select{padding:10px;border:1px solid var(--line);border-radius:10px;font-size:15px}
+.product-modal .form-actions{display:flex;gap:10px;margin-top:16px}
+.product-modal .form-actions button{flex:1;padding:12px;border-radius:10px;border:none;font-size:15px;font-weight:bold;cursor:pointer}
+
 .chip{background:#e5edff;padding:4px 8px;border-radius:999px;font-size:12px}
-.status.on{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:6px}
-.status.off{background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:6px}
-.right{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.right button{padding:6px 10px;border-radius:8px;border:none;background:#e5e7eb}
-.right .delete{background:#fecaca}
-.action-stack{display:flex;gap:8px;flex-wrap:wrap}
-.checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
-.checkbox-item{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:12px;padding:10px}
-.checkbox-item input{width:auto;margin-top:3px}
-.module-editor{border:1px solid var(--line);border-radius:18px;padding:14px;background:#fff}
-.option-edit-row{display:grid;grid-template-columns:1.2fr .8fr auto auto;gap:10px;align-items:center}
-.module-options{display:flex;flex-direction:column;gap:10px;margin-top:10px}
-.attached-module{border:1px solid var(--line);border-radius:14px;padding:10px}
-.switch-row{display:flex;justify-content:space-between;align-items:center;margin:10px 0}
-.switch{min-width:50px;padding:6px 12px;border-radius:999px;border:none;font-weight:bold;background:#e5e7eb;color:#374151;transition:.2s}
+.status.on{background:#dcfce7;color:#166534;padding:2px 6px;border-radius:6px;font-size:11px}
+.status.off{background:#fee2e2;color:#b91c1c;padding:2px 6px;border-radius:6px;font-size:11px}
+.tag{background:#f1f5f9;padding:2px 6px;border-radius:6px;font-size:11px;color:#64748b}
+
+.option-edit-row{display:grid;grid-template-columns:1.2fr .8fr auto auto;gap:8px;align-items:center;font-size:13px}
+.module-options{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+.attached-module{border:1px solid var(--line);border-radius:12px;padding:8px;font-size:13px}
+.switch-row{display:flex;justify-content:space-between;align-items:center;margin:8px 0}
+.switch{min-width:44px;padding:4px 10px;border-radius:999px;border:none;font-weight:bold;background:#e5e7eb;color:#374151;font-size:12px;cursor:pointer}
 .switch.on{background:#2563eb;color:#fff}
-.field-error{color:#b91c1c;font-size:12px;margin-top:6px}
+.checkbox-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px}
+.checkbox-item{display:flex;gap:6px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:8px;font-size:13px}
+.checkbox-item input{width:auto;margin-top:2px}
+.field-error{color:#b91c1c;font-size:12px;margin-top:4px}
 .input-error{border-color:#ef4444 !important;background:#fef2f2 !important}
-@media (max-width:1024px){
-  .products-layout{grid-template-columns:1fr}
-  .product-card-row{grid-template-columns:1fr}
-  .right{justify-content:flex-start}
-  .inline-module-grid{grid-template-columns:1fr 1fr}
+
+.product-image-preview{width:120px;height:120px;border:1px dashed var(--line);border-radius:12px;display:flex;align-items:center;justify-content:center;background:#f8fafc;overflow:hidden}
+.product-form-image{width:100%;height:100%;object-fit:cover}
+.product-list-thumb{width:48px;height:48px;border-radius:10px;object-fit:cover}
+
+.pending-card{border:1px solid var(--line);border-radius:12px;background:#fff;padding:12px;font-size:13px}
+
+@media (max-width:768px){
+  .entity-grid{grid-template-columns:repeat(2,1fr)}
+  .product-grid{grid-template-columns:repeat(3,1fr)}
+  .product-modal{max-width:95%;padding:16px}
 }
 
-.pending-card{border:1px solid var(--line);border-radius:16px;background:#fff;padding:14px}
-.field-error{color:#b91c1c;font-size:12px;margin-top:6px}
-.input-error{border-color:#ef4444 !important;background:#fef2f2 !important}
 
-.product-image-preview{min-height:120px;border:1px dashed var(--line);border-radius:14px;padding:10px;display:flex;align-items:center;justify-content:center;background:#fff}
-.product-form-image{max-width:100%;max-height:180px;border-radius:12px;object-fit:cover}
-.product-list-thumb{width:48px;height:48px;border-radius:12px;object-fit:cover;border:1px solid var(--line)}
+/* ===== 商品管理頁 2 欄版型 (Batch 06.10) ===== */
+/* 隱藏時優先（hidden 屬性 / .view 預設） */
+#productsView[hidden]{ display:none !important; }
+/* 顯示時的 flex 容器版型 */
+#productsView:not(.active){ display:none !important; }
+#productsView.active{ display:flex; flex-direction:column; height:calc(100vh - 80px); padding:12px; gap:12px; box-sizing:border-box; }
 
-.product-image-preview{aspect-ratio:1/1}
-.product-form-image{width:100%;height:100%;max-width:260px;max-height:260px;object-fit:cover}
+.products-topbar{
+  display:flex; justify-content:space-between; align-items:center;
+  gap:12px; flex-wrap:wrap;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px;
+}
+.products-topbar .topbar-left{ flex:1; min-width:220px; }
+.products-topbar .topbar-left .input{ width:100%; max-width:480px; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px; }
+.products-topbar .topbar-right{ display:flex; gap:8px; flex-wrap:wrap; }
+.products-topbar .file-btn{ position:relative; cursor:pointer; }
+
+.products-grid-2col{
+  flex:1; display:grid; grid-template-columns: minmax(280px, 380px) 1fr;
+  gap:12px; min-height:0;
+}
+.products-left-pane,
+.products-right-pane{
+  display:flex; flex-direction:column; gap:12px; min-height:0;
+}
+.products-left-pane{ overflow:hidden; }
+.products-right-pane{ overflow:hidden; }
+
+.panel-block{
+  display:flex; flex-direction:column;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  flex:1; min-height:0; overflow:hidden;
+}
+.panel-block .panel-head{
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
+  padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#f9fafb;
+}
+.panel-block .panel-head h3{ margin:0; font-size:15px; font-weight:600; }
+.panel-block .card-list,
+.panel-block .product-table{
+  flex:1; overflow-y:auto; padding:8px 10px;
+}
+
+.card-list .card{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; margin-bottom:6px;
+  background:#fafafa; border:1px solid #e5e7eb; border-radius:8px;
+  cursor:pointer; transition:background 0.15s;
+}
+.card-list .card:hover{ background:#eef2ff; border-color:#c7d2fe; }
+.card-list .card .card-title{ font-weight:600; font-size:14px; }
+.card-list .card .card-meta{ font-size:12px; color:#6b7280; margin-top:2px; }
+.card-list .card .card-actions{ display:flex; gap:6px; }
+
+@media (max-width: 768px){
+  .products-grid-2col{ grid-template-columns: 1fr; }
+  .products-left-pane,.products-right-pane{ overflow:visible; }
+  .panel-block{ min-height:200px; }
+}
+
+/* ===== 動態彈窗共用樣式 ===== */
+.dyn-modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,0.45);
+  display:flex; align-items:center; justify-content:center; z-index:9999;
+}
+.dyn-modal{
+  background:#fff; border-radius:12px; width:min(720px, 92vw);
+  max-height:88vh; display:flex; flex-direction:column; overflow:hidden;
+  box-shadow:0 10px 40px rgba(0,0,0,0.2);
+}
+.dyn-modal .dyn-head{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:12px 16px; border-bottom:1px solid #e5e7eb; background:#f9fafb;
+}
+.dyn-modal .dyn-head h3{ margin:0; font-size:16px; }
+.dyn-modal .dyn-body{ padding:14px 16px; overflow-y:auto; flex:1; }
+.dyn-modal .dyn-foot{
+  display:flex; justify-content:flex-end; gap:8px;
+  padding:10px 16px; border-top:1px solid #e5e7eb; background:#f9fafb;
+}
+.dyn-modal .form-row{ display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap; }
+.dyn-modal .form-row label{ min-width:80px; font-size:13px; color:#374151; }
+.dyn-modal .form-row .input,
+.dyn-modal .form-row select{ flex:1; min-width:140px; padding:6px 10px; border:1px solid #d1d5db; border-radius:6px; }
+.dyn-modal .product-pick-list{ max-height:260px; overflow-y:auto; border:1px solid #e5e7eb; border-radius:8px; padding:6px; }
+.dyn-modal .product-pick-row{
+  display:flex; align-items:center; gap:8px; padding:6px 8px;
+  border-bottom:1px dashed #f3f4f6;
+}
+.dyn-modal .product-pick-row:last-child{ border-bottom:none; }
+.dyn-modal .pick-tools{ display:flex; gap:8px; margin-bottom:8px; }
+.dyn-modal .sub-option-row{
+  display:flex; gap:6px; align-items:center; margin-bottom:6px;
+}
+.dyn-modal .sub-option-row .input{ flex:1; }
+
+
+/* 響應式：螢幕窄時改成上下排 */
+@media (max-width: 768px){
+  .products-grid-2col{
+    grid-template-columns: 1fr;
+    height: auto;
+    overflow:visible;
+  }
+  .products-left-pane,
+  .products-right-pane{
+    overflow:visible;
+  }
+  .entity-cards-grid{
+    max-height:none;
+  }
+}
+
+/* ===== Batch 06.11：兩欄佈局內的商品/分類/模組卡片微調 ===== */
+/* 商品列表的 product-grid 在 panel-block 裡填滿可用空間 */
+.products-right-pane .panel-block .product-table .product-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(160px, 1fr));
+  gap:8px;
+  padding:0;
+}
+/* 分類/模組卡片在 panel-block 內改成單列直排 */
+.products-left-pane .panel-block .card-list{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+}
+.products-left-pane .panel-block .card-list .entity-card,
+.products-left-pane .panel-block .card-list .module-card{
+  margin:0;
+}
+/* 待上架卡片間距 */
+#pendingMenuList .pending-card{ margin-bottom:8px; }
+#pendingMenuList .pending-card:last-child{ margin-bottom:0; }
+
+
+/* ===== Batch 06.12：兩行工具列 + 單欄商品列表 ===== */
+.products-topbar-v2{
+  display:flex; flex-direction:column; gap:8px;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:10px 12px;
+}
+.products-topbar-v2 .products-topbar-row1{ display:flex; gap:8px; }
+.products-topbar-v2 .products-topbar-row1 .input{
+  flex:1; padding:8px 12px; border:1px solid #d1d5db; border-radius:8px;
+}
+.products-topbar-v2 .products-topbar-row2{
+  display:flex; gap:6px; flex-wrap:wrap;
+}
+.products-topbar-v2 .products-topbar-row2 .btn{
+  padding:6px 10px; font-size:13px; border-radius:8px; border:1px solid #d1d5db;
+  background:#fff; cursor:pointer;
+}
+.products-topbar-v2 .products-topbar-row2 .btn.primary{
+  background:#2563eb; color:#fff; border-color:#2563eb;
+}
+.products-topbar-v2 .products-topbar-row2 .file-btn{ display:inline-flex; align-items:center; }
+
+/* 橫向（≥1024）放在一行（非必要：可保留兩行更穩） */
+@media (min-width: 1024px){
+  .products-topbar-v2{ flex-direction:row; align-items:center; }
+  .products-topbar-v2 .products-topbar-row1{ flex:1; min-width:200px; max-width:380px; }
+  .products-topbar-v2 .products-topbar-row2{ flex:none; }
+}
+
+.products-main{ flex:1; min-height:0; display:flex; flex-direction:column; }
+.products-main .panel-block{
+  flex:1; min-height:0; display:flex; flex-direction:column;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;
+}
+.products-main .panel-block .panel-head{
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 12px; border-bottom:1px solid #e5e7eb; background:#f9fafb;
+}
+.products-main .panel-block .panel-head h3{ margin:0; font-size:15px; font-weight:600; }
+.products-main .panel-block .product-table{
+  flex:1; overflow-y:auto; padding:10px;
+}
+.products-main .panel-block .product-table .product-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(170px, 1fr));
+  gap:10px;
+}
+
+/* 待上架彈窗的卡片 */
+#__pendingDynamicModal .pending-card{
+  border:1px solid #e5e7eb; border-radius:10px; padding:10px; margin-bottom:8px; background:#fff;
+}
+#__pendingDynamicModal .pending-card:last-child{ margin-bottom:0; }
+#__pendingDynamicModal .pending-card .row{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+#__pendingDynamicModal .pending-card label{ font-size:12px; color:#6b7280; }
+#__pendingDynamicModal .pending-card input{ width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:6px; font-size:14px; }
+
+/* 分類/模組總覽彈窗的卡片列表 */
+#__categoryListDynamicModal .entity-card,
+#__moduleListDynamicModal .module-card{ margin-bottom:6px; }
+
+
+/* ===== Batch 06.13：商業化精簡風格 ===== */
+
+/* ---- 頂部工具列：按鈕統一外觀（含匯入 file-btn） ---- */
+.products-topbar-v2 .products-topbar-row2 .btn,
+.products-topbar-v2 .products-topbar-row2 label.btn,
+.products-topbar-v2 .products-topbar-row2 .file-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:6px 12px; min-height:32px;
+  font-size:13px; font-weight:500;
+  border:1px solid #d1d5db; border-radius:6px;
+  background:#fff; color:#374151;
+  cursor:pointer; line-height:1;
+  box-sizing:border-box;
+}
+.products-topbar-v2 .products-topbar-row2 .btn:hover,
+.products-topbar-v2 .products-topbar-row2 label.btn:hover{
+  background:#f3f4f6;
+}
+.products-topbar-v2 .products-topbar-row2 .btn.primary{
+  background:#2563eb; color:#fff; border-color:#2563eb;
+}
+.products-topbar-v2 .products-topbar-row2 .btn.primary:hover{
+  background:#1d4ed8;
+}
+.products-topbar-v2 .products-topbar-row2 .btn:disabled{
+  opacity:0.5; cursor:not-allowed;
+}
+
+/* ---- 動態彈窗：統一寬 520px、緊湊 ---- */
+.dyn-modal{
+  width:min(520px, 92vw) !important;
+  max-height:80vh !important;
+  border-radius:10px !important;
+}
+.dyn-modal .dyn-head{
+  padding:10px 14px !important;
+}
+.dyn-modal .dyn-head h3{
+  font-size:15px !important; font-weight:600;
+}
+.dyn-modal .dyn-body{
+  padding:12px 14px !important; font-size:13px;
+}
+.dyn-modal .dyn-foot{
+  padding:8px 14px !important;
+}
+.dyn-modal .dyn-foot .btn{
+  padding:6px 12px; font-size:13px; min-height:30px;
+  border:1px solid #d1d5db; border-radius:6px;
+  background:#fff; color:#374151; cursor:pointer;
+}
+.dyn-modal .dyn-foot .btn.primary{
+  background:#2563eb; color:#fff; border-color:#2563eb;
+}
+.dyn-modal .dyn-foot .btn.danger{
+  background:#fff; color:#b91c1c; border-color:#fecaca;
+}
+.dyn-modal .dyn-head .btn.small{
+  padding:2px 8px; font-size:13px; min-height:24px;
+}
+
+/* ---- 彈窗內表單列（form-row）緊湊 ---- */
+.dyn-modal .form-row{
+  display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:nowrap;
+}
+.dyn-modal .form-row label{
+  min-width:64px; font-size:12px; color:#6b7280; flex:none;
+}
+.dyn-modal .form-row .input,
+.dyn-modal .form-row select,
+.dyn-modal .form-row input[type="text"],
+.dyn-modal .form-row input[type="search"],
+.dyn-modal .form-row input[type="number"]{
+  flex:1; min-width:0; padding:6px 10px;
+  border:1px solid #d1d5db; border-radius:6px;
+  font-size:13px; background:#fff;
+}
+
+/* ---- 商品勾選列表：修正錯位（勾選框 24px、商品名 flex:1） ---- */
+.dyn-modal .product-pick-list{
+  border:1px solid #e5e7eb; border-radius:6px;
+  max-height:220px; overflow-y:auto; padding:0;
+}
+.dyn-modal .product-pick-row{
+  display:flex !important; flex-direction:row !important;
+  align-items:center !important; gap:8px;
+  padding:6px 10px; min-height:32px;
+  border-bottom:1px solid #f3f4f6;
+  cursor:pointer; font-size:13px; line-height:1.3;
+  flex-wrap:nowrap !important;
+}
+.dyn-modal .product-pick-row:last-child{ border-bottom:none; }
+.dyn-modal .product-pick-row:hover{ background:#f9fafb; }
+.dyn-modal .product-pick-row input[type="checkbox"]{
+  flex:none; width:18px; height:18px; margin:0; cursor:pointer;
+}
+.dyn-modal .product-pick-row > span{
+  flex:1 1 auto; min-width:0;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  writing-mode:horizontal-tb !important;
+}
+.dyn-modal .product-pick-row .muted{
+  color:#9ca3af; font-size:12px; margin-left:4px;
+}
+
+/* ---- 全選/全不選工具列 ---- */
+.dyn-modal .pick-tools{
+  display:flex; gap:6px; align-items:center; margin:6px 0 8px;
+}
+.dyn-modal .pick-tools .btn.small{
+  padding:4px 10px; font-size:12px; min-height:26px;
+  border:1px solid #d1d5db; border-radius:6px; background:#fff; cursor:pointer;
+}
+.dyn-modal .pick-tools .muted{ color:#6b7280; font-size:12px; margin-left:6px; }
+
+/* ---- 模組子選項列：橫排 + ▲▼ ---- */
+.dyn-modal .sub-option-row{
+  display:flex !important; align-items:center; gap:6px;
+  margin-bottom:6px; flex-wrap:nowrap;
+}
+.dyn-modal .sub-option-row .input{
+  flex:1; min-width:0; padding:6px 8px; font-size:13px;
+  border:1px solid #d1d5db; border-radius:6px;
+}
+.dyn-modal .sub-option-row input[type="number"]{ max-width:80px; flex:none; }
+.dyn-modal .sub-option-row .btn.small{
+  padding:4px 8px; font-size:12px; min-height:28px; min-width:28px;
+  border:1px solid #d1d5db; border-radius:6px; background:#fff; cursor:pointer;
+}
+.dyn-modal .sub-option-row .btn.small.move{ padding:4px 6px; }
+.dyn-modal .sub-option-row .btn.small.danger{
+  background:#fff; color:#b91c1c; border-color:#fecaca;
+}
+
+/* ---- 分類/模組列表卡片：單列橫排 ---- */
+#__categoryListBody .entity-card,
+#__moduleListBody .module-card{
+  display:flex !important; align-items:center; gap:10px;
+  padding:8px 10px !important; min-height:38px;
+  margin-bottom:4px !important; border-radius:6px !important;
+  border:1px solid #e5e7eb !important;
+  background:#fff !important; font-size:13px;
+}
+#__categoryListBody .entity-card.warning{
+  border-color:#fbbf24 !important; background:#fffbeb !important;
+}
+#__categoryListBody .entity-card strong,
+#__moduleListBody .module-card strong{
+  display:inline !important; font-size:13px !important; font-weight:600;
+  margin:0 !important; flex:none;
+}
+#__categoryListBody .entity-card .meta,
+#__moduleListBody .module-card .meta{
+  flex:1; font-size:12px !important; color:#6b7280; margin:0 !important;
+}
+#__categoryListBody .entity-card .card-actions,
+#__moduleListBody .module-card .card-actions{
+  display:flex; gap:4px; flex:none; margin:0 !important;
+}
+#__categoryListBody .entity-card .card-actions button,
+#__moduleListBody .module-card .card-actions button{
+  padding:4px 8px !important; font-size:12px !important;
+  min-height:26px; min-width:26px;
+  border:1px solid #d1d5db !important; border-radius:5px !important;
+  background:#fff !important; color:#374151 !important; cursor:pointer;
+}
+#__categoryListBody .entity-card .card-actions .move,
+#__moduleListBody .module-card .card-actions .move{
+  padding:4px 6px !important;
+}
+#__categoryListBody .entity-card .card-actions .delete,
+#__moduleListBody .module-card .card-actions .delete{
+  background:#fff !important; color:#b91c1c !important; border-color:#fecaca !important;
+}
+#__categoryListBody .entity-card .card-actions .manage,
+#__categoryListBody .entity-card .card-actions .edit,
+#__moduleListBody .module-card .card-actions .edit{
+  background:#eff6ff !important; color:#2563eb !important; border-color:#bfdbfe !important;
+}
+
+/* ---- 商品編輯彈窗：精簡 ---- */
+.product-modal{
+  width:min(520px, 92vw) !important;
+  max-width:520px !important;
+  max-height:85vh !important;
+  padding:16px !important;
+  border-radius:10px !important;
+}
+.product-modal h3{
+  font-size:15px !important; margin:0 0 12px !important; font-weight:600;
+}
+.product-modal .form-grid{ gap:8px !important; }
+.product-modal .form-row{ gap:4px; }
+.product-modal .form-row label{
+  font-size:12px !important; color:#6b7280 !important; font-weight:normal !important;
+}
+.product-modal .form-row input,
+.product-modal .form-row select{
+  padding:7px 10px !important; font-size:13px !important; border-radius:6px !important;
+}
+/* 圖片區：橫排 */
+.product-modal .form-row .product-image-preview{
+  width:72px !important; height:72px !important;
+  border-radius:8px !important; flex:none;
+  font-size:11px !important;
+}
+.product-modal .form-row .product-form-image{ width:100%; height:100%; object-fit:cover; }
+/* 商品圖片那一列：用 grid 排成「上傳/預覽/移除」橫排 */
+.product-modal .form-row.image-row{
+  display:grid !important;
+  grid-template-columns:auto 72px 1fr;
+  grid-template-rows:auto auto;
+  gap:6px 10px; align-items:center;
+}
+.product-modal .form-row.image-row > label{ grid-column:1/-1; }
+.product-modal .form-row.image-row #productImageInput{
+  grid-column:1; padding:4px !important; font-size:12px !important;
+}
+.product-modal .form-row.image-row #productImagePreview{
+  grid-column:2; grid-row:2;
+}
+.product-modal .form-row.image-row #removeProductImageBtn{
+  grid-column:3; grid-row:2; justify-self:start;
+  padding:4px 10px !important; font-size:12px !important;
+  margin-top:0 !important; min-height:28px;
+}
+/* 模組編輯區 */
+.product-modal #productModulesEditor{ font-size:12px; }
+.product-modal .attached-module{
+  padding:6px 8px !important; border-radius:6px !important;
+  font-size:12px !important; margin-bottom:4px;
+}
+.product-modal .attached-module strong{ font-size:13px !important; }
+.product-modal .attached-module .muted{ font-size:11px !important; }
+.product-modal .attached-module select{ padding:4px 8px !important; font-size:12px !important; }
+
+/* 表單動作按鈕 */
+.product-modal .form-actions{
+  margin-top:14px !important; gap:6px !important;
+}
+.product-modal .form-actions button{
+  padding:8px !important; font-size:13px !important; font-weight:500 !important;
+  border-radius:6px !important;
+}
+
+/* ---- 待上架彈窗卡片：緊湊 ---- */
+#__pendingDynamicModal .pending-card{
+  padding:8px 10px !important; margin-bottom:6px !important; font-size:12px;
+}
+#__pendingDynamicModal .pending-card strong{ font-size:13px; }
+#__pendingDynamicModal .pending-card .tag{
+  font-size:11px; background:#f1f5f9; color:#64748b;
+  padding:1px 6px; border-radius:4px; margin-left:6px;
+}
+#__pendingDynamicModal .pending-card label{ font-size:11px; color:#6b7280; }
+#__pendingDynamicModal .pending-card input{
+  padding:5px 8px !important; font-size:12px !important; border-radius:5px;
+}
+#__pendingDynamicModal .pending-card .btn{
+  padding:5px 10px; font-size:12px; min-height:28px; border-radius:5px;
+  border:1px solid #d1d5db; background:#fff; cursor:pointer;
+}
+#__pendingDynamicModal .pending-card .btn.primary{
+  background:#2563eb; color:#fff; border-color:#2563eb;
+}
+#__pendingDynamicModal .pending-card .btn.danger{
+  background:#fff; color:#b91c1c; border-color:#fecaca;
+}
+
+/* ---- 商品列表主畫面卡片：壓縮 ---- */
+.products-main .panel-block .product-table .product-card{
+  padding:8px !important; font-size:12px;
+}
+.products-main .panel-block .product-table .product-card .card-name{
+  font-size:13px !important; margin-bottom:1px !important;
+}
+.products-main .panel-block .product-table .product-card .card-price{
+  font-size:13px !important; color:#2563eb; margin-bottom:2px !important;
+}
+.products-main .panel-block .product-table .product-card .card-meta{
+  font-size:11px !important; color:#6b7280;
+}
+.products-main .panel-block .product-table .product-card .card-status{
+  position:absolute; top:6px; right:6px;
+}
+.products-main .panel-block .product-table .product-card .status{
+  font-size:10px !important; padding:1px 5px !important; border-radius:4px !important;
+}
+.products-main .panel-block .product-table .product-card .card-actions{
+  display:grid; grid-template-columns:repeat(5, 1fr); gap:3px;
+  margin-top:6px;
+}
+.products-main .panel-block .product-table .product-card .card-actions button{
+  padding:4px 0 !important; font-size:11px !important;
+  min-height:26px; border-radius:4px !important;
+  border:1px solid #d1d5db; background:#fff; color:#374151; cursor:pointer;
+}
+.products-main .panel-block .product-table .product-card .card-actions .delete{
+  background:#fff; color:#b91c1c; border-color:#fecaca;
+}
+.products-main .panel-block .product-table .product-card .card-thumb,
+.products-main .panel-block .product-table .product-card .card-thumb-placeholder{
+  margin-bottom:4px !important;
+}
+
+/* ===== Batch 06.13/4：修正彈窗內商品勾選列表錯位 ===== */
+.dyn-modal .product-pick-list{
+  max-height:260px;
+  overflow:auto;
+  border:1px solid #e5e7eb;
+  border-radius:6px;
+  padding:4px;
+  background:#fff;
+}
+.dyn-modal .product-pick-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:6px 8px;
+  min-height:32px;
+  border-radius:4px;
+  cursor:pointer;
+}
+.dyn-modal .product-pick-row:hover{ background:#f3f4f6; }
+.dyn-modal .product-pick-row input[type="checkbox"]{
+  flex:0 0 18px;
+  width:18px;
+  height:18px;
+  margin:0;
+}
+.dyn-modal .product-pick-row > span{
+  flex:1 1 auto;
+  font-size:13px;
+  line-height:1.3;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.dyn-modal .product-pick-row .muted{ font-size:12px; color:#6b7280; }
+
+/* Batch 06.13/C：匯入 label 按鈕對齊其他 .btn */
+.products-topbar-row2 .btn,
+.products-topbar-v2 .btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:36px;
+  padding:0 14px;
+  box-sizing:border-box;
+  line-height:1;
+  font-size:14px;
+  vertical-align:middle;
+  margin:0;
+}
+.products-topbar-row2 label.btn,
+.products-topbar-v2 label.btn{
+  cursor:pointer;
+}
+
+
+

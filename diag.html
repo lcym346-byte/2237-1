@@ -1,0 +1,19 @@
+<!doctype html>
+<html><body>
+<pre id="out">載入中…</pre>
+<script type="module">
+import { state } from './js/core/store.js';
+window.state = state;
+const out = document.getElementById('out');
+out.textContent = JSON.stringify({
+  categories: state.categories,
+  categoriesType: Array.isArray(state.categories) ? 'array' : typeof state.categories,
+  firstCategory: state.categories?.[0],
+  firstCategoryType: typeof state.categories?.[0],
+  modulesCount: state.modules?.length,
+  firstModule: state.modules?.[0],
+  productsCount: state.products?.length,
+  firstProduct: state.products?.[0]
+}, null, 2);
+</script>
+</body></html>

@@ -1,8 +1,8 @@
 /* 中文備註：styles/layout.css，此樣式檔已加入中文說明，方便後續維護。 */
-#app{display:grid;grid-template-columns:280px 1fr;min-height:100vh}
-.sidebar{background:#0f172a;color:#fff;padding:24px;display:flex;flex-direction:column;gap:12px}
-.brand{font-size:20px;font-weight:800;margin-bottom:8px}
-.nav-btn{background:rgba(255,255,255,.08);color:#fff;text-align:left}
+#app{display:flex;flex-direction:column;min-height:100vh}
+.sidebar{background:#0f172a;color:#fff;padding:6px 10px;display:flex;flex-direction:row;flex-wrap:wrap;gap:4px;align-items:center}
+.brand{font-size:13px;font-weight:800;margin-right:auto}
+.nav-btn{background:#1e293b;color:#fff;text-align:center;padding:6px 12px;font-size:20px;border-radius:8px}
 .nav-btn.active,.nav-btn:hover{background:#1d4ed8}
 .main{padding:24px}
 .view{display:none}
@@ -33,13 +33,15 @@
 .toolbar{margin-bottom:16px}
 .hidden-mobile{display:block}
 @media (max-width:1280px){.responsive-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
-@media (max-width:1024px){
-  #app{grid-template-columns:1fr}
-  .sidebar{position:sticky;top:0;z-index:10;flex-direction:row;flex-wrap:wrap;padding:14px}
-  .brand{width:100%}
+@media (max-width:1180px){
+  #app{grid-template-columns:1fr !important}
+  .sidebar{position:sticky;top:0;z-index:10;flex-direction:row;flex-wrap:wrap;padding:6px 10px;gap:4px}
+  .brand{display:none}
+  .sidebar button.nav-btn{padding:6px 10px !important}
   .content-grid,.content-grid.two,.grid2{grid-template-columns:1fr}
-  .main{padding:16px}
+  .main{padding:10px}
 }
+
 @media (max-width:768px){
   .responsive-filters{grid-template-columns:1fr 1fr}
 }

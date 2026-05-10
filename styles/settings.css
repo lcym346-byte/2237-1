@@ -1,2 +1,313 @@
-/* 中文備註：styles/settings.css，此樣式檔已加入中文說明，方便後續維護。 */
-.settings-list{display:flex;flex-direction:column;gap:12px}
+/* ============================================================
+   设定页 — 简洁按钮列表 + 浮动视窗
+   ============================================================ */
+
+/* 设定页主画面：功能按钮网格 */
+.settings-btn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  padding: 20px;
+  max-width: 900px;
+}
+
+.settings-btn-grid .setting-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px 16px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.15s;
+  min-height: 100px;
+  text-align: center;
+}
+
+.settings-btn-grid .setting-tile:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.15);
+  transform: translateY(-2px);
+}
+
+.settings-btn-grid .setting-tile .tile-icon {
+  font-size: 32px;
+  line-height: 1;
+}
+
+.settings-btn-grid .setting-tile .tile-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.settings-btn-grid .setting-tile .tile-desc {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* 设定浮动视窗 */
+.settings-modal-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 8000;
+  background: rgba(0, 0, 0, 0.5);
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-modal-backdrop.active {
+  display: flex;
+}
+
+.settings-modal {
+  background: #fff;
+  border-radius: 14px;
+  width: 94%;
+  max-width: 600px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+}
+
+.settings-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+.settings-modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  color: #1e293b;
+}
+
+.settings-modal-header .close-modal-btn {
+  background: none;
+  border: none;
+  font-size: 22px;
+  cursor: pointer;
+  color: #64748b;
+  padding: 4px 8px;
+  border-radius: 6px;
+}
+
+.settings-modal-header .close-modal-btn:hover {
+  background: #f1f5f9;
+}
+
+.settings-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.settings-modal-footer {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  padding: 14px 20px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+}
+
+/* 浮动视窗内表单 */
+.sm-form-group {
+  margin-bottom: 16px;
+}
+
+.sm-form-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.sm-form-group input,
+.sm-form-group select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.sm-form-group input:focus,
+.sm-form-group select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.sm-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  font-size: 14px;
+  color: #334155;
+}
+
+.sm-check-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.sm-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 16px 0;
+}
+
+.sm-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1976D2;
+  margin: 16px 0 8px 0;
+  padding-bottom: 4px;
+  border-bottom: 2px solid #e3f2fd;
+}
+
+.sm-btn-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.sm-btn {
+  padding: 8px 16px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.1s;
+}
+
+.sm-btn:hover {
+  background: #f1f5f9;
+}
+
+.sm-btn.primary {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+
+.sm-btn.primary:hover {
+  background: #2563eb;
+}
+
+.sm-btn.danger {
+  background: #fee2e2;
+  color: #dc2626;
+  border-color: #fca5a5;
+}
+
+.sm-btn.success {
+  background: #dcfce7;
+  color: #16a34a;
+  border-color: #86efac;
+}
+
+/* 状态标示 */
+.sm-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sm-status.connected {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.sm-status.disconnected {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.sm-status.unknown {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+/* 印表机信息面板 */
+.sm-info-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: #475569;
+  margin: 8px 0;
+  line-height: 1.6;
+}
+
+/* 响应式 */
+@media (max-width: 600px) {
+  .settings-btn-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .settings-btn-grid .setting-tile {
+    padding: 16px 10px;
+    min-height: 80px;
+  }
+
+  .settings-btn-grid .setting-tile .tile-icon {
+    font-size: 26px;
+  }
+
+  .settings-modal {
+    width: 98%;
+    max-height: 94vh;
+  }
+}
+
+/* ============ 營業時間設定 ============ */
+.bh-day-card{
+  border:1px solid #e2e8f0;border-radius:12px;padding:12px;margin-bottom:10px;background:#fff;
+}
+.bh-day-head{
+  display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;
+}
+.bh-day-head strong{font-size:15px;color:#0f172a}
+.bh-closed-toggle{
+  display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#64748b;cursor:pointer;
+}
+.bh-closed-toggle input{width:16px;height:16px}
+.bh-slots{display:flex;flex-direction:column;gap:8px;margin-bottom:8px}
+.bh-slot-row{
+  display:flex;align-items:center;gap:8px;
+}
+.bh-slot-row input[type="time"]{
+  flex:1;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px;min-width:0;
+}
+.bh-slot-row span{color:#64748b;font-size:13px}
+.bh-slot-row .bh-remove{
+  background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;
+  border-radius:8px;width:32px;height:32px;font-size:14px;cursor:pointer;flex-shrink:0;
+}
+.bh-add-slot{
+  width:100%;font-size:13px;border:1px dashed #94a3b8;background:#f8fafc;color:#475569;
+}
+.bh-add-slot:disabled{opacity:0.4;cursor:not-allowed}

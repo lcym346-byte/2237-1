@@ -1,9 +1,108 @@
 /* 中文備註：js/pages/pos-page.js，此檔已加入中文說明，方便後續維護。 */
+/* 中文備註：js/pages/pos-page.js，此檔已加入中文說明，方便後續維護。 */
+
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml, money, id } from '../core/utils.js';
 import { getDiscountResult, getDiscountType, setDiscountType, handleDiscountInput } from '../modules/cart-service.js';
 import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-service.js';
-import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt } from '../modules/print-service.js';
+import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
+import { hasOpenSession } from '../modules/report-session.js';
+
+// ── 預約功能（POS 端） ──
+const POS_WEEKDAY_MAP = ['sun','mon','tue','wed','thu','fri','sat'];
+
+function posGetBusinessHours(){
+  const bh = (state.settings && state.settings.businessHours) || {};
+  ['mon','tue','wed','thu','fri','sat','sun'].forEach(k => { if(!Array.isArray(bh[k])) bh[k] = []; });
+  return bh;
+}
+
+function posPad2(n){ return String(n).padStart(2,'0'); }
+
+function posCeilToQuarter(date){
+  const d = new Date(date);
+  d.setSeconds(0, 0);
+  const m = d.getMinutes();
+  const next = Math.ceil(m / 15) * 15;
+  if(next === m){
+    d.setMinutes(m + 15);
+  } else if(next >= 60){
+    d.setHours(d.getHours() + 1);
+    d.setMinutes(0);
+  } else {
+    d.setMinutes(next);
+  }
+  return d;
+}
+
+function posBuildReservationSlots(){
+  const bh = posGetBusinessHours();
+  const now = new Date();
+  const earliest = new Date(now.getTime() + 60 * 60 * 1000);
+  const start = posCeilToQuarter(earliest);
+  const slots = [];
+  for(let dayOffset = 0; dayOffset < 2; dayOffset++){
+    const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + dayOffset);
+    const wkKey = POS_WEEKDAY_MAP[day.getDay()];
+    const segments = bh[wkKey] || [];
+    if(!segments.length) continue;
+    segments.forEach(seg => {
+      const [sH, sM] = seg.start.split(':').map(Number);
+      const [eH, eM] = seg.end.split(':').map(Number);
+      const segStart = new Date(day);
+      segStart.setHours(sH, sM, 0, 0);
+      const segEnd = new Date(day);
+      segEnd.setHours(eH, eM, 0, 0);
+      if(segEnd <= segStart) segEnd.setDate(segEnd.getDate() + 1);
+      let cursor = new Date(segStart);
+      while(cursor < segEnd){
+        if(cursor >= start) slots.push(new Date(cursor));
+        cursor.setMinutes(cursor.getMinutes() + 15);
+      }
+    });
+  }
+  return slots;
+}
+
+function posFormatSlotLabel(date){
+  const today = new Date();
+  const isToday = date.getFullYear()===today.getFullYear() && date.getMonth()===today.getMonth() && date.getDate()===today.getDate();
+  const tmr = new Date(today);
+  tmr.setDate(tmr.getDate()+1);
+  const isTmr = date.getFullYear()===tmr.getFullYear() && date.getMonth()===tmr.getMonth() && date.getDate()===tmr.getDate();
+  const prefix = isToday ? '今天' : (isTmr ? '明天' : `${date.getMonth()+1}/${date.getDate()}`);
+  return `${prefix} ${posPad2(date.getHours())}:${posPad2(date.getMinutes())}`;
+}
+
+function posRenderReservationSlots(){
+  const sel = document.getElementById('posReservationSlot');
+  if(!sel) return;
+  const slots = posBuildReservationSlots();
+  sel.innerHTML = '';
+  if(!slots.length){
+    sel.innerHTML = '<option value="">目前無可預約時段</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">請選擇預約時段</option>' + slots.map(d => {
+    const iso = `${d.getFullYear()}-${posPad2(d.getMonth()+1)}-${posPad2(d.getDate())}T${posPad2(d.getHours())}:${posPad2(d.getMinutes())}:00`;
+    return `<option value="${iso}">${posFormatSlotLabel(d)}</option>`;
+  }).join('');
+}
+
+function posTogglePosReservationBlock(){
+  const type = document.getElementById('orderType').value;
+  const sel = document.getElementById('posReservationSlot');
+  if(!sel) return;
+  if(type === '預約'){
+    sel.style.display = 'inline-block';
+    posRenderReservationSlots();
+  } else {
+    sel.style.display = 'none';
+    sel.value = '';
+  }
+}
+
+window.posTogglePosReservationBlock = posTogglePosReservationBlock;
 
 function createConfigState(product){
   const selections = {};
@@ -161,7 +260,7 @@ export function renderProducts(){
   const grid = document.getElementById('productGrid');
   const list = [...state.products].sort((a,b)=>a.sortOrder-b.sortOrder).filter(p=>{
     const catOk = state.settings.selectedCategory==='全部' || p.category===state.settings.selectedCategory;
-    const kwOk = !keyword || [p.name, p.category, ...(p.aliases||[])].join(' ').includes(keyword);
+    const kwOk = !keyword || [p.name, p.category].join(' ').includes(keyword);
     return catOk && kwOk;
   });
   grid.innerHTML = '';
@@ -185,19 +284,40 @@ export function renderProducts(){
     if(p.enabled===false) btn.disabled = true;
     else btn.onclick = ()=> openProductConfigForNew(p.id);
     grid.appendChild(card);
+  
   });
+ 
 }
+
 
 window.refreshPublicProducts = renderProducts;
 
 export function renderCart(){
   const list = document.getElementById('cartList');
-  list.innerHTML = '';
+  const listModal = document.getElementById('cartListModal');
+   list.innerHTML = '';
+
+  // 右側面板：只顯示品項、數量、金額
   if(!state.cart.length){
     list.className = 'cart-list empty';
     list.textContent = '尚未加入商品';
   } else {
     list.className = 'cart-list';
+    state.cart.forEach(item=>{
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;justify-content:space-between;padding:4px 0;font-size:13px;border-bottom:1px solid #f1f5f9';
+      row.innerHTML = `<span>${escapeHtml(item.name)} x${item.qty}</span><strong>${money((item.basePrice + item.extraPrice) * item.qty)}</strong>`;
+      list.appendChild(row);
+    });
+  }
+
+  // 浮動視窗：完整功能
+  if(listModal) listModal.innerHTML = '';
+  if(listModal && !state.cart.length){
+    listModal.className = 'cart-list empty';
+    listModal.textContent = '尚未加入商品';
+  } else if(listModal){
+    listModal.className = 'cart-list';
     state.cart.forEach(item=>{
       const desc = (item.selections||[]).map(s=> `${s.moduleName}:${s.optionName}`).join(' / ');
       const row = document.createElement('div');
@@ -215,63 +335,105 @@ export function renderCart(){
           <button class="secondary-btn small-btn">-</button>
           <span>${item.qty}</span>
           <button class="secondary-btn small-btn">+</button>
-          <button class="secondary-btn small-btn">編輯</button>
+          ${item.productId !== '_discount_' ? '<button class="secondary-btn small-btn">編輯</button>' : ''}
           <button class="danger-btn small-btn">刪除</button>
         </div>
       `;
-      const [minus, plus, edit, del] = row.querySelectorAll('button');
-      minus.onclick = ()=>{ item.qty = Math.max(1, item.qty-1); renderCart(); };
-      plus.onclick = ()=>{ item.qty += 1; renderCart(); };
-      edit.onclick = ()=> openProductConfigForEdit(item.rowId);
-      del.onclick = ()=>{ state.cart = state.cart.filter(x=>x.rowId!==item.rowId); renderCart(); };
-      list.appendChild(row);
+      const buttons = row.querySelectorAll('button');
+      let btnIdx = 0;
+      buttons[btnIdx++].onclick = ()=>{ item.qty = Math.max(1, item.qty-1); renderCart(); };
+      buttons[btnIdx++].onclick = ()=>{ item.qty += 1; renderCart(); };
+      if(item.productId !== '_discount_'){
+        buttons[btnIdx++].onclick = ()=> openProductConfigForEdit(item.rowId);
+      }
+      buttons[btnIdx].onclick = ()=>{ state.cart = state.cart.filter(x=>x.rowId!==item.rowId); renderCart(); };
+      listModal.appendChild(row);
     });
   }
+
+
   const subtotal = state.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
-  const {discountAmount, total} = getDiscountResult(subtotal);
+  const total = Math.max(0, subtotal);
+
   document.getElementById('subtotalText').textContent = money(subtotal);
-  document.getElementById('totalText').textContent = money(total) + (discountAmount ? `（已折 ${money(discountAmount)}）` : '');
+  document.getElementById('totalText').textContent = money(total);
+
+  if(document.getElementById('subtotalTextModal'))
+    document.getElementById('subtotalTextModal').textContent = money(subtotal);
+  if(document.getElementById('totalTextModal'))
+    document.getElementById('totalTextModal').textContent = money(total);
+
+  const badge = document.getElementById('cartBadge');
+  if(badge) badge.textContent = state.cart.reduce((s,x)=> s + x.qty, 0);
 }
 
 function finalizeOrder(paymentMethod){
-  const mode = document.getElementById('paymentTargetMode').value || 'new';
-  const targetOrderId = document.getElementById('paymentTargetOrderId').value || '';
-  const printConfig = getPrintSettings();
-  let order = null;
+    var mode = document.getElementById('paymentTargetMode').value || 'new';
+    var targetOrderId = document.getElementById('paymentTargetOrderId').value || '';
+    var printConfig = getPrintSettings();
 
-  if(mode === 'pending'){
-    order = markPendingOrderPaid(targetOrderId, paymentMethod);
+    var order = null;
+
+    if(mode === 'pending'){
+        order = markPendingOrderPaid(targetOrderId, paymentMethod);
+        document.getElementById('paymentModal').classList.add('hidden');
+        persistAll();
+        window.refreshAllViews();
+
+        // 開錢箱（依設定 openDrawer，且僅結帳時）
+     if(order && paymentMethod === '現金'){
+    openCashDrawer().catch(function(e){ console.error('開錢箱失敗:', e); });
+}
+
+
+// 列印顧客單（路由內部會自動選 Sunmi/藍牙/網路/瀏覽器）
+if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
+    try { printOrderReceipt(order, 'customer'); }
+    catch(e) { console.error('列印顧客單失敗:', e); }
+}
+
+// 列印廚房單
+if(order && printConfig.autoPrintKitchen){
+    try { printKitchenCopies(order); }
+    catch(e) { console.error('列印廚房單失敗:', e); }
+}
+
+
+        alert(paymentMethod === '待付款' ? '仍維持待付款' : '已完成收款');
+        return;
+    }
+
+    order = createOrUpdateOrder(paymentMethod);
     document.getElementById('paymentModal').classList.add('hidden');
     persistAll();
     window.refreshAllViews();
 
-    if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
-      printOrderReceipt(order, 'customer');
-    }
-    if(order && printConfig.autoPrintKitchen){
-      printKitchenCopies(order);
-    }
-
-    alert(paymentMethod === '待付款' ? '仍維持待付款' : '已完成收款');
-    return;
-  }
-
-  order = createOrUpdateOrder(paymentMethod);
-  document.getElementById('paymentModal').classList.add('hidden');
-  persistAll();
-  window.refreshAllViews();
-
-  if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
-    printOrderReceipt(order, 'customer');
-  }
-  if(order && printConfig.autoPrintKitchen){
-    printKitchenCopies(order);
-  }
-
-  alert(paymentMethod === '待付款' ? '已加入待付款' : '結帳完成');
+    // 開錢箱（僅現金付款）
+if(order && paymentMethod === '現金'){
+    openCashDrawer().catch(function(e){ console.error('開錢箱失敗:', e); });
+}
+// 列印顧客單（路由內部會自動選 Sunmi/藍牙/網路/瀏覽器）
+if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
+    try { printOrderReceipt(order, 'customer'); }
+    catch(e) { console.error('列印顧客單失敗:', e); }
 }
 
+// 列印廚房單
+if(order && printConfig.autoPrintKitchen){
+    try { printKitchenCopies(order); }
+    catch(e) { console.error('列印廚房單失敗:', e); }
+}
+
+    alert(paymentMethod === '待付款' ? '已加入待付款' : '結帳完成');
+}
+
+
 export function initPOSPage(){
+    // 預約：訂單類型切換時切換時段選擇器
+  const _otSel = document.getElementById('orderType');
+  if(_otSel) _otSel.addEventListener('change', posTogglePosReservationBlock);
+  posTogglePosReservationBlock();
+
   document.getElementById('productSearch').addEventListener('input', renderProducts);
   document.getElementById('itemQtyInput').addEventListener('input', ()=>{
     const p = state.products.find(x=>x.id===state.configTarget?.productId);
@@ -318,30 +480,122 @@ export function initPOSPage(){
   document.getElementById('cancelProductConfigBtn').onclick = closeProductConfig;
   document.querySelector('#productConfigModal .modal-backdrop').onclick = closeProductConfig;
 
-  document.getElementById('discountAmountBtn').onclick = ()=> { setDiscountType('amount'); persistAll(); document.getElementById('discountAmountBtn').classList.add('active'); document.getElementById('discountPercentBtn').classList.remove('active'); renderCart(); };
-  document.getElementById('discountPercentBtn').onclick = ()=> { setDiscountType('percent'); persistAll(); document.getElementById('discountPercentBtn').classList.add('active'); document.getElementById('discountAmountBtn').classList.remove('active'); renderCart(); };
-  document.getElementById('discountValue').addEventListener('input', ()=>{ handleDiscountInput(); renderCart(); });
-  document.getElementById('clearCartBtn').onclick = ()=>{ state.cart=[]; state.editingOrderId=null; renderCart(); };
-  document.getElementById('printCartReceiptBtn').onclick = ()=>{
+      document.getElementById('checkoutBtn').onclick = ()=>{
+    if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
     if(!state.cart.length) return alert('請先加入商品');
-    printOrderReceipt(buildCartPreviewOrder(), 'customer');
-  };
-  document.getElementById('printCartLabelBtn').onclick = ()=>{
-    if(!state.cart.length) return alert('請先加入商品');
-    printOrderLabels(buildCartPreviewOrder());
-  };
-  document.getElementById('checkoutBtn').onclick = ()=>{
-    if(!state.cart.length) return alert('請先加入商品');
+    // 預約：必須選時段
+    const _ot = document.getElementById('orderType').value;
+    if(_ot === '預約'){
+      const _slot = document.getElementById('posReservationSlot').value;
+      if(!_slot) return alert('請選擇預約取餐時段');
+    }
     document.getElementById('paymentTargetMode').value = 'new';
     document.getElementById('paymentTargetOrderId').value = state.editingOrderId || '';
     document.getElementById('paymentModal').classList.remove('hidden');
   };
+
+
   document.getElementById('closePaymentModal').onclick = ()=> document.getElementById('paymentModal').classList.add('hidden');
   document.querySelector('#paymentModal .modal-backdrop').onclick = ()=> document.getElementById('paymentModal').classList.add('hidden');
   document.querySelectorAll('.pay-btn').forEach(btn=> btn.onclick = ()=> finalizeOrder(btn.dataset.payment));
+  if(document.getElementById('cartModalBtn')){
+    document.getElementById('cartModalBtn').onclick = ()=>{
+      document.getElementById('cartModal').style.display = 'flex';
+    };
+  }
+  if(document.getElementById('closeCartModal')){
+    document.getElementById('closeCartModal').onclick = ()=>{
+      document.getElementById('cartModal').style.display = 'none';
+    };
+  }
+  if(document.getElementById('cartModal')){
+    document.getElementById('cartModal').onclick = (e)=>{
+      if(e.target.id === 'cartModal') document.getElementById('cartModal').style.display = 'none';
+    };
+  }
 
-  if(getDiscountType() === 'percent'){
-    document.getElementById('discountPercentBtn').classList.add('active');
-    document.getElementById('discountAmountBtn').classList.remove('active');
+  if(document.getElementById('checkoutBtnModal')){
+    document.getElementById('checkoutBtnModal').onclick = ()=>{
+      document.getElementById('cartModal').style.display = 'none';
+      document.getElementById('checkoutBtn').click();
+    };
+  }
+  if(document.getElementById('clearCartBtnModal')){
+    document.getElementById('clearCartBtnModal').onclick = ()=>{
+      state.cart = [];
+      state.editingOrderId = null;
+      renderCart();
+    };
+  }
+  document.getElementById('discountAmountBtn').onclick = ()=>{
+    const val = prompt('請輸入折扣金額（正數）');
+    if(!val) return;
+    const amount = Math.abs(Number(val));
+    if(!amount || amount <= 0) return alert('請輸入正確金額');
+    mergeOrPushCartItem({
+      rowId: id(),
+      productId: '_discount_',
+      name: '折扣 -$' + amount,
+      basePrice: -amount,
+      qty: 1,
+      note: '',
+      selections: [],
+      extraPrice: 0
+    });
+    renderCart();
+  };
+  document.getElementById('discountPercentBtn').onclick = ()=>{
+    const val = prompt('請輸入折扣百分比（例如：10 表示打9折）');
+    if(!val) return;
+    const percent = Math.abs(Number(val));
+    if(!percent || percent <= 0 || percent >= 100) return alert('請輸入 1～99 之間的數字');
+    const subtotal = state.cart.reduce((s,x)=> s + (x.basePrice + x.extraPrice) * x.qty, 0);
+    const discountAmount = Math.round(subtotal * percent / 100);
+    if(discountAmount <= 0) return alert('目前購物車金額為 0，無法計算折扣');
+    mergeOrPushCartItem({
+      rowId: id(),
+      productId: '_discount_',
+      name: '折扣 ' + percent + '% (-$' + discountAmount + ')',
+      basePrice: -discountAmount,
+      qty: 1,
+      note: '',
+      selections: [],
+      extraPrice: 0
+    });
+    renderCart();
+  };
+  // ── 06.16/5：未開班鎖定 POS 頁 ──
+  refreshPosLockState();
+  // 切換到 POS 頁時刷新鎖定狀態
+  const posNavBtn = document.querySelector('[data-view="posView"]');
+  if(posNavBtn){
+    posNavBtn.addEventListener('click', refreshPosLockState);
+  }
+    // 首頁側邊「開啟錢箱」按鈕
+  const _drawerBtn = document.getElementById('openCashDrawerBtn');
+  if(_drawerBtn){
+    _drawerBtn.addEventListener('click', async ()=>{
+      try{
+        const ok = await openCashDrawer();
+        if(!ok) alert('開啟錢箱失敗：未偵測到可用印表機，請確認 Sunmi 服務是否運行');
+      }catch(e){
+        alert('開啟錢箱失敗：' + (e.message || e));
+      }
+    });
+  }
+
+  // 開/結班後可呼叫 window.refreshPosLockState 以即時更新
+  window.refreshPosLockState = refreshPosLockState;
+
+}
+// ── 06.16/5：依班次狀態決定是否鎖定 POS 頁 ──
+function refreshPosLockState(){
+  const lock = document.getElementById('posLockOverlay');
+  if(!lock) return;
+  if(hasOpenSession()){
+    lock.style.display = 'none';
+  } else {
+    lock.style.display = 'flex';
   }
 }
+

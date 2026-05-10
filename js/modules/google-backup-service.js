@@ -1,4 +1,9 @@
-/* 中文備註：Google Drive OAuth 直連版。使用 Google OAuth 與 Google Drive API 直接備份與還原，不使用 Apps Script。 */
+/* 中文備註：Google Drive OAuth 直連版（v2.1.25）。
+ * 變更：
+ *   - 補上 googleDriveLogin / Logout / Backup / Restore 別名 export
+ *   - 補 refreshGoogleBackupPanel 空實作（避免 window 呼叫時 undefined）
+ *   - 其餘邏輯不動
+ */
 import { state, persistAll } from '../core/store.js';
 
 const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -7,11 +12,13 @@ let tokenClient = null;
 let accessToken = '';
 let profileEmail = '';
 
+const DEFAULT_CLIENT_ID = '203764995518-sct9k1tpf9fl6nrjh0h7kt8phsr47uas.apps.googleusercontent.com';
+
 function ensureGoogleDriveConfig(){
   if(!state.settings) state.settings = {};
   if(!state.settings.googleDriveBackup){
     state.settings.googleDriveBackup = {
-      clientId: '',
+      clientId: DEFAULT_CLIENT_ID,
       folderId: '',
       autoBackupEnabled: false,
       autoBackupMinutes: 60,
@@ -21,8 +28,12 @@ function ensureGoogleDriveConfig(){
       lastRestoreStatus: '尚未還原'
     };
   }
+  if(!state.settings.googleDriveBackup.clientId){
+    state.settings.googleDriveBackup.clientId = DEFAULT_CLIENT_ID;
+  }
   return state.settings.googleDriveBackup;
 }
+
 
 export function getGoogleBackupConfig(){
   return ensureGoogleDriveConfig();
@@ -39,13 +50,14 @@ export function buildBackupPayload(){
   return {
     exportedAt: new Date().toISOString(),
     source: 'restaurant-pos',
-    version: 'v2_1_16_google_oauth',
+    version: 'v2_1_25_google_oauth',
     payload: {
       categories: state.categories,
       modules: state.modules,
       products: state.products,
       pendingProducts: state.pendingProducts,
       orders: state.orders,
+      customers: state.customers,        // 新增：顧客主檔一起備份
       settings: state.settings,
       reports: state.reports
     }
@@ -60,12 +72,16 @@ function ensureGoogleLibraries(){
 
 async function fetchGoogleProfile(){
   if(!accessToken) return;
-  const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-    headers: { Authorization: `Bearer ${accessToken}` }
-  });
-  if(!res.ok) return;
-  const data = await res.json();
-  profileEmail = data.email || '';
+  try{
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+    if(!res.ok) return;
+    const data = await res.json();
+    profileEmail = data.email || '';
+  }catch(e){
+    console.warn('fetchGoogleProfile failed:', e);
+  }
 }
 
 function getTokenClient(){
@@ -100,6 +116,9 @@ async function requestAccessToken(promptMode = 'consent'){
   });
 }
 
+// ============================================================
+// 對外 API（原始名稱）
+// ============================================================
 export async function signInGoogleDrive(){
   await requestAccessToken('consent');
   return getGoogleDriveSession();
@@ -107,7 +126,8 @@ export async function signInGoogleDrive(){
 
 export function signOutGoogleDrive(){
   if(window.google?.accounts?.oauth2 && accessToken){
-    window.google.accounts.oauth2.revoke(accessToken);
+    try { window.google.accounts.oauth2.revoke(accessToken); }
+    catch(e) {}
   }
   accessToken = '';
   profileEmail = '';
@@ -171,6 +191,7 @@ export async function backupToGoogle(){
   cfg.lastBackupAt = new Date().toISOString();
   cfg.lastBackupStatus = `備份成功：${data.name || data.id || '已建立檔案'}`;
   persistAll();
+  if(typeof window.refreshGoogleBackupPanel === 'function') window.refreshGoogleBackupPanel();
   return data;
 }
 
@@ -202,6 +223,7 @@ export async function restoreFromGoogle(fileId = ''){
   if(Array.isArray(payload.products)) state.products = payload.products;
   if(Array.isArray(payload.pendingProducts)) state.pendingProducts = payload.pendingProducts;
   if(Array.isArray(payload.orders)) state.orders = payload.orders;
+  if(payload.customers && typeof payload.customers === 'object') state.customers = payload.customers;
   if(payload.settings) state.settings = payload.settings;
   if(payload.reports) state.reports = payload.reports;
 
@@ -209,9 +231,21 @@ export async function restoreFromGoogle(fileId = ''){
   newCfg.lastRestoreAt = new Date().toISOString();
   newCfg.lastRestoreStatus = '還原成功';
   persistAll();
+  if(typeof window.refreshGoogleBackupPanel === 'function') window.refreshGoogleBackupPanel();
   return payload;
 }
 
+// ============================================================
+// 別名 export（給 app.js 直接綁 window 用）
+// ============================================================
+export const googleDriveLogin = signInGoogleDrive;
+export const googleDriveLogout = signOutGoogleDrive;
+export const googleDriveBackup = backupToGoogle;
+export const googleDriveRestore = restoreFromGoogle;
+
+// ============================================================
+// 自動備份
+// ============================================================
 let autoBackupTimer = null;
 
 export function startGoogleAutoBackup(){
@@ -245,4 +279,10 @@ export async function initializeGoogleDriveApi(){
     await new Promise(resolve => window.gapi.load('client', resolve));
     await window.gapi.client.init({ discoveryDocs: [DISCOVERY_DOC] });
   }
+}
+
+// 預設空實作，避免 window.refreshGoogleBackupPanel 呼叫時 undefined
+// app.js 會視情況覆寫成真正的刷新函式
+if(typeof window !== 'undefined' && !window.refreshGoogleBackupPanel){
+  window.refreshGoogleBackupPanel = function(){};
 }
