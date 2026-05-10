@@ -1,15 +1,5 @@
-/* 中文備註：多店看板資料 publish 模組 v1.1-debug
- * 與 v1 相同邏輯，但額外寫入 dashboards/{storeId}/_debug 節點
- * 用於診斷 calcTodayStats 為何回傳 0
- *
- * _debug 內容（純診斷用，UI 看板不讀）：
- *   todayKey            : 看板認定的「今天」字串
- *   ordersInState       : state.orders 總筆數
- *   sampleOrders        : 最近 3 筆訂單的關鍵欄位（status / createdAt / total / subtotal / paymentMethod）
- *   matchedToday        : 通過 filter 的訂單筆數
- *   calcResult          : calcTodayStats 的回傳值
- *   stateKeys           : state 物件第一層 key 列表（確認訂單是否真的存在 state.orders）
- *
+/* 中文備註：多店看板資料 publish 模組 v1.2-tzfix
+ * 修正：calcTodayStats 改用本機時區比對日期（解決跨日訂單數為 0 問題）
  * 公開 API：
  *   ensureDashboardConfig() / startDashboardPublish() / stopDashboardPublish() / publishDashboardNow()
  */
@@ -57,6 +47,7 @@ export function ensureDashboardConfig(){
   return state.settings.dashboard;
 }
 
+// 用本機時區產生 YYYY-MM-DD
 function todayKey(){
   const d = new Date();
   return d.getFullYear() + '-' +
@@ -64,13 +55,28 @@ function todayKey(){
     String(d.getDate()).padStart(2,'0');
 }
 
-// ── 計算今日營業統計（用本機 state.orders）──
+// 把任意 createdAt（ISO 字串或 timestamp）轉成本機時區的 YYYY-MM-DD
+function localDateKey(input){
+  if(!input) return '';
+  try{
+    const d = new Date(input);
+    if(isNaN(d.getTime())) return '';
+    return d.getFullYear() + '-' +
+      String(d.getMonth()+1).padStart(2,'0') + '-' +
+      String(d.getDate()).padStart(2,'0');
+  }catch(e){
+    return '';
+  }
+}
+
+// ── 計算今日營業統計（用本機時區比對日期）──
 function calcTodayStats(){
   const today = todayKey();
   const orders = (state.orders || []).filter(o => {
-    if(o.status !== 'completed') return false;
-    const t = o.createdAt ? o.createdAt.slice(0,10) : '';
-    return t === today;
+    const status = String(o.status || '').toLowerCase();
+    if(['void','cancelled','refunded'].includes(status)) return false;
+    if(status !== 'completed') return false;
+    return localDateKey(o.createdAt) === today;
   });
   const salesTotal = orders.reduce((s,o)=>s + Number(o.total||0), 0);
   const orderCount = orders.length;
@@ -92,26 +98,24 @@ function calcSessionSummary(){
   };
 }
 
-// ── 收集 debug 資訊（不影響原邏輯）──
+// ── 收集 debug 資訊 ──
 function collectDebugInfo(){
   const today = todayKey();
   const allOrders = state.orders || [];
-  // 取最近 3 筆訂單的關鍵欄位（不送整筆，避免太大）
   const sampleOrders = allOrders.slice(0, 3).map(o => ({
     orderNo: o.orderNo || '',
     status: String(o.status || ''),
     createdAt: String(o.createdAt || ''),
-    const t = o.createdAt ? new Date(o.createdAt).toLocaleDateString('sv-SE') : '';
-    matchToday: o.createdAt ? String(o.createdAt).slice(0,10) === today : false,
+    createdAtSliced: localDateKey(o.createdAt),
+    matchToday: localDateKey(o.createdAt) === today,
     total: Number(o.total || 0),
     subtotal: Number(o.subtotal || 0),
     paymentMethod: String(o.paymentMethod || ''),
     itemCount: Array.isArray(o.items) ? o.items.length : 0
   }));
   const matched = allOrders.filter(o => {
-    if(o.status !== 'completed') return false;
-    const t = o.createdAt ? String(o.createdAt).slice(0,10) : '';
-    return t === today;
+    if(String(o.status || '').toLowerCase() !== 'completed') return false;
+    return localDateKey(o.createdAt) === today;
   });
   return {
     todayKey: today,
@@ -121,10 +125,7 @@ function collectDebugInfo(){
     matchedTodayCount: matched.length,
     calcResult: calcTodayStats(),
     stateKeys: Object.keys(state || {}),
-    hasOrdersArray: Array.isArray(state.orders),
-    // 也記錄一下 state.reports 結構，以防訂單存在別處
-    reportsKeys: state.reports ? Object.keys(state.reports) : [],
-    sessionsCount: state.reports && Array.isArray(state.reports.sessions) ? state.reports.sessions.length : 0
+    hasOrdersArray: Array.isArray(state.orders)
   };
 }
 
