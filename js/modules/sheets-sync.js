@@ -7,6 +7,7 @@
  *   - 全域 API：window.sheetsSyncNow / window.sheetsSyncStatus / window.sheetsSyncReset
  */
 import { state, persistAll } from '../core/store.js';
+import { STORE_CONFIG } from '../core/store-config.js';
 
 // ========= 設定 =========
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxbQTMq2BZOvdIexY3pz_DERQGe44aR_OLIf-xZbt8MHHDjEI-WHe5408A9qXvTonlC/exec';
@@ -50,11 +51,14 @@ function ensureSyncConfig(){
 function getStoreInfo(){
   const s = (state.settings && state.settings.store) || {};
   const d = (state.settings && state.settings.dashboard) || {};
+  const cfgId   = (STORE_CONFIG && STORE_CONFIG.storeId   || '').trim();
+  const cfgName = (STORE_CONFIG && STORE_CONFIG.storeName || '').trim();
   return {
-    storeId:   s.storeId   || d.storeId   || 'store001',
-    storeName: s.storeName || d.storeName || '測試店'
+    storeId:   cfgId   || s.storeId   || d.storeId   || 'store001',
+    storeName: cfgName || s.storeName || d.storeName || '測試店'
   };
 }
+
 
 // ========= 序列化訂單 =========
 function serializeOrder(o){
