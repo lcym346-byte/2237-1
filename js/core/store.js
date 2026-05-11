@@ -80,7 +80,7 @@ const DEFAULT_PRINT_FIELDS = {
 };
 
 const DEFAULT_PRINT_CONFIG = {
-  storeName: '我的店',
+  storeName: '大王雞脆皮炸雞',
   storePhone: '',
   storeAddress: '',
   receiptFooter: '謝謝光臨',
