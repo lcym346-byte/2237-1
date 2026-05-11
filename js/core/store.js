@@ -395,39 +395,28 @@ function applyHydrate(saved){
   }
 }
 
-// ─────────────────────────────────────────────
-// URL 綁定 + 同步到 dashboard 設定（v20260608-b 增強）
-// ─────────────────────────────────────────────
-function applyStoreBindingFromUrl(){
-  try {
-    const params = new URLSearchParams(location.search);
-    const urlStoreId = (params.get('storeId') || '').trim();
-    const urlStoreName = (params.get('storeName') || '').trim();
-    if (!urlStoreId) {
-      // 沒帶 URL 參數時，若 store 已綁定，仍要把 storeId 同步到 dashboard 設定
-      syncStoreToDashboard();
-      return false;
-    }
-
-    const cur = state.settings.store || {};
-    if (cur.boundAt && cur.storeId && cur.storeId !== DEFAULT_STORE_BINDING.storeId) {
-      console.log('[store] 已綁定 store=' + cur.storeId + '，URL 參數忽略');
-      syncStoreToDashboard();
-      return false;
-    }
-    state.settings.store = {
-      storeId: urlStoreId,
-      storeName: urlStoreName || urlStoreId,
-      boundAt: new Date().toISOString()
-    };
-    syncStoreToDashboard();
-    console.log('[store] 由 URL 綁定店家 →', state.settings.store);
-    return true;
-  } catch (e) {
-    console.error('applyStoreBindingFromUrl failed:', e);
-    return false;
+  // 套用店家綁定：優先使用 store-config.js（強制鎖定），否則退回 URL 參數
+  function applyStoreBindingFromUrl(s){
+    try{
+      if(!s.settings) s.settings = {};
+      if(!s.settings.store) s.settings.store = {};
+      // 1) 來自 store-config.js（寫死，最高優先）
+      const cfgId   = (STORE_CONFIG && STORE_CONFIG.storeId   || '').trim();
+      const cfgName = (STORE_CONFIG && STORE_CONFIG.storeName || '').trim();
+      if(cfgId)   s.settings.store.storeId   = cfgId;
+      if(cfgName) s.settings.store.storeName = cfgName;
+      // 2) 若 store-config 沒鎖，再讀 URL 參數
+      if(!(STORE_CONFIG && STORE_CONFIG.lockFromUrl)){
+        const usp = new URLSearchParams(location.search);
+        const qid = (usp.get('storeId')||'').trim();
+        const qname = (usp.get('storeName')||'').trim();
+        if(qid   && !s.settings.store.storeId)   s.settings.store.storeId   = qid;
+        if(qname && !s.settings.store.storeName) s.settings.store.storeName = qname;
+      }
+      console.log('[store] 店家綁定 →', s.settings.store, '(lockFromUrl=', !!(STORE_CONFIG && STORE_CONFIG.lockFromUrl), ')');
+    }catch(_){}
   }
-}
+
 
 // 將 state.settings.store 同步到 state.settings.dashboard，
 // 讓既有的 dashboard-publish、realtime-order-service 直接生效
@@ -669,24 +658,32 @@ export function persistAll(){
 // ─────────────────────────────────────────────
 // 重綁店家 / 預設資料 / 匯出匯入
 // ─────────────────────────────────────────────
-state.rebindStore = function(newStoreId, newStoreName){
-  if (newStoreId) {
-    state.settings.store = {
-      storeId: String(newStoreId).trim(),
-      storeName: String(newStoreName || newStoreId).trim(),
-      boundAt: new Date().toISOString()
-    };
-    syncStoreToDashboard();
-    persistAll();
-    console.log('[store] 重新綁定為', state.settings.store);
-    return true;
-  }
-  state.settings.store = JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING));
-  syncStoreToDashboard();
-  persistAll();
-  console.log('[store] 已清除店家綁定，下次帶 ?storeId=xxx 開啟即可重綁');
-  return true;
-};
+  state.rebindStore = function(opts){
+    try{
+      if(!state.settings.store) state.settings.store = {};
+      // 1) 來自 store-config.js（寫死，最高優先）
+      const cfgId   = (STORE_CONFIG && STORE_CONFIG.storeId   || '').trim();
+      const cfgName = (STORE_CONFIG && STORE_CONFIG.storeName || '').trim();
+      if(cfgId)   state.settings.store.storeId   = cfgId;
+      if(cfgName) state.settings.store.storeName = cfgName;
+      // 2) 若呼叫時有明確傳入，仍允許覆蓋（提供測試彈性）
+      if(opts && opts.storeId)   state.settings.store.storeId   = String(opts.storeId).trim();
+      if(opts && opts.storeName) state.settings.store.storeName = String(opts.storeName).trim();
+      // 3) 若 store-config 未鎖，再從 URL 補
+      if(!(STORE_CONFIG && STORE_CONFIG.lockFromUrl) && !(opts && (opts.storeId||opts.storeName))){
+        const usp = new URLSearchParams(location.search);
+        const qid = (usp.get('storeId')||'').trim();
+        const qname = (usp.get('storeName')||'').trim();
+        if(qid   && !state.settings.store.storeId)   state.settings.store.storeId   = qid;
+        if(qname && !state.settings.store.storeName) state.settings.store.storeName = qname;
+      }
+      syncStoreToDashboard(state);
+      persistAll();
+      console.log('[store] 已重新綁定店家 →', state.settings.store);
+      return state.settings.store;
+    }catch(e){ console.warn('[store] rebindStore 失敗', e); }
+  };
+
 
 // 手動觸發雲端備份 / 還原（供設定頁未來呼叫）
 state.cloudBackupNow = cloudBackupNow;
