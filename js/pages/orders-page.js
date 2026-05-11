@@ -1,9 +1,16 @@
-/* 中文備註：js/pages/orders-page.js，此檔已加入中文說明，方便後續維護。 */
+/* 中文備註：js/pages/orders-page.js
+ * v20260608 變更（作廢機制）：
+ *  - 「刪除」改為「作廢」按鈕，要求輸入作廢原因（必填）
+ *  - 作廢單不從 state.orders 移除，改寫 status='void' 並記錄 voidedAt/voidedReason/voidedBy
+ *  - 狀態字串與 dashboard-publish.js 既有過濾規則一致（'void'）
+ *  - 新增「已作廢」摺疊區塊（在已完成下方）
+ *  - 作廢單不可再修改，但可重新列印（追溯用）
+ */
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml, deepCopy, money, fmtLocalDateTime } from '../core/utils.js';
 import { buildRealtimeOrderForPOS, confirmOnlineOrder, getRealtimeConfig, rejectOnlineOrder } from '../modules/realtime-order-service.js';
 import { printKitchenCopies, printOrderLabels, printOrderReceipt, getReceiptHtml, getLabelHtml, previewInModal } from '../modules/print-service.js';
-import { hasOpenSession } from '../modules/report-session.js';
+import { hasOpenSession, getCurrentSession } from '../modules/report-session.js';
 
 
 function renderIncomingOnlineOrders(){
@@ -119,6 +126,7 @@ function loadOrderToCart(orderId){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
   const o = state.orders.find(x=>x.id===orderId);
   if(!o) return;
+  if(o.status === 'void') return alert('此訂單已作廢，無法修改');
   state.cart = deepCopy(o.items);
 
   state.editingOrderId = o.id;
@@ -134,27 +142,71 @@ function loadOrderToCart(orderId){
   alert('已載回點餐頁，可修改後重新結帳');
 }
 
-function renderOrdersSection(wrap, orders, isPending){
+// ── 作廢訂單（取代刪除）──
+// 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
+function voidOrder(orderId){
+  if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
+  const o = state.orders.find(x=>x.id===orderId);
+  if(!o) return;
+  if(o.status === 'void') return alert('此訂單已作廢');
+
+  const reason = prompt(`作廢訂單「${o.orderNo}」\n\n金額：${money(o.total)}\n\n請輸入作廢原因（必填）：`);
+  if(reason === null) return; // 使用者取消
+  const trimmed = String(reason).trim();
+  if(!trimmed){
+    alert('必須輸入作廢原因');
+    return;
+  }
+
+  const currentSession = getCurrentSession();
+  const staffId = currentSession ? currentSession.staffId : '';
+
+  // 記錄原始狀態，方便日後追溯
+  o.statusBeforeVoid = o.status || '';
+  o.status = 'void';
+  o.voidedAt = new Date().toISOString();
+  o.voidedReason = trimmed;
+  o.voidedBy = staffId;
+  o.updatedAt = new Date().toISOString();
+
+  persistAll();
+  window.refreshAllViews();
+  alert(`已作廢訂單「${o.orderNo}」\n原因：${trimmed}`);
+}
+
+function renderOrdersSection(wrap, orders, mode){
+  // mode: 'pending' | 'completed' | 'void'
   wrap.innerHTML = '';
   if(!orders.length){
     wrap.innerHTML = '<div class="muted">沒有資料</div>';
     return;
   }
+  const isPending = mode === 'pending';
+  const isVoid = mode === 'void';
   orders.forEach(o=>{
     const row = document.createElement('div');
-    row.className = 'order-card' + (isPending ? ' pending' : '');
+    row.className = 'order-card' + (isPending ? ' pending' : '') + (isVoid ? ' voided' : '');
+    if(isVoid){
+      row.style.cssText = 'opacity:0.7;background:#fef2f2;border-left:4px solid #ef4444;';
+    }
     const prepMeta = o.prepTimeMinutes ? ` ・ 備餐 ${escapeHtml(String(o.prepTimeMinutes))} 分鐘` : '';
     const readyMeta = o.estimatedReadyAt ? ` ・ 預計完成 ${escapeHtml(fmtLocalDateTime(o.estimatedReadyAt))}` : '';
     const replyMeta = o.merchantReplyMessage ? `<div class="muted">店家回覆：${escapeHtml(o.merchantReplyMessage)}</div>` : '';
+    const voidMeta = isVoid
+      ? `<div style="color:#dc2626;font-weight:600;margin-top:6px;font-size:13px">⚠️ 已作廢：${escapeHtml(o.voidedReason || '無原因')}<br><span class="muted" style="font-weight:normal">作廢時間：${escapeHtml(fmtLocalDateTime(o.voidedAt))}${o.voidedBy ? ' ・ 作廢人：' + escapeHtml(o.voidedBy) : ''}</span></div>`
+      : '';
+    const badgeText = isVoid ? '已作廢' : (isPending ? '待付款' : '已完成');
+    const badgeClass = isVoid ? 'voided' : (isPending ? 'pending' : 'done');
     row.innerHTML = `
       <div class="row between wrap">
         <div>
-          <strong>${escapeHtml(o.orderNo)}</strong>
-          <span class="badge ${isPending ? 'pending' : 'done'}">${isPending ? '待付款' : '已完成'}</span>
-          <div class="muted">${escapeHtml(fmtLocalDateTime(o.createdAt))} ・ ${escapeHtml(o.orderType)} ${o.tableNo ? '・' + escapeHtml(o.tableNo) : ''}${!isPending && o.paymentMethod ? ' ・ 付款：' + escapeHtml(o.paymentMethod) : ''}${prepMeta}${readyMeta}</div>
+          <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escapeHtml(o.orderNo)}</strong>
+          <span class="badge ${badgeClass}" style="${isVoid ? 'background:#fecaca;color:#991b1b' : ''}">${badgeText}</span>
+          <div class="muted">${escapeHtml(fmtLocalDateTime(o.createdAt))} ・ ${escapeHtml(o.orderType)} ${o.tableNo ? '・' + escapeHtml(o.tableNo) : ''}${!isPending && !isVoid && o.paymentMethod ? ' ・ 付款：' + escapeHtml(o.paymentMethod) : ''}${prepMeta}${readyMeta}</div>
           ${replyMeta}
+          ${voidMeta}
         </div>
-        <div><strong>${money(o.total)}</strong></div>
+        <div><strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong></div>
       </div>
       <div class="stack small" style="margin-top:12px">
         ${o.items.map(i=>{
@@ -163,38 +215,28 @@ function renderOrdersSection(wrap, orders, isPending){
         }).join('')}
       </div>
       <div class="row gap wrap" style="margin-top:12px">
-        <button class="secondary-btn small-btn">修改</button>
-        <button class="danger-btn small-btn">刪除</button>
+        ${isVoid ? '' : '<button class="secondary-btn small-btn">修改</button>'}
+        ${isVoid ? '' : '<button class="danger-btn small-btn">作廢</button>'}
         <button class="secondary-btn small-btn">列印顧客單</button>
         <button class="secondary-btn small-btn">列印廚房單</button>
         <button class="secondary-btn small-btn">列印標籤</button>
         ${isPending ? '<button class="primary-btn small-btn">改為已付款</button>' : ''}
       </div>
     `;
-    const btns = row.querySelectorAll('button');
-    btns[0].onclick = ()=> loadOrderToCart(o.id);
-   btns[1].onclick = ()=>{
-  if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
-  if(!confirm(`確定刪除訂單「${o.orderNo}」？`)) return;
+    const btns = Array.from(row.querySelectorAll('button'));
+    let idx = 0;
+    if(!isVoid){
+      btns[idx++].onclick = ()=> loadOrderToCart(o.id);
+      btns[idx++].onclick = ()=> voidOrder(o.id);
+    }
+    btns[idx++].onclick = ()=> printOrderReceipt(o, 'customer');
+    btns[idx++].onclick = ()=> printKitchenCopies(o);
+    btns[idx++].onclick = ()=> printOrderLabels(o);
 
-      state.orders = state.orders.filter(x=>x.id!==o.id);
-      persistAll();
-      window.refreshAllViews();
-    };
-        btns[2].onclick = ()=>{
-      printOrderReceipt(o, 'customer');
-    };
-    btns[3].onclick = ()=>{
-      printKitchenCopies(o);
-    };
-    btns[4].onclick = ()=>{
-      printOrderLabels(o);
-    };
-
-    if(isPending && btns[5]){
-      btns[5].onclick = ()=>{
+    if(isPending && btns[idx]){
+      btns[idx].onclick = ()=>{
         if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
-  document.getElementById('paymentTargetMode').value='pending';
+        document.getElementById('paymentTargetMode').value='pending';
         document.getElementById('paymentTargetOrderId').value = o.id;
         document.getElementById('paymentModal').classList.remove('hidden');
       };
@@ -204,14 +246,72 @@ function renderOrdersSection(wrap, orders, isPending){
 }
 
 export function renderOrders(){
-  renderSessionBanner();           // ← 新增
+  renderSessionBanner();
   renderIncomingOnlineOrders();
   const filtered = getFilteredOrders();
-  renderOrdersSection(document.getElementById('pendingOrdersList'),
-                      filtered.filter(o=>o.status==='pending'), true);
-  renderOrdersSection(document.getElementById('completedOrdersList'),
-                      filtered.filter(o=>o.status==='completed'), false);
+
+  // 分三類：待付款、已完成、已作廢
+  const pending = filtered.filter(o => o.status === 'pending');
+  const completed = filtered.filter(o => o.status === 'completed');
+  const voided = filtered.filter(o => o.status === 'void');
+
+  renderOrdersSection(document.getElementById('pendingOrdersList'), pending, 'pending');
+  renderOrdersSection(document.getElementById('completedOrdersList'), completed, 'completed');
+
+  // 已作廢區塊（動態插入到 completedOrdersList 後面）
+  renderVoidedSection(voided);
 }
+
+function renderVoidedSection(voidedOrders){
+  let wrap = document.getElementById('voidedOrdersWrap');
+  const view = document.getElementById('ordersView');
+  if(!view) return;
+
+  // 若無作廢訂單則隱藏整個區塊
+  if(!voidedOrders.length){
+    if(wrap) wrap.style.display = 'none';
+    return;
+  }
+
+  // 建立區塊
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.id = 'voidedOrdersWrap';
+    wrap.style.cssText = 'margin-top:16px;';
+    wrap.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;cursor:pointer" id="voidedToggle">
+        <h3 style="margin:0;color:#dc2626">⚠️ 已作廢訂單 <span id="voidedCount" style="font-size:14px;color:#94a3b8;font-weight:normal"></span></h3>
+        <button class="secondary-btn small-btn" id="voidedToggleBtn">展開 ▼</button>
+      </div>
+      <div id="voidedOrdersList" style="display:none"></div>
+    `;
+    const completedWrap = document.getElementById('completedOrdersList');
+    if(completedWrap && completedWrap.parentNode){
+      completedWrap.parentNode.appendChild(wrap);
+    } else {
+      view.appendChild(wrap);
+    }
+    const toggleBtn = wrap.querySelector('#voidedToggleBtn');
+    const listEl = wrap.querySelector('#voidedOrdersList');
+    const toggleHeader = wrap.querySelector('#voidedToggle');
+    const toggle = ()=>{
+      const open = listEl.style.display === 'none';
+      listEl.style.display = open ? 'block' : 'none';
+      toggleBtn.textContent = open ? '收合 ▲' : '展開 ▼';
+    };
+    toggleBtn.onclick = (e)=>{ e.stopPropagation(); toggle(); };
+    toggleHeader.onclick = toggle;
+  }
+
+  wrap.style.display = 'block';
+  const countEl = wrap.querySelector('#voidedCount');
+  if(countEl){
+    const totalVoided = voidedOrders.reduce((s,o)=> s + Number(o.total||0), 0);
+    countEl.textContent = `（${voidedOrders.length} 筆，合計 ${money(totalVoided)}，已從營業額扣除）`;
+  }
+  renderOrdersSection(wrap.querySelector('#voidedOrdersList'), voidedOrders, 'void');
+}
+
 function renderSessionBanner(){
   let banner = document.getElementById('ordersSessionBanner');
   const view = document.getElementById('ordersView');
@@ -225,7 +325,7 @@ function renderSessionBanner(){
     banner.id = 'ordersSessionBanner';
     banner.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:10px 14px;border-radius:8px;margin:8px 0;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;';
     banner.innerHTML = `
-      <span>⚠️ 尚未開班，僅能檢視/列印訂單，無法修改、刪除或處理線上單。</span>
+      <span>⚠️ 尚未開班，僅能檢視/列印訂單，無法修改、作廢或處理線上單。</span>
       <button class="primary-btn small-btn" id="ordersBannerGoReports">📊 前往報表頁開班</button>
     `;
     view.insertBefore(banner, view.firstChild);
