@@ -13,7 +13,7 @@
  *   - URL 參數綁定店家（?storeId=xxx&storeName=yyy）
  *   - 顧客主檔、列印欄位、業務時間、Google Drive 備份等
  */
-
+import { STORE_CONFIG } from './store-config.js';
 const DEFAULT_CATEGORIES = ['未分類','主餐','炸物','飲料','小菜','套餐','甜點'];
 
 const DEFAULT_MODULES = [
