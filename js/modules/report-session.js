@@ -1,9 +1,9 @@
-/* 中文備註：班次（值班）服務模組 v2 — Batch 06.16/1
+/* 中文備註：班次（值班）服務模組 v2.1 — v20260608 作廢機制
  * 重點變更：
- *   - startSession 接收 { staffId, cashDetail }
- *   - endSession 接收 { staffId, cashDetail, note } 並計算應收/誤差
- *   - 新增 getCurrentSession / hasOpenSession / attachOrphanOrdersToSession
- *   - 新增 getSessionOrders / calcSessionStats（給報表頁用）
+ *   - v2 (Batch 06.16/1) 基礎：startSession/endSession/getCurrentSession/hasOpenSession 等
+ *   - v20260608 新增：summarizeOrders 排除 status='void' 的訂單（與 dashboard-publish.js 一致）
+ *   - v20260608 新增：stats 內新增 voidedCount / voidedAmount 欄位供報表顯示
+ *   - v20260608 新增：上傳雲端時保留作廢訂單記錄（含 voidedAt / voidedReason / voidedBy）
  *   - sessions 上限 90 天（清理舊資料）
  */
 import { state, persistAll } from '../core/store.js';
@@ -36,21 +36,37 @@ export function hasOpenSession(){
   return !!getCurrentSession();
 }
 
+// ── 判斷是否為作廢/取消/退款單（與 dashboard-publish.js 規約一致）──
+function isVoidedStatus(status){
+  const s = String(status || '').toLowerCase();
+  return s === 'void' || s === 'cancelled' || s === 'refunded';
+}
+
 // ── 計算某些訂單的統計 ──
+// v20260608：作廢/取消/退款單不計入 salesTotal / discountTotal / byType / byPayment / cashSales
+//            但會單獨計入 voidedCount / voidedAmount 供報表追溯
 function summarizeOrders(orders){
   const stats = {
-    orderCount: orders.length,
+    orderCount: 0,
     salesTotal: 0,
     discountTotal: 0,
     byType: {},        // {內用:..., 外帶:...}
     byPayment: {},     // {現金:..., LinePay:...}
-    cashSales: 0       // 現金訂單合計（含結帳當下的現金）
+    cashSales: 0,      // 現金訂單合計（含結帳當下的現金）
+    voidedCount: 0,    // v20260608：作廢單筆數
+    voidedAmount: 0    // v20260608：作廢單金額（已扣除前的原始金額）
   };
   orders.forEach(o => {
     const total = Number(o.total || 0);
     const discount = Number(o.discountAmount || 0);
+    if(isVoidedStatus(o.status)){
+      stats.voidedCount++;
+      stats.voidedAmount += total;
+      return; // 不計入有效營業統計
+    }
     const type = o.orderType || '未分類';
     const pay = o.paymentMethod || '未設定';
+    stats.orderCount++;
     stats.salesTotal += total;
     stats.discountTotal += discount;
     stats.byType[type] = (stats.byType[type] || 0) + total;
@@ -60,7 +76,7 @@ function summarizeOrders(orders){
   return stats;
 }
 
-// ── 取得當前班次的所有訂單 ──
+// ── 取得當前班次的所有訂單（含作廢單；篩選交給上層）──
 export function getSessionOrders(sessionId){
   if(!sessionId) return [];
   return (state.orders || []).filter(o => o.sessionId === sessionId);
@@ -122,7 +138,7 @@ export function endSession(opts){
   const closingCash = calcCashTotal(cashDetail);
   const note = String(opts && opts.note || '').trim();
 
-  // 應收現金 = 期初備用金 + 本班現金訂單合計
+  // 應收現金 = 期初備用金 + 本班現金訂單合計（已排除作廢單）
   const stats = calcSessionStats(current.id);
   const expectedCash = Number(current.openingCash || 0) + Number(stats.cashSales || 0);
   const cashDiff = closingCash - expectedCash;
@@ -139,7 +155,7 @@ export function endSession(opts){
     stats
   };
 
-    if(!state.reports) state.reports = { currentSession: null, sessions: [], savedSnapshots: [] };
+  if(!state.reports) state.reports = { currentSession: null, sessions: [], savedSnapshots: [] };
   if(!Array.isArray(state.reports.sessions)) state.reports.sessions = [];
   state.reports.sessions.unshift(ended);
   state.reports.currentSession = null;
@@ -232,6 +248,8 @@ export function getSessionListHtml(escapeHtml){
 // ============================================================
 // 上傳班次歷史到雲端（Firebase Realtime DB）
 // 路徑：sessionHistory/{storeId}/{date}/{sessionId}
+// v20260608：訂單欄位新增 voidedAt / voidedReason / voidedBy / discountValue / discountType
+//            供多店看板顯示異常單與折扣分析
 // ============================================================
 function localDateKey(input){
   if(!input) return '';
@@ -255,16 +273,24 @@ export async function uploadSessionToCloud(session){
     const dateKey = localDateKey(session.endedAt || session.startedAt) || localDateKey(new Date());
     const path = `sessionHistory/${cfg.storeId}/${dateKey}/${session.id}`;
 
-    // 把該班所有訂單一起打包（精簡欄位避免肥大）
+    // 把該班所有訂單一起打包（含作廢單，欄位精簡避免肥大）
     const orders = getSessionOrders(session.id).map(o => ({
       orderNo: o.orderNo || '',
       createdAt: o.createdAt || '',
+      updatedAt: o.updatedAt || '',
       total: Number(o.total || 0),
       subtotal: Number(o.subtotal || 0),
       discountAmount: Number(o.discountAmount || 0),
+      discountValue: Number(o.discountValue || 0),
+      discountType: o.discountType || '',
       paymentMethod: o.paymentMethod || '',
       orderType: o.orderType || '',
+      tableNo: o.tableNo || '',
       status: o.status || '',
+      statusBeforeVoid: o.statusBeforeVoid || '',
+      voidedAt: o.voidedAt || '',
+      voidedReason: o.voidedReason || '',
+      voidedBy: o.voidedBy || '',
       itemCount: Array.isArray(o.items) ? o.items.length : 0,
       items: (o.items || []).map(it => ({
         name: it.name || '',
