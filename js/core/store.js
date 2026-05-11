@@ -1,19 +1,17 @@
-/* 中文備註：核心狀態管理 store。v20260608 升級。
- * 本版新增：
- *   - IndexedDB 主儲存（資料庫 restaurantPosDB / store kvStore）
- *   - localStorage 雙寫快取（同步讀寫、保留相容）
- *   - 啟動時優先讀 IndexedDB，若無則 fallback localStorage 並自動遷移
- *   - state.settings.store：{ storeId, storeName, boundAt } 店家綁定
- *   - 啟動時讀 URL 參數 ?storeId=xxx&storeName=yyy 自動綁定
- *   - 已綁定則忽略 URL（防誤改），可呼叫 state.rebindStore() 重綁
- *   - 預設 store001 / 測試店（與看板測試店一致）
+/* 中文備註：核心狀態管理 store。v20260608-b 升級。
+ * 本版（相對 v20260608-a）新增：
+ *   - URL 綁定時自動同步寫入 state.settings.dashboard.storeId/storeName
+ *     （讓看板、即時接單、雲端備份共用同一店號）
+ *   - state.settings.cloudBackup：{ lastBackupAt, lastRestoreAt, status, deviceId, enabled }
+ *   - cloudBackupNow()：將完整 state 寫入 Firebase posBackup/{storeId}/state（10 秒節流）
+ *   - persistAll() 觸發後 10 秒節流自動雲端上傳
+ *   - 啟動時若 IndexedDB 為空且雲端有備份 → 跳 confirm 詢問是否還原
+ *   - 還原 confirm 取消後 sessionStorage 記憶，不重複詢問
+ *   - Firebase 連線失敗（離線、權限不足）不影響本地運作
  * 既有功能保留：
- *   - state.customers：顧客主檔
- *   - state.settings.printConfig.fields：列印欄位勾選
- *   - state.settings.printConfig.openDrawer：列印後開錢箱
- *   - state.settings.lastCleanupAt：90 天訂單清理節流時戳
- *   - state.customerLookupRateLimit：顧客自助查單 30 秒節流
- *   - exportAllData / importAllData / seedDemoData
+ *   - IndexedDB 主儲存 + localStorage 雙寫快取
+ *   - URL 參數綁定店家（?storeId=xxx&storeName=yyy）
+ *   - 顧客主檔、列印欄位、業務時間、Google Drive 備份等
  */
 
 const DEFAULT_CATEGORIES = ['未分類','主餐','炸物','飲料','小菜','套餐','甜點'];
@@ -80,7 +78,7 @@ const DEFAULT_PRINT_FIELDS = {
 };
 
 const DEFAULT_PRINT_CONFIG = {
-  storeName: '大王雞脆皮炸雞',
+  storeName: '我的店',
   storePhone: '',
   storeAddress: '',
   receiptFooter: '謝謝光臨',
@@ -100,14 +98,21 @@ const DEFAULT_PRINT_CONFIG = {
   fields: DEFAULT_PRINT_FIELDS
 };
 
-// ── 預設店家設定 ──
 const DEFAULT_STORE_BINDING = {
   storeId: 'store001',
   storeName: '測試店',
   boundAt: ''
 };
 
-// ── 工具：normalize ──
+const DEFAULT_CLOUD_BACKUP = {
+  enabled: true,
+  lastBackupAt: '',
+  lastRestoreAt: '',
+  status: '尚未備份',
+  deviceId: ''
+};
+
+// ── 工具 ──
 function rid(){ return Math.random().toString(36).slice(2,10); }
 
 function normalizeModules(modules){
@@ -179,9 +184,7 @@ function deepMerge(target, source){
 }
 
 // ─────────────────────────────────────────────
-// IndexedDB 極簡 wrapper（v20260608 新增）
-// 資料庫名稱：restaurantPosDB；唯一 store：kvStore（key-value）
-// 不依賴外部套件，原生 IndexedDB API
+// IndexedDB 極簡 wrapper
 // ─────────────────────────────────────────────
 const IDB_NAME = 'restaurantPosDB';
 const IDB_STORE = 'kvStore';
@@ -238,13 +241,8 @@ async function idbSet(key, value){
   }
 }
 
-// ── 同步快取（持有最近一次的 IndexedDB 內容字串副本），開機後由 hydrate 填入 ──
-let _idbCacheRaw = null;
-
-// ── localStorage 鍵 ──
 const LS_KEY = 'restaurantPosState_v2';
 
-// ── 同步讀（給 hydrateState 用，先 localStorage，再期待後續 async hydrate 補 IndexedDB）──
 function loadPersistedSync(){
   try {
     const raw = localStorage.getItem(LS_KEY);
@@ -284,7 +282,8 @@ function buildDefaultState(){
       selectedCategory: '全部',
       showProductImages: true,
       lastCleanupAt: '',
-      store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),  // v20260608 新增
+      store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),
+      cloudBackup: JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP)),  // v20260608-b 新增
       realtimeOrder: {
         enabled: true,
         deviceRole: 'master',
@@ -320,7 +319,6 @@ function buildDefaultState(){
   };
 }
 
-// ── 套用 hydrate 資料到 state（共用給 sync / async 兩條路徑）──
 function applyHydrate(saved){
   if (!saved) return;
   try {
@@ -335,11 +333,9 @@ function applyHydrate(saved){
     if (saved.customers && typeof saved.customers === 'object') state.customers = saved.customers;
 
     if (saved.settings && typeof saved.settings === 'object') {
-      try {
-        deepMerge(state.settings, saved.settings);
-      } catch (e) {
-        console.error('deepMerge settings failed, keeping defaults:', e);
-      }
+      try { deepMerge(state.settings, saved.settings); }
+      catch (e) { console.error('deepMerge settings failed:', e); }
+
       if (!state.settings.printConfig) state.settings.printConfig = {};
       if (!state.settings.printConfig.fields) {
         state.settings.printConfig.fields = JSON.parse(JSON.stringify(DEFAULT_PRINT_FIELDS));
@@ -368,13 +364,22 @@ function applyHydrate(saved){
           }
         });
       }
-      // v20260608：補 store 預設
       if (!state.settings.store || typeof state.settings.store !== 'object') {
         state.settings.store = JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING));
       } else {
         if (!state.settings.store.storeId) state.settings.store.storeId = DEFAULT_STORE_BINDING.storeId;
         if (!state.settings.store.storeName) state.settings.store.storeName = DEFAULT_STORE_BINDING.storeName;
         if (typeof state.settings.store.boundAt === 'undefined') state.settings.store.boundAt = '';
+      }
+      // v20260608-b 新增：補 cloudBackup 預設
+      if (!state.settings.cloudBackup || typeof state.settings.cloudBackup !== 'object') {
+        state.settings.cloudBackup = JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP));
+      } else {
+        Object.keys(DEFAULT_CLOUD_BACKUP).forEach(k => {
+          if (typeof state.settings.cloudBackup[k] === 'undefined') {
+            state.settings.cloudBackup[k] = DEFAULT_CLOUD_BACKUP[k];
+          }
+        });
       }
     }
 
@@ -390,18 +395,24 @@ function applyHydrate(saved){
   }
 }
 
-// ── 解析 URL 參數綁定店家（v20260608 新增）──
+// ─────────────────────────────────────────────
+// URL 綁定 + 同步到 dashboard 設定（v20260608-b 增強）
+// ─────────────────────────────────────────────
 function applyStoreBindingFromUrl(){
   try {
     const params = new URLSearchParams(location.search);
     const urlStoreId = (params.get('storeId') || '').trim();
     const urlStoreName = (params.get('storeName') || '').trim();
-    if (!urlStoreId) return false;
+    if (!urlStoreId) {
+      // 沒帶 URL 參數時，若 store 已綁定，仍要把 storeId 同步到 dashboard 設定
+      syncStoreToDashboard();
+      return false;
+    }
 
     const cur = state.settings.store || {};
-    // 若 IndexedDB / localStorage 已有綁定（boundAt 非空且 storeId 已設），忽略 URL（防誤改）
     if (cur.boundAt && cur.storeId && cur.storeId !== DEFAULT_STORE_BINDING.storeId) {
       console.log('[store] 已綁定 store=' + cur.storeId + '，URL 參數忽略');
+      syncStoreToDashboard();
       return false;
     }
     state.settings.store = {
@@ -409,6 +420,7 @@ function applyStoreBindingFromUrl(){
       storeName: urlStoreName || urlStoreId,
       boundAt: new Date().toISOString()
     };
+    syncStoreToDashboard();
     console.log('[store] 由 URL 綁定店家 →', state.settings.store);
     return true;
   } catch (e) {
@@ -417,43 +429,63 @@ function applyStoreBindingFromUrl(){
   }
 }
 
-// ── 建立 state（先 export 空物件，再用 try/catch 填內容）──
+// 將 state.settings.store 同步到 state.settings.dashboard，
+// 讓既有的 dashboard-publish、realtime-order-service 直接生效
+function syncStoreToDashboard(){
+  try {
+    if (!state.settings) state.settings = {};
+    const s = state.settings.store || {};
+    if (!s.storeId) return;
+    if (!state.settings.dashboard || typeof state.settings.dashboard !== 'object') {
+      state.settings.dashboard = { enabled: true, storeId: '', storeName: '' };
+    }
+    state.settings.dashboard.storeId = s.storeId;
+    state.settings.dashboard.storeName = s.storeName || s.storeId;
+    if (typeof state.settings.dashboard.enabled !== 'boolean') {
+      state.settings.dashboard.enabled = true;
+    }
+  } catch (e) {
+    console.warn('syncStoreToDashboard failed:', e);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 建立 state
+// ─────────────────────────────────────────────
 export const state = buildDefaultState();
 
 (function hydrateState(){
-  // 第一輪：同步讀 localStorage（避免畫面 flash 預設資料）
+  // 第一輪：同步讀 localStorage
   let saved = null;
   try { saved = loadPersistedSync(); } catch (e) { console.error('loadPersistedSync exception:', e); }
   if (saved) applyHydrate(saved);
 
-  // 第一次套用 URL 綁定（若 localStorage 沒綁定）
+  // 套用 URL 綁定 + 同步 dashboard
   const boundByUrlSync = applyStoreBindingFromUrl();
   if (boundByUrlSync) {
-    // 立即寫回 localStorage（IndexedDB 由 async 路徑寫）
     try {
       const toSave = collectStateForPersist();
       localStorage.setItem(LS_KEY, JSON.stringify(toSave));
     } catch (e) {}
   }
 
-  // 第二輪：async 讀 IndexedDB，若資料較新則覆寫
-  idbGet(IDB_KEY).then(idbData => {
+  // 第二輪：async 讀 IndexedDB
+  idbGet(IDB_KEY).then(async idbData => {
     try {
-      _idbCacheRaw = idbData || null;
       if (idbData && typeof idbData === 'object') {
-        // IndexedDB 有資料 → 套用（覆蓋 localStorage 結果）
         applyHydrate(idbData);
-        // 重新套用 URL 綁定（若 IDB 也無有效綁定）
         applyStoreBindingFromUrl();
-        // 通知 UI 重新渲染（若有掛載）
         try { window.dispatchEvent(new CustomEvent('pos-state-hydrated', { detail: { source: 'idb' } })); } catch (e) {}
         console.log('[store] IndexedDB 載入完成，orders=' + (state.orders||[]).length + ' sessions=' + ((state.reports||{}).sessions||[]).length);
       } else if (saved) {
-        // IndexedDB 沒資料但 localStorage 有 → 自動遷移到 IndexedDB
+        // IndexedDB 沒資料但 localStorage 有 → 自動遷移
         const migrate = collectStateForPersist();
         idbSet(IDB_KEY, migrate).then(() => {
           console.log('[store] 已從 localStorage 自動遷移至 IndexedDB');
         });
+      } else {
+        // IndexedDB 與 localStorage 都空 → 嘗試從雲端還原
+        await tryRestoreFromCloud();
       }
     } catch (e) {
       console.error('IndexedDB hydrate failed:', e);
@@ -461,7 +493,6 @@ export const state = buildDefaultState();
   });
 })();
 
-// ── 收集 state 供持久化 ──
 function collectStateForPersist(){
   return {
     categories: state.categories,
@@ -476,27 +507,168 @@ function collectStateForPersist(){
   };
 }
 
-// ── 持久化：同時寫 localStorage + IndexedDB ──
+// ─────────────────────────────────────────────
+// 雲端備份（v20260608-b 新增）
+// 路徑：posBackup/{storeId}/state
+// 動態 import realtime-order-service.js 的 _getRef / _dbApi，避免循環引用
+// ─────────────────────────────────────────────
+const CLOUD_THROTTLE_MS = 10 * 1000;  // 10 秒節流
+let _cloudUploadTimer = null;
+let _cloudUploading = false;
+
+function getDeviceId(){
+  try {
+    let did = localStorage.getItem('pos_device_id');
+    if (!did) {
+      did = 'dev_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
+      localStorage.setItem('pos_device_id', did);
+    }
+    return did;
+  } catch (e) {
+    return 'dev_unknown';
+  }
+}
+
+async function _getCloudRef(subPath){
+  try {
+    const mod = await import('../modules/realtime-order-service.js');
+    const sid = (state.settings?.store?.storeId || state.settings?.dashboard?.storeId || '').trim();
+    if (!sid) return null;
+    const ref = await mod._getRef(`posBackup/${sid}/${subPath}`);
+    return { ref, api: mod._dbApi() };
+  } catch (e) {
+    return null;
+  }
+}
+
+export async function cloudBackupNow(){
+  if (_cloudUploading) return;
+  _cloudUploading = true;
+  try {
+    if (!state.settings) state.settings = {};
+    if (!state.settings.cloudBackup) state.settings.cloudBackup = JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP));
+    if (state.settings.cloudBackup.enabled === false) return;
+
+    const ctx = await _getCloudRef('state');
+    if (!ctx || !ctx.ref || !ctx.api) {
+      state.settings.cloudBackup.status = '雲端尚未連線';
+      return;
+    }
+
+    const snapshot = collectStateForPersist();
+    const payload = {
+      data: snapshot,
+      meta: {
+        version: 'v20260608-b',
+        deviceId: getDeviceId(),
+        backupAt: new Date().toISOString(),
+        orderCount: (state.orders || []).length,
+        sessionCount: ((state.reports || {}).sessions || []).length,
+        storeId: state.settings.store?.storeId || '',
+        storeName: state.settings.store?.storeName || ''
+      }
+    };
+
+    await ctx.api.set(ctx.ref, payload);
+
+    state.settings.cloudBackup.lastBackupAt = payload.meta.backupAt;
+    state.settings.cloudBackup.deviceId = payload.meta.deviceId;
+    state.settings.cloudBackup.status = '備份成功';
+  } catch (e) {
+    console.warn('[cloudBackup] 上傳失敗（不影響本地）:', e?.message || e);
+    if (state.settings?.cloudBackup) {
+      state.settings.cloudBackup.status = '上傳失敗：' + (e?.message || '未知錯誤');
+    }
+  } finally {
+    _cloudUploading = false;
+  }
+}
+
+// 啟動時嘗試從雲端還原（僅在本地完全空白時觸發）
+async function tryRestoreFromCloud(){
+  try {
+    // 防止本次啟動已詢問過
+    if (sessionStorage.getItem('pos_cloud_restore_asked') === '1') return;
+
+    // 確認 storeId 已綁定
+    const sid = (state.settings?.store?.storeId || '').trim();
+    if (!sid) return;
+
+    const ctx = await _getCloudRef('state');
+    if (!ctx || !ctx.ref || !ctx.api) return;
+
+    const snap = await ctx.api.get(ctx.ref);
+    const val = snap && snap.val ? snap.val() : null;
+    if (!val || !val.data || !val.meta) return;
+
+    sessionStorage.setItem('pos_cloud_restore_asked', '1');
+
+    const meta = val.meta;
+    const backupAt = meta.backupAt ? new Date(meta.backupAt).toLocaleString('zh-TW') : '未知';
+    const msg = `偵測到雲端有 ${sid} 的備份：\n\n` +
+                `店家：${meta.storeName || sid}\n` +
+                `訂單數：${meta.orderCount || 0}\n` +
+                `班次數：${meta.sessionCount || 0}\n` +
+                `最後備份：${backupAt}\n` +
+                `來源裝置：${meta.deviceId || '未知'}\n\n` +
+                `目前裝置為空白資料。要從雲端還原嗎？\n\n` +
+                `（按「確定」還原，按「取消」維持空白）`;
+
+    if (confirm(msg)) {
+      applyHydrate(val.data);
+      state.settings.cloudBackup = state.settings.cloudBackup || JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP));
+      state.settings.cloudBackup.lastRestoreAt = new Date().toISOString();
+      state.settings.cloudBackup.status = '已從雲端還原';
+      // 寫回本地
+      try {
+        localStorage.setItem(LS_KEY, JSON.stringify(collectStateForPersist()));
+        await idbSet(IDB_KEY, collectStateForPersist());
+      } catch (e) {}
+      try { window.dispatchEvent(new CustomEvent('pos-state-hydrated', { detail: { source: 'cloud' } })); } catch (e) {}
+      console.log('[cloudBackup] 已從雲端還原 orders=' + (state.orders||[]).length);
+      // 提示使用者重新整理畫面
+      alert('✅ 雲端還原完成，畫面即將重新整理');
+      location.reload();
+    } else {
+      console.log('[cloudBackup] 使用者取消雲端還原');
+    }
+  } catch (e) {
+    console.warn('[cloudBackup] 還原檢查失敗（不影響本地）:', e?.message || e);
+  }
+}
+
+// ─────────────────────────────────────────────
+// 持久化：localStorage + IndexedDB + 雲端（10 秒節流）
+// ─────────────────────────────────────────────
 let _persistIdbTimer = null;
 export function persistAll(){
   try {
     const toSave = collectStateForPersist();
-    // 同步寫 localStorage（保留相容性與啟動加速）
-    try { localStorage.setItem(LS_KEY, JSON.stringify(toSave)); } catch (e) {
-      console.warn('localStorage write failed (可能容量超限):', e);
-    }
-    // 節流寫 IndexedDB（500 ms 內合併多次寫入）
+    try { localStorage.setItem(LS_KEY, JSON.stringify(toSave)); }
+    catch (e) { console.warn('localStorage write failed:', e); }
+
     if (_persistIdbTimer) clearTimeout(_persistIdbTimer);
     _persistIdbTimer = setTimeout(() => {
       idbSet(IDB_KEY, toSave);
       _persistIdbTimer = null;
     }, 500);
+
+    // 雲端備份（10 秒節流，合併期間多次寫入）
+    if (state.settings?.cloudBackup?.enabled !== false) {
+      if (_cloudUploadTimer) clearTimeout(_cloudUploadTimer);
+      _cloudUploadTimer = setTimeout(() => {
+        _cloudUploadTimer = null;
+        cloudBackupNow();
+      }, CLOUD_THROTTLE_MS);
+    }
   } catch (e) {
     console.error('persistAll failed:', e);
   }
 }
 
-// ── 重新綁定店家（清除目前綁定，下次 reload 時可由 URL 重綁）──
+// ─────────────────────────────────────────────
+// 重綁店家 / 預設資料 / 匯出匯入
+// ─────────────────────────────────────────────
 state.rebindStore = function(newStoreId, newStoreName){
   if (newStoreId) {
     state.settings.store = {
@@ -504,18 +676,22 @@ state.rebindStore = function(newStoreId, newStoreName){
       storeName: String(newStoreName || newStoreId).trim(),
       boundAt: new Date().toISOString()
     };
+    syncStoreToDashboard();
     persistAll();
     console.log('[store] 重新綁定為', state.settings.store);
     return true;
   }
-  // 不傳參數：清除綁定，下次帶 URL 參數開啟即可重綁
   state.settings.store = JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING));
+  syncStoreToDashboard();
   persistAll();
   console.log('[store] 已清除店家綁定，下次帶 ?storeId=xxx 開啟即可重綁');
   return true;
 };
 
-// ── seedDefaults：重建預設資料 ──
+// 手動觸發雲端備份 / 還原（供設定頁未來呼叫）
+state.cloudBackupNow = cloudBackupNow;
+state.tryRestoreFromCloud = tryRestoreFromCloud;
+
 export function seedDefaults(){
   const def = buildDefaultState();
   state.categories = def.categories;
@@ -525,15 +701,13 @@ export function seedDefaults(){
   state.cart = [];
   state.orders = [];
   state.customers = {};
-  // settings 與 reports 保留（含 store 綁定）
   persistAll();
 }
 
-// ── 匯出 / 匯入 / 重建 ──
 state.exportAllData = function(){
   return {
     exportedAt: new Date().toISOString(),
-    version: 'v20260608',
+    version: 'v20260608-b',
     categories: state.categories,
     modules: state.modules,
     products: state.products,
