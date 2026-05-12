@@ -449,13 +449,13 @@ export const state = buildDefaultState();
   try { saved = loadPersistedSync(); } catch (e) { console.error('loadPersistedSync exception:', e); }
   if (saved) applyHydrate(saved);
 
-  // 套用 URL 綁定 + 同步 dashboard
-  const boundByUrlSync = applyStoreBindingFromUrl();
-  if (boundByUrlSync) {
-    try {
-      const toSave = collectStateForPersist();
-      localStorage.setItem(LS_KEY, JSON.stringify(toSave));
-    } catch (e) {}
+  // 套用店家綁定（STORE_CONFIG 寫死優先）+ 同步 dashboard
+  applyStoreBindingFromUrl(state);
+  syncStoreToDashboard();
+  try {
+    const toSave = collectStateForPersist();
+    localStorage.setItem(LS_KEY, JSON.stringify(toSave));
+  } catch (e) {}
   }
 
   // 第二輪：async 讀 IndexedDB
