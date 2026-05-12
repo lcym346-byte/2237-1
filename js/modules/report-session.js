@@ -1,14 +1,19 @@
-/* 中文備註：班次（值班）服務模組 v2.1 — v20260608 作廢機制
- * 重點變更：
- *   - v2 (Batch 06.16/1) 基礎：startSession/endSession/getCurrentSession/hasOpenSession 等
- *   - v20260608 新增：summarizeOrders 排除 status='void' 的訂單（與 dashboard-publish.js 一致）
- *   - v20260608 新增：stats 內新增 voidedCount / voidedAmount 欄位供報表顯示
- *   - v20260608 新增：上傳雲端時保留作廢訂單記錄（含 voidedAt / voidedReason / voidedBy）
- *   - sessions 上限 90 天（清理舊資料）
+/* 中文備註：班次（值班）服務模組 v20260613
+ * 本版（相對 v2.1 v20260608）變更：
+ *   - import biz-day.js，sessionHistory dateKey 改用「班次 startedAt 的營業日 BD」
+ *   - endSession 接收 opts.deliveryPanda / opts.deliveryUber（外送平台手動輸入金額）
+ *   - stats 新增 deliveryPanda / deliveryUber / deliveryTotal，並加入 byPayment['其他']
+ *   - 上傳雲端後自動清理 90 自然日前的 sessionHistory 雲端節點
+ *   - 本地 sessions 維持 90 天清理（不變）
+ * 既有功能保留：
+ *   - 作廢機制 isVoidedStatus / voidedCount / voidedAmount
+ *   - 上傳雲端時保留 voidedAt / voidedReason / voidedBy
+ *   - 線上點餐 pending 單追溯歸班 (attachOrphanOrdersToSession)
  */
 import { state, persistAll } from '../core/store.js';
 import { deepCopy, money } from '../core/utils.js';
 import { _getRef, _dbApi } from './realtime-order-service.js';
+import { getBusinessDay } from '../core/biz-day.js';
 
 
 // ── 鈔票/硬幣面額（由大至小）──
@@ -42,19 +47,27 @@ function isVoidedStatus(status){
   return s === 'void' || s === 'cancelled' || s === 'refunded';
 }
 
+// ── 取得 businessHours ──
+function getBH(){
+  return (state.settings && state.settings.businessHours) || {};
+}
+
 // ── 計算某些訂單的統計 ──
-// v20260608：作廢/取消/退款單不計入 salesTotal / discountTotal / byType / byPayment / cashSales
-//            但會單獨計入 voidedCount / voidedAmount 供報表追溯
-function summarizeOrders(orders){
+// v20260613：可選擇性傳入 deliveryPanda / deliveryUber（結班時手動輸入）
+//            加總到 stats.deliveryTotal 與 byPayment['其他']
+function summarizeOrders(orders, deliveryOpts){
   const stats = {
     orderCount: 0,
     salesTotal: 0,
     discountTotal: 0,
-    byType: {},        // {內用:..., 外帶:...}
-    byPayment: {},     // {現金:..., LinePay:...}
-    cashSales: 0,      // 現金訂單合計（含結帳當下的現金）
-    voidedCount: 0,    // v20260608：作廢單筆數
-    voidedAmount: 0    // v20260608：作廢單金額（已扣除前的原始金額）
+    byType: {},
+    byPayment: {},
+    cashSales: 0,
+    voidedCount: 0,
+    voidedAmount: 0,
+    deliveryPanda: 0,
+    deliveryUber: 0,
+    deliveryTotal: 0
   };
   orders.forEach(o => {
     const total = Number(o.total || 0);
@@ -62,7 +75,7 @@ function summarizeOrders(orders){
     if(isVoidedStatus(o.status)){
       stats.voidedCount++;
       stats.voidedAmount += total;
-      return; // 不計入有效營業統計
+      return;
     }
     const type = o.orderType || '未分類';
     const pay = o.paymentMethod || '未設定';
@@ -73,6 +86,20 @@ function summarizeOrders(orders){
     stats.byPayment[pay] = (stats.byPayment[pay] || 0) + total;
     if(pay === '現金') stats.cashSales += total;
   });
+
+  // 外送金額（不算進現金、不算進 orderCount，但加進 salesTotal 與「其他」付款）
+  if(deliveryOpts){
+    const panda = Math.max(0, Number(deliveryOpts.deliveryPanda || 0));
+    const uber  = Math.max(0, Number(deliveryOpts.deliveryUber  || 0));
+    stats.deliveryPanda = panda;
+    stats.deliveryUber = uber;
+    stats.deliveryTotal = panda + uber;
+    if(stats.deliveryTotal > 0){
+      stats.salesTotal += stats.deliveryTotal;
+      stats.byPayment['其他'] = (stats.byPayment['其他'] || 0) + stats.deliveryTotal;
+    }
+  }
+
   return stats;
 }
 
@@ -82,14 +109,13 @@ export function getSessionOrders(sessionId){
   return (state.orders || []).filter(o => o.sessionId === sessionId);
 }
 
-// ── 計算當前班次即時統計（用於報表頁卡片）──
+// ── 計算當前班次即時統計（用於報表頁卡片；當班中沒外送金額）──
 export function calcSessionStats(sessionId){
   const orders = getSessionOrders(sessionId);
-  return summarizeOrders(orders);
+  return summarizeOrders(orders, null);
 }
 
 // ── 開始值班 ──
-// opts: { staffId: 'A1', cashDetail: {1000:1, 500:0, ...} }
 export function startSession(opts){
   if(hasOpenSession()){
     throw new Error('已有進行中的班次，請先結束才能開新班');
@@ -118,7 +144,6 @@ export function startSession(opts){
   };
   state.reports.currentSession = session;
 
-  // 追溯歸班：把 sessionId 為空的「線上點餐 pending」訂單收進當班
   attachOrphanOrdersToSession(session.id);
 
   persistAll();
@@ -126,7 +151,7 @@ export function startSession(opts){
 }
 
 // ── 結束值班 ──
-// opts: { staffId, cashDetail, note }
+// opts: { staffId, cashDetail, note, deliveryPanda, deliveryUber }
 export function endSession(opts){
   const current = getCurrentSession();
   if(!current) throw new Error('目前沒有進行中的班次');
@@ -138,8 +163,15 @@ export function endSession(opts){
   const closingCash = calcCashTotal(cashDetail);
   const note = String(opts && opts.note || '').trim();
 
-  // 應收現金 = 期初備用金 + 本班現金訂單合計（已排除作廢單）
-  const stats = calcSessionStats(current.id);
+  // 外送平台手動輸入金額
+  const deliveryPanda = Math.max(0, Number(opts && opts.deliveryPanda || 0));
+  const deliveryUber  = Math.max(0, Number(opts && opts.deliveryUber  || 0));
+
+  // 統計（含外送加總）
+  const orders = getSessionOrders(current.id);
+  const stats = summarizeOrders(orders, { deliveryPanda, deliveryUber });
+
+  // 應收現金 = 期初備用金 + 現金訂單合計（外送不計入現金）
   const expectedCash = Number(current.openingCash || 0) + Number(stats.cashSales || 0);
   const cashDiff = closingCash - expectedCash;
 
@@ -160,8 +192,7 @@ export function endSession(opts){
   state.reports.sessions.unshift(ended);
   state.reports.currentSession = null;
 
-
-  // 清理 90 天前的歷史班次
+  // 清理 90 天前的本地歷史班次
   cleanupOldSessions();
 
   persistAll();
@@ -188,7 +219,7 @@ export function attachOrphanOrdersToSession(sessionId){
   return count;
 }
 
-// ── 清理 90 天前歷史班次 ──
+// ── 清理 90 天前本地歷史班次 ──
 function cleanupOldSessions(){
   const cutoff = Date.now() - 90 * 86400000;
   state.reports.sessions = (state.reports.sessions || []).filter(s => {
@@ -206,12 +237,12 @@ export function getRecentSessions(days = 30){
   });
 }
 
-// ── 舊 API：保留以避免引用錯誤（report 列印模組可能還在用）──
+// ── 舊 API：保留以避免引用錯誤 ──
 export function saveCurrentSnapshot(orders){
   state.reports.savedSnapshots.unshift({
     id: 'SN' + Date.now(),
     createdAt: new Date().toISOString(),
-    summary: summarizeOrders(orders),
+    summary: summarizeOrders(orders, null),
     orders: deepCopy(orders)
   });
 }
@@ -245,23 +276,13 @@ export function getSessionListHtml(escapeHtml){
     `;
   }).join('');
 }
+
 // ============================================================
 // 上傳班次歷史到雲端（Firebase Realtime DB）
-// 路徑：sessionHistory/{storeId}/{date}/{sessionId}
-// v20260608：訂單欄位新增 voidedAt / voidedReason / voidedBy / discountValue / discountType
-//            供多店看板顯示異常單與折扣分析
+// 路徑：sessionHistory/{storeId}/{BD}/{sessionId}
+// v20260613：dateKey 改用「班次 startedAt 的營業日 BD」（不再用自然日 endedAt）
+//            上傳後自動清理 90 天前的雲端節點
 // ============================================================
-function localDateKey(input){
-  if(!input) return '';
-  try{
-    const d = new Date(input);
-    if(isNaN(d.getTime())) return '';
-    return d.getFullYear() + '-' +
-      String(d.getMonth()+1).padStart(2,'0') + '-' +
-      String(d.getDate()).padStart(2,'0');
-  }catch(e){ return ''; }
-}
-
 export async function uploadSessionToCloud(session){
   try{
     if(!session || !session.id) return;
@@ -270,14 +291,24 @@ export async function uploadSessionToCloud(session){
       console.warn('[session-cloud] 未設定 storeId，略過上傳');
       return;
     }
-    const dateKey = localDateKey(session.endedAt || session.startedAt) || localDateKey(new Date());
+
+    // v20260613：用班次 startedAt 的 BD 當 key（跨日營業班次會正確歸到開班那一天）
+    const bh = getBH();
+    const dateKey = getBusinessDay(session.startedAt, bh)
+                 || getBusinessDay(session.endedAt, bh)
+                 || getBusinessDay(new Date(), bh);
+    if(!dateKey){
+      console.warn('[session-cloud] 無法判定 BD，略過上傳');
+      return;
+    }
     const path = `sessionHistory/${cfg.storeId}/${dateKey}/${session.id}`;
 
-    // 把該班所有訂單一起打包（含作廢單，欄位精簡避免肥大）
+    // 把該班所有訂單一起打包（含作廢單）
     const orders = getSessionOrders(session.id).map(o => ({
       orderNo: o.orderNo || '',
       createdAt: o.createdAt || '',
       updatedAt: o.updatedAt || '',
+      reservationAt: o.reservationAt || '',
       total: Number(o.total || 0),
       subtotal: Number(o.subtotal || 0),
       discountAmount: Number(o.discountAmount || 0),
@@ -315,8 +346,9 @@ export async function uploadSessionToCloud(session){
       expectedCash: Number(session.expectedCash || 0),
       cashDiff: Number(session.cashDiff || 0),
       note: session.note || '',
-      stats: session.stats || null,
+      stats: session.stats || null,   // v20260613：含 deliveryPanda / deliveryUber / deliveryTotal
       orders,
+      bdDate: dateKey,                // 標註此節點屬於哪個 BD
       uploadedAt: new Date().toISOString()
     };
 
@@ -327,8 +359,59 @@ export async function uploadSessionToCloud(session){
       return;
     }
     await api.set(ref, payload);
-    console.log('[session-cloud] 上傳成功', path);
+    console.log('[session-cloud] 上傳成功 BD=' + dateKey, path);
+
+    // 上傳成功後嘗試清理 90 天前的雲端節點
+    cleanupOldCloudSessions(cfg.storeId).catch(err => {
+      console.warn('[session-cloud] 雲端清理失敗（不影響本次上傳）', err);
+    });
+
   }catch(err){
     console.warn('[session-cloud] 上傳失敗', err);
+  }
+}
+
+// ============================================================
+// 清理雲端 90 自然日前的 sessionHistory 節點
+// 邏輯：列出 sessionHistory/{storeId} 下所有日期 key，
+//       早於 90 天前的 key 直接 remove
+// ============================================================
+function pad2(n){ return String(n).padStart(2,'0'); }
+function dateStrLocal(d){
+  return d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate());
+}
+
+async function cleanupOldCloudSessions(storeId){
+  if(!storeId) return;
+  try{
+    const ref = await _getRef(`sessionHistory/${storeId}`);
+    const api = _dbApi();
+    if(!ref || !api) return;
+    const snap = await api.get(ref);
+    if(!snap || !snap.val) return;
+    const data = snap.val() || {};
+    const keys = Object.keys(data);
+    if(keys.length === 0) return;
+
+    // 90 自然日前的截止日
+    const cutoff = new Date();
+    cutoff.setHours(0,0,0,0);
+    cutoff.setDate(cutoff.getDate() - 90);
+    const cutoffStr = dateStrLocal(cutoff);
+
+    const toDelete = keys.filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && k < cutoffStr);
+    if(toDelete.length === 0) return;
+
+    for(const k of toDelete){
+      try{
+        const subRef = await _getRef(`sessionHistory/${storeId}/${k}`);
+        if(subRef) await api.set(subRef, null);
+      }catch(e){
+        console.warn('[session-cloud] 刪除舊節點失敗', k, e);
+      }
+    }
+    console.log('[session-cloud] 已清理 ' + toDelete.length + ' 個 90 天前節點');
+  }catch(err){
+    console.warn('[session-cloud] cleanupOldCloudSessions 失敗', err);
   }
 }
