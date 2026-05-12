@@ -517,7 +517,7 @@ function getDeviceId(){
   } catch (e) {
     return 'dev_unknown';
   }
-
+}
 
 async function _getCloudRef(subPath){
   try {
