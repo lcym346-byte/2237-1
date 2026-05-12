@@ -1,14 +1,23 @@
-/* 中文備註：多店看板資料 publish 模組 v1.2-tzfix
- * 修正：calcTodayStats 改用本機時區比對日期（解決跨日訂單數為 0 問題）
+/* 中文備註：多店看板資料 publish 模組 v20260613
+ * 本版（相對 v1.2-tzfix）變更：
+ *   - 今日範圍改用「營業日 BD」切（跨日營業時段歸屬同一 BD）
+ *   - 預約待付款單依 reservationAt 歸屬 BD（不是 createdAt）
+ *   - 營業額 = completed + pending（含預約待付款）+ 今日 BD 內已結束班次的外送加總
+ *   - 異常欄位 voided → abnormal（status=void/cancelled/refunded）
+ *   - 新增 publish dashboards/{storeId}/businessHours 節點供看板讀取
+ *   - 新增 today.delivery {panda, uber, total} 外送金額（從已結束班次 stats 累加）
+ *   - 移除 netSalesTotal（避免混淆，營業額本身已是正確值）
+ *   - 用語：心跳 → 更新（變數 heartbeat 維持，避免破壞既有 Firebase 節點）
  * 公開 API：
  *   ensureDashboardConfig() / startDashboardPublish() / stopDashboardPublish() / publishDashboardNow()
  */
 import { state, persistAll } from '../core/store.js';
 import { getCurrentSession, calcSessionStats } from './report-session.js';
 import { _getRef, _dbApi } from './realtime-order-service.js';
+import { getBusinessDay, getCurrentBusinessDay } from '../core/biz-day.js';
 
-const HEARTBEAT_INTERVAL_MS = 30 * 1000;
-let heartbeatTimer = null;
+const UPDATE_INTERVAL_MS = 30 * 1000;  // 30 秒更新一次
+let updateTimer = null;
 
 // ============================================================
 // 設定
@@ -47,70 +56,90 @@ export function ensureDashboardConfig(){
   return state.settings.dashboard;
 }
 
-// 用本機時區產生 YYYY-MM-DD
-function todayKey(){
-  const d = new Date();
-  return d.getFullYear() + '-' +
-    String(d.getMonth()+1).padStart(2,'0') + '-' +
-    String(d.getDate()).padStart(2,'0');
+// ── 取得 businessHours（含 fallback 預設） ──
+function getBH(){
+  return (state.settings && state.settings.businessHours) || {};
 }
 
-// 把任意 createdAt（ISO 字串或 timestamp）轉成本機時區的 YYYY-MM-DD
-function localDateKey(input){
-  if(!input) return '';
-  try{
-    const d = new Date(input);
-    if(isNaN(d.getTime())) return '';
-    return d.getFullYear() + '-' +
-      String(d.getMonth()+1).padStart(2,'0') + '-' +
-      String(d.getDate()).padStart(2,'0');
-  }catch(e){
-    return '';
+// ── 取訂單歸屬時間：預約待付款看 reservationAt，其他看 createdAt ──
+function getOrderRefTime(o){
+  const status = String(o.status || '').toLowerCase();
+  if(status === 'pending' && o.reservationAt){
+    return o.reservationAt;
   }
+  return o.createdAt;
 }
 
-// ── 計算今日營業統計（含各支付方式分項 + 作廢/取消/退款金額）──
-// v20260612：新增 voided 欄位，看板顯示負數金額用
+// ── 計算今日營業統計（用 BD 切；含外送加總；異常單獨統計） ──
 function calcTodayStats(){
-  const today = todayKey();
-  const todayOrders = (state.orders || []).filter(o => localDateKey(o.createdAt) === today);
+  const bh = getBH();
+  const todayBD = getCurrentBusinessDay(bh);
+  const allOrders = state.orders || [];
 
-  // 正常完成單（排除作廢/取消/退款）
-  const orders = todayOrders.filter(o => {
-    const status = String(o.status || '').toLowerCase();
-    if(['void','cancelled','refunded'].includes(status)) return false;
-    return status === 'completed';
+  // 篩選歸屬今日 BD 的訂單
+  const todayOrders = allOrders.filter(o => {
+    const refTime = getOrderRefTime(o);
+    if(!refTime) return false;
+    return getBusinessDay(refTime, bh) === todayBD;
   });
-  const salesTotal = orders.reduce((s,o)=>s + Number(o.total||0), 0);
-  const orderCount = orders.length;
-  const avgTicket = orderCount > 0 ? Math.round(salesTotal / orderCount) : 0;
+
+  // 營業額訂單：completed + pending（pending 含預約待付款）
+  const validOrders = todayOrders.filter(o => {
+    const status = String(o.status || '').toLowerCase();
+    return status === 'completed' || status === 'pending';
+  });
+  const salesFromOrders = validOrders.reduce((s,o)=>s + Number(o.total||0), 0);
+  const orderCount = validOrders.length;
 
   // 各支付方式分項統計
   const payments = {};
-  orders.forEach(o => {
+  validOrders.forEach(o => {
     const pm = String(o.paymentMethod || '其他').trim() || '其他';
     if(!payments[pm]) payments[pm] = { amount: 0, count: 0 };
     payments[pm].amount += Number(o.total || 0);
     payments[pm].count += 1;
   });
 
-  // 作廢 / 取消 / 退款金額（看板顯示為負數）
-  const voided = { amount: 0, count: 0, byType: { void: 0, cancelled: 0, refunded: 0 } };
+  // 異常統計（作廢 / 取消 / 退款）
+  const abnormal = { amount: 0, count: 0, byType: { void: 0, cancelled: 0, refunded: 0 } };
   todayOrders.forEach(o => {
     const status = String(o.status || '').toLowerCase();
     if(!['void','cancelled','refunded'].includes(status)) return;
     const amt = Number(o.total || o.subtotal || 0);
-    voided.amount += amt;
-    voided.count += 1;
-    if(voided.byType[status] !== undefined) voided.byType[status] += amt;
+    abnormal.amount += amt;
+    abnormal.count += 1;
+    if(abnormal.byType[status] !== undefined) abnormal.byType[status] += amt;
   });
 
-  // 淨營業額 = 正常完成 - 作廢
-  const netSalesTotal = salesTotal - voided.amount;
+  // 今日 BD 內已結束班次的外送加總（從 state.reports.sessions 撈）
+  const delivery = { panda: 0, uber: 0, total: 0 };
+  const sessions = (state.reports && state.reports.sessions) || [];
+  sessions.forEach(s => {
+    if(!s.endedAt) return;
+    // 班次歸屬：用 startedAt 的 BD
+    const sessBD = getBusinessDay(s.startedAt, bh);
+    if(sessBD !== todayBD) return;
+    const st = s.stats || {};
+    delivery.panda += Number(st.deliveryPanda || 0);
+    delivery.uber  += Number(st.deliveryUber  || 0);
+  });
+  delivery.total = delivery.panda + delivery.uber;
 
-  return { date: today, salesTotal, orderCount, avgTicket, payments, voided, netSalesTotal };
+  // 總營業額 = 訂單加總 + 已結班外送
+  const salesTotal = salesFromOrders + delivery.total;
+  const avgTicket = orderCount > 0 ? Math.round(salesFromOrders / orderCount) : 0;
+
+  return {
+    date: todayBD,
+    salesTotal,
+    salesFromOrders,        // 純訂單部分（給看板拆分顯示）
+    orderCount,
+    avgTicket,
+    payments,
+    abnormal,
+    delivery
+  };
 }
-
 
 // ── 計算當前班次摘要 ──
 function calcSessionSummary(){
@@ -128,29 +157,26 @@ function calcSessionSummary(){
 
 // ── 收集 debug 資訊 ──
 function collectDebugInfo(){
-  const today = todayKey();
+  const bh = getBH();
+  const todayBD = getCurrentBusinessDay(bh);
   const allOrders = state.orders || [];
   const sampleOrders = allOrders.slice(0, 3).map(o => ({
     orderNo: o.orderNo || '',
     status: String(o.status || ''),
     createdAt: String(o.createdAt || ''),
-    createdAtSliced: localDateKey(o.createdAt),
-    matchToday: localDateKey(o.createdAt) === today,
+    reservationAt: String(o.reservationAt || ''),
+    refBD: getBusinessDay(getOrderRefTime(o), bh),
+    matchToday: getBusinessDay(getOrderRefTime(o), bh) === todayBD,
     total: Number(o.total || 0),
     subtotal: Number(o.subtotal || 0),
     paymentMethod: String(o.paymentMethod || ''),
     itemCount: Array.isArray(o.items) ? o.items.length : 0
   }));
-  const matched = allOrders.filter(o => {
-    if(String(o.status || '').toLowerCase() !== 'completed') return false;
-    return localDateKey(o.createdAt) === today;
-  });
   return {
-    todayKey: today,
+    todayBD,
     nowISO: new Date().toISOString(),
     ordersInState: allOrders.length,
     sampleOrders,
-    matchedTodayCount: matched.length,
     calcResult: calcTodayStats(),
     stateKeys: Object.keys(state || {}),
     hasOrdersArray: Array.isArray(state.orders)
@@ -179,35 +205,37 @@ export async function publishDashboardNow(){
 
   const heartbeat = {
     storeName: cfg.storeName,
-    lastSeenAt: new Date().toISOString()
+    lastSeenAt: new Date().toISOString()  // 最後更新時間（節點名 heartbeat 維持向下相容）
   };
   const today = calcTodayStats();
   const session = calcSessionSummary();
   const debugInfo = collectDebugInfo();
+  const businessHours = getBH();
 
   await Promise.all([
     writeNode('heartbeat', heartbeat),
     writeNode('today', today),
     writeNode('session', session),
+    writeNode('businessHours', businessHours),
     writeNode('_debug', debugInfo)
   ]);
 }
 
 // ============================================================
-// 更新
+// 更新計時器（每 30 秒推一次）
 // ============================================================
 export function startDashboardPublish(){
   stopDashboardPublish();
   const cfg = ensureDashboardConfig();
   if(!cfg.enabled || !cfg.storeId) return;
   publishDashboardNow();
-  heartbeatTimer = setInterval(publishDashboardNow, HEARTBEAT_INTERVAL_MS);
+  updateTimer = setInterval(publishDashboardNow, UPDATE_INTERVAL_MS);
 }
 
 export function stopDashboardPublish(){
-  if(heartbeatTimer){
-    clearInterval(heartbeatTimer);
-    heartbeatTimer = null;
+  if(updateTimer){
+    clearInterval(updateTimer);
+    updateTimer = null;
   }
 }
 
