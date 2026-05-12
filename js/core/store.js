@@ -463,7 +463,8 @@ export const state = buildDefaultState();
     try {
       if (idbData && typeof idbData === 'object') {
         applyHydrate(idbData);
-        applyStoreBindingFromUrl();
+        applyStoreBindingFromUrl(state);
+        syncStoreToDashboard();
         try { window.dispatchEvent(new CustomEvent('pos-state-hydrated', { detail: { source: 'idb' } })); } catch (e) {}
         console.log('[store] IndexedDB 載入完成，orders=' + (state.orders||[]).length + ' sessions=' + ((state.reports||{}).sessions||[]).length);
       } else if (saved) {
