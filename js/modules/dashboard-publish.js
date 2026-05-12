@@ -69,14 +69,17 @@ function localDateKey(input){
   }
 }
 
-// ── 計算今日營業統計（含各支付方式分項）──
+// ── 計算今日營業統計（含各支付方式分項 + 作廢/取消/退款金額）──
+// v20260612：新增 voided 欄位，看板顯示負數金額用
 function calcTodayStats(){
   const today = todayKey();
-  const orders = (state.orders || []).filter(o => {
+  const todayOrders = (state.orders || []).filter(o => localDateKey(o.createdAt) === today);
+
+  // 正常完成單（排除作廢/取消/退款）
+  const orders = todayOrders.filter(o => {
     const status = String(o.status || '').toLowerCase();
     if(['void','cancelled','refunded'].includes(status)) return false;
-    if(status !== 'completed') return false;
-    return localDateKey(o.createdAt) === today;
+    return status === 'completed';
   });
   const salesTotal = orders.reduce((s,o)=>s + Number(o.total||0), 0);
   const orderCount = orders.length;
@@ -91,7 +94,21 @@ function calcTodayStats(){
     payments[pm].count += 1;
   });
 
-  return { date: today, salesTotal, orderCount, avgTicket, payments };
+  // 作廢 / 取消 / 退款金額（看板顯示為負數）
+  const voided = { amount: 0, count: 0, byType: { void: 0, cancelled: 0, refunded: 0 } };
+  todayOrders.forEach(o => {
+    const status = String(o.status || '').toLowerCase();
+    if(!['void','cancelled','refunded'].includes(status)) return;
+    const amt = Number(o.total || o.subtotal || 0);
+    voided.amount += amt;
+    voided.count += 1;
+    if(voided.byType[status] !== undefined) voided.byType[status] += amt;
+  });
+
+  // 淨營業額 = 正常完成 - 作廢
+  const netSalesTotal = salesTotal - voided.amount;
+
+  return { date: today, salesTotal, orderCount, avgTicket, payments, voided, netSalesTotal };
 }
 
 
