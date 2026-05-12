@@ -802,7 +802,29 @@
         <strong id="endCashDiff" style="color:#10b981">$0 ✓</strong>
       </div>
     </div>
-
+    
+<!-- ===== 外送平台金額（手動輸入，計入「其他」付款，不影響現金） ===== -->
+    <div style="margin-top:14px;padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
+      <div style="font-size:14px;font-weight:600;color:#1e3a8a;margin-bottom:8px">🛵 外送平台金額（手動輸入）</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="flex:0 0 100px;font-size:13px;color:#334155">熊貓 Grod</label>
+        <span style="color:#64748b">$</span>
+        <input id="endDeliveryPanda" type="number" inputmode="numeric" min="0" step="1" value="0"
+               style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:15px;text-align:right">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="flex:0 0 100px;font-size:13px;color:#334155">Uber</label>
+        <span style="color:#64748b">$</span>
+        <input id="endDeliveryUber" type="number" inputmode="numeric" min="0" step="1" value="0"
+               style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:15px;text-align:right">
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px dashed #bfdbfe;font-size:13px">
+        <span style="color:#334155">外送合計（計入「其他」付款）</span>
+        <strong id="endDeliveryTotal" style="color:#1e3a8a">$0</strong>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#64748b">※ 外送金額不影響現金清點與誤差</div>
+    </div>
+    
     <div style="margin-top:14px">
       <label style="font-size:14px;font-weight:600">結束人員</label>
       <select id="endStaffSelect" style="width:100%;padding:10px;margin-top:4px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px">
