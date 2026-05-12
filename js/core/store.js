@@ -456,7 +456,7 @@ export const state = buildDefaultState();
     const toSave = collectStateForPersist();
     localStorage.setItem(LS_KEY, JSON.stringify(toSave));
   } catch (e) {}
-  }
+  
 
   // 第二輪：async 讀 IndexedDB
   idbGet(IDB_KEY).then(async idbData => {
