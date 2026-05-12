@@ -218,145 +218,133 @@ POS 資料採三層持久化，依序：
 - 短命 fetch 失敗（NanoHTTPD socket close）需要 retry，不是 server bug
 - 標籤展開要在 buildBridgePayload 處理（送 APK 用），不是只改 getLabelHtml（瀏覽器 fallback 用）；兩處都要改
 
-### v20260608 已完成（雲端資料三層架構：IndexedDB + Firebase posBackup + Google Sheets）
-本版於 lcym346-byte/2237-1 門市 1 完成，所有 commit 同樣適用於總部範本 jess0937588151-hue/2234。
 
-新增功能一：本地儲存升級為 IndexedDB（store.js commit 1/3）
-- js/core/store.js 內建 IndexedDB wrapper（資料庫 `restaurantPosDB`、object store `kvStore`、key=`posState`），無外部套件
-- 雙寫策略：localStorage 為快取／向下相容、IndexedDB 為主儲存；啟動時若 localStorage 有資料、IndexedDB 沒資料，自動遷移並 console 印 `[store] 已從 localStorage 自動遷移至 IndexedDB`
-- URL 參數綁定店家：`?storeId=xxx&storeName=yyy` 寫入 `state.settings.store = { storeId, storeName, boundAt }`，已綁定後忽略後續 URL 變更；提供 `state.rebindStore()` 重新綁定
-- 預設 store001 / 測試店
-- 實測通過：store001 / 測試店在 Sunmi T2 與 Chrome 桌面均載入 OK，無痕視窗開 `?storeId=store099&storeName=測試新店` 也能正確綁定
+### v20260608 已完成（雲端三層架構：IndexedDB + Firebase posBackup + Google Sheets 增量同步）
 
-新增功能二：Firebase Realtime Database 全量備份（store.js commit 2/3）
-- 路徑 `posBackup/{storeId}/state`，內含 `data`（state 全文）與 `meta`（backupAt / orderCount / deviceId）
-- 10 秒節流（CLOUD_THROTTLE_MS = 10000）由 persistAll() 觸發，避免高頻寫入
-- 啟動時若本地 IndexedDB + localStorage 均為空且 storeId 已綁定，confirm 詢問是否從雲端還原；拒絕後本次 session 不再詢問（sessionStorage 旗標）
-- 新增 `state.settings.cloudBackup = { enabled, lastBackupAt, lastRestoreAt, status, deviceId }`
-- URL 綁定店家時自動同步 `storeId / storeName` 至 `state.settings.dashboard`，供 dashboard-publish.js 與 realtime-order-service.js 使用
+**Commit 1：store.js 升級為 IndexedDB 主儲存**
+- 新增 IndexedDB 極簡 wrapper（restaurantPosDB / kvStore / posState）
+- 與 localStorage 雙寫快取，啟動時自動從 localStorage 遷移
+- 新增 URL 參數 `?storeId=xxx&storeName=yyy` 首次綁定機制
+- 新增 `state.rebindStore({storeId, storeName})` API
+
+**Commit 2：Firebase posBackup 全量備份**
+- 路徑 `posBackup/{storeId}/state`，payload 含 `data` + `meta`
+- `persistAll()` 觸發 10 秒節流（CLOUD_THROTTLE_MS = 10000）上傳
+- 啟動時若 IndexedDB 與 localStorage 均空且 storeId 已綁定，confirm 詢問是否從雲端還原
+- Firebase 安全規則新增 `posBackup` 節點（auth != null）
 - 全域 API：`state.cloudBackupNow()`、`state.tryRestoreFromCloud()`
-- Firebase Realtime Database 安全規則新增節點 `"posBackup": { ".read": "auth != null", ".write": "auth != null" }`（其餘節點維持原狀）
-- 實測通過：store001 寫入 `posBackup/store001/state`，meta.backupAt 與 meta.orderCount 正確
 
-新增功能三：Google Sheets 增量同步（sheets-sync.js + index.html commit 3/3）
-- 新增 `js/modules/sheets-sync.js`：每 15 分鐘 setInterval + 訂單/班次變動 10 秒節流，增量推送至 Google Apps Script Web App
-- index.html 在 `js/app.js` 之後新增 `<script type="module" src="js/modules/sheets-sync.js"></script>`
-- Apps Script 後端 `POS Sync Backend`：固定 spreadsheetId 寫死於 `SPREADSHEET_ID` 常數；doPost 依 storeId 寫入 `{storeId}_orders` / `{storeId}_sessions` / `{storeId}_voided` 分頁；orderNo / sessionId 去重；首次寫入自動建立分頁與表頭並凍結首列
-- POS 端固定 Web App URL 寫死於 `APPS_SCRIPT_URL` 常數（store001 範本：https://script.google.com/macros/s/AKfycbxbQTMq2BZOvdIexY3pz_DERQGe44aR_OLIf-xZbt8MHHDjEI-WHe5408A9qXvTonlC/exec）
-- 已同步的 key 記錄於 `state.settings.sheetsSync.syncedOrderNos / syncedSessionIds`，最多保留 2000 筆 / 500 筆
+**Commit 3：Google Sheets 增量同步**
+- 新增檔案 `js/modules/sheets-sync.js`，後端寫死 APPS_SCRIPT_URL
+- 分頁 `{storeId}_orders` / `{storeId}_sessions` / `{storeId}_voided`，依 orderNo / sessionId 去重
+- 三重觸發：每 15 分鐘 setInterval + 訂單完成 / 班次結束（10 秒節流）+ 啟動後 30 秒首同步
+- 已同步 key 保留上限 2000 筆訂單 / 500 筆班次（先進先出）
+- 失敗自動記錄 `lastError`，下次自動重試
 - 全域 API：`window.sheetsSyncNow()`、`window.sheetsSyncStatus()`、`window.sheetsSyncReset()`
-- 待付款（status=pending）與作廢（status=void）暫不送，僅送 completed 訂單；班次僅送 endedAt 有值（已結束）的
-- fetch 必須用 `Content-Type: text/plain;charset=utf-8` 避開 CORS preflight，Apps Script doPost 用 e.postData.contents 解析 JSON 完全相容
-- 實測通過：手動 `await window.sheetsSyncNow()` 與 30 秒自動觸發均成功寫入 store001 試算表
+- index.html 增加一行 `<script type="module" src="js/modules/sheets-sync.js">`
 
-踩雷紀錄：
-- Apps Script Web App URL 用瀏覽器直接開啟，若 Chrome 同時登入多個 Google 帳號會自動加 `/u/1/` 路徑，造成「很抱歉，目前無法開啟這個檔案」誤判為部署失敗；實際 URL 沒問題，POS 用 fetch 也不會有此問題。驗證 URL 改用無痕視窗或 curl。
-- Apps Script 部署「執行身分=我、存取對象=任何人」是讓 POS 跨網域 POST 的必要條件；缺一無法寫入。
-- 第一次執行 testInsertSample 須走「進階 → 前往（不安全）→ 允許」完成 OAuth 授權，否則 Apps Script 無法 openById 寫入試算表。
-- Firebase Realtime Database 規則若沒加 `posBackup` 節點，會出現 `permission_denied`，雲端備份呼叫失敗但本地仍正常；補規則後即恢復。
-- 兩個 storeId 來源（`state.settings.store.storeId` 與 `state.settings.dashboard.storeId`）必須在 URL 綁定時同步寫入，否則 dashboard-publish.js 看板與 sheets-sync.js 同步會用到不同的 storeId 造成分流錯誤。
-- sheets-sync.js 採用「監測 state.orders.length / sessions.length 變化」的 polling（每 2 秒）取代覆寫 persistAll，避免循環依賴與遞迴 import。
-- service-worker CACHE_NAME 升版是讓所有裝置自動載入新版的必要動作（v20260608 commit 完成後需另外升版本號，避免使用者卡舊快取）。
+**Commit 4：store-config.js 寫死店家綁定 + 強制鎖定**
+- 新增檔案 `js/core/store-config.js`，匯出 `STORE_CONFIG` 物件（storeId / storeName / storeCode / lockFromUrl）
+- `store.js`、`sheets-sync.js` 改為 import STORE_CONFIG，優先順序：STORE_CONFIG > URL 參數
+- 多店複製時只需改 `store-config.js` 三個值，其他檔案完全不動
+
+**Commit 5：fix 補上 hydrate 缺漏**
+- `applyStoreBindingFromUrl(state)` 補上參數
+- hydrate 第一輪加上 `syncStoreToDashboard()` 呼叫
+
+**Apps Script 後端**：
+- 試算表 ID：`1RTcKK-cZutAtSBQtPU6O7PcNKUVP53MBgoa6Dk0PFXc`
+- Web App URL：`https://script.google.com/macros/s/AKfycbxbQTMq2BZOvdIexY3pz_DERQGe44aR_OLIf-xZbt8MHHDjEI-WHe5408A9qXvTonlC/exec`
+- 共用後端：所有店家共用同一個 spreadsheet，以 `{storeId}_xxx` 分頁區分
+- doPost 用 `Content-Type: text/plain;charset=utf-8` 避開 CORS preflight
+
+**踩雷紀錄（v20260608）**：
+- Chrome 多帳號干擾：Apps Script 部署後若有第二個 Google 帳號登入，瀏覽器會自動加 `/u/1/` 到 URL，導致「無法開啟檔案」錯誤。解法：用無痕視窗只登一個帳號操作，或在 fetch POST 時用本來的乾淨 URL（POST 不受帳號路徑影響）。
+- 給使用者修改錨點時務必把「整段函式」當作最小單位置換，**不可只刪一行/補一行**，否則容易把對應的 `}` 或 `{` 連帶搞錯。v20260608 期間發生過兩次語法錯誤：
+  - 第一次：刪掉舊 `if (boundByUrlSync) {` 但忘記同步刪除對應的 `}`，導致 hydrateState 被孤兒 `}` 提前結束，整支 store.js SyntaxError → 畫面空白只剩框架。
+  - 第二次：修第一次的錯時，把 `getDeviceId()` 函式的閉合 `}` 也誤刪，造成 `Unexpected token 'export'`。
+  - 教訓：以後改 store.js 這類關鍵檔案，必須讀完整檔、把整段函式置換，不要只給「在 X 行加/刪 Y 行」這種片段指引。
+- 線上點餐頁（online-order.html）不該套用 STORE_CONFIG 鎖定，因為它本來就要靠 URL `?storeCode=xxx` 區分顧客掃哪家店的 QR。POS 後台才需要鎖定。
 
 ---
 
-## 八、待辦
+## 八、待辦事項
 
-### 短期
-- Google 登入失敗：APK 改純後台架構後，使用者改用一般瀏覽器（非 WebView）開網頁，Google OAuth 不再被 disallowed_useragent 擋。問題消失，不需處理。
-- APK 被 T2 系統殺掉：使用者改用「Web 直接開」，不再依賴 APK 開 WebView
-- 自動更新檢查：維持手動更新
-- v20260608 後續：升 service-worker CACHE_NAME 至 `pos-v20260608-cache` 並把 `js/modules/sheets-sync.js` 加入 ASSETS 預快取清單；UI 端在設定頁新增「Google Sheets 同步狀態」面板（顯示 `state.settings.sheetsSync.status / lastSyncAt / lastError` 與「立即同步」「重置已同步紀錄」按鈕）
+**短期（一週內）**
+- 把 v20260608 三個 commit 複製到 `jess0937588151-hue/2234`（store002 / 中壢民族店），只需改 `store-config.js` 三個值
+- 設定頁加入 Google Sheets 同步狀態面板（顯示 lastSyncAt / lastError / status，提供「立即同步」「重置已同步紀錄」按鈕）
+- 升級 `service-worker.js` 的 CACHE_NAME 至 `pos-v20260608-cache`，並把 `js/modules/sheets-sync.js`、`js/core/store-config.js` 加入 ASSETS pre-cache 清單
 
-### 長期
-- A. 2234 打包成獨立 APK（含市售印表機列印模組：藍牙 / 網路 / USB ESC/POS）
-  - 用其他裝置時不影響 Sunmi T2 列印（因 print-bridge.js 只認本機 127.0.0.1:8080，不認牌子）
-  - 新 APK 必須實作完整 /ping、/print/*、/drawer/open，且 /ping 要回 token 給 web 自動同步
-  - 新 APK printPosReceipt 必須讀 payload.fields 旗標、支援標籤模式 qty 展開的 N 個 qty:1 item，否則重蹈 v20260607 覆轍
-- B. 多店即時營業看板網站（Firebase 資料源 `dashboards/{storeId}/` + `sessionHistory/{storeId}/{date}/`）
-- C. 新加盟店上線流程簡化：fork 範本 repo → 改 GitHub Pages → Sunmi T2 開 `?storeId=storeXXX&storeName=店名` 桌面捷徑（≈ 5 分鐘 / 店）
-- D. POS 新功能 / 流程改善（待用戶提出）
+**中期（一個月內）**
+- 開發跨店即時看板（新 repo），讀 `dashboards/{storeId}` 與 `sessionHistory/{storeId}/{date}` 顯示所有店今日營業額、訂單數、班次狀態
+- 線上點餐頁（online-order.html）加入 storeCode 白名單機制，非已知 storeCode 顯示「店家不存在」
 
-### Android 平台已知限制（不要嘗試突破）
-- 不可能整合 HP / Epson / Canon 的 Windows 私有驅動
-- 非 ESC/POS 印表機（A4 雷射 / 噴墨）只能透過 Mopria / IPP
+**長期**
+- 打包獨立 APK：整合藍牙 / 網路 / USB ESC/POS，目前只支援 Sunmi T2 內建印表機
+- 上線流程簡化：新店家開店標準作業（fork repo、改 store-config.js、設定 Sunmi 桌面捷徑）
 
 ---
 
 ## 九、關鍵檔案地圖
 
-網頁（總部範本 jess0937588151-hue/2234 與門市 lcym346-byte/2237-1 結構一致）：
+**網頁 repo（lcym346-byte/2237-1、jess0937588151-hue/2234）**
+- `index.html` — 主頁面骨架、所有 modal、外部腳本載入區
+- `online-order.html` — 顧客掃 QR 線上點餐頁
+- `service-worker.js` — PWA 快取（升新版必須改 CACHE_NAME）
+- `manifest.webmanifest` — PWA 設定
+- `js/app.js` — 主入口，初始化所有頁面與服務
+- `js/core/store.js` — 狀態管理、IndexedDB / localStorage / Firebase posBackup 三層持久化
+- `js/core/store-config.js` — **店家寫死設定（每店複製時只改這個）**
+- `js/modules/sheets-sync.js` — Google Sheets 增量同步
+- `js/modules/print-bridge.js` — 三層列印橋接偵測
+- `js/modules/print-service.js` — 列印路由
+- `js/modules/order-service.js` — 訂單建立與付款狀態
+- `js/modules/realtime-order-service.js` — Firebase 線上接單 + Firebase API 共用
+- `js/modules/report-session.js` — 班次（v2.1 含作廢機制）
+- `js/modules/google-backup-service.js` — Google Drive 備份
+- `js/modules/dashboard-publish.js` — 多店看板資料發佈
+- `js/pages/*` — pos / orders / reports / products / settings 各頁面
 
-- index.html — 主頁面 + 各 view 區塊（含 reservationReminderOverlay、productConfigModal 內 +/- 數量按鈕；尾端外部腳本區載入 app.js 與 sheets-sync.js）
-- js/app.js — 入口、Service Worker 註冊、startReservationReminderLoop()
-- service-worker.js — PWA 快取（CACHE_NAME，修改記得改觸發更新；ASSETS 需含 sheets-sync.js）
-- js/core/store.js — 全域 state 與持久化（v20260608 起：IndexedDB 主儲存 + localStorage 雙寫 + Firebase posBackup 全量備份 10 秒節流 + URL 參數綁定店家 + 啟動時 confirm 還原）
-- js/core/utils.js — 格式化、下載等工具
-- js/modules/print-bridge.js — 列印橋接偵測（HTTP/WebView/系統），含 X-API-Token header、fetch retry、token 自動同步
-- js/modules/print-service.js — 列印主服務（getReceiptHtml / getLabelHtml / buildBridgePayload / printOrderReceipt / printOrderLabels / openCashDrawer 等；標籤模式 qty 展開）
-- js/modules/order-service.js — 訂單建立 / 結帳
-- js/modules/cart-service.js — 購物車
-- js/modules/realtime-order-service.js — Firebase 線上單監聽 + D9 自動列印 + D10 預約提醒；公用 `_getRef(path)` 與 `_dbApi()` 供其他模組使用
-- js/modules/customer-service.js — 顧客資料、電話遮罩
-- js/modules/report-session.js — 班次 / 報表 / `sessionHistory/{storeId}/{date}/` 雲端上傳
-- js/modules/dashboard-publish.js — 多店看板心跳 + 今日營業統計 + 班次摘要（30 秒一次）
-- js/modules/google-backup-service.js — Google Drive 備份（舊版手動匯出，與 v20260608 自動 Sheets 同步並存）
-- js/modules/sheets-sync.js — v20260608 新增，Google Sheets 自動增量同步（每 15 分鐘 + 班次結束 + 訂單完成 10 秒節流）
-- js/pages/pos-page.js — 點餐頁（finalizeOrder 含開錢箱與雙列印；唯一綁 #openCashDrawerBtn 的地方）
-- js/pages/orders-page.js — 訂單查詢
-- js/pages/reports-page.js — 報表（含 CSV overlay 匯出；不可再加 #openCashDrawerBtn handler）
-- js/pages/products-page.js — 商品管理
-- js/pages/settings-page.js — 設定頁（含印表機偵測 UI、三預覽按鈕需先設 pendingPreviewMode；未來預計加入「Google Sheets 同步狀態」面板）
-
-雲端後端：
-
-- Firebase Realtime Database `webpos-1f626`：節點 `staff` / `menu` / `onlineOrders` / `orders` / `stores` / `dashboards` / `sessionHistory` / `dashboardAccess` / `posBackup`（v20260608 新增）
-- Google Apps Script `POS Sync Backend`：依附於 Google Sheet「POS 同步資料庫」，spreadsheetId 寫死於 SPREADSHEET_ID 常數；doPost 寫入 `{storeId}_orders` / `{storeId}_sessions` / `{storeId}_voided`
-
-APK（jess0937588151-hue/sunmi-pos-v2）：
-
-- app/src/main/java/com/pos/sunmiprinter/MainActivity.java — 健康檢查頁
-- app/src/main/java/com/pos/sunmiprinter/SettingsActivity.java — APK 設定頁（token + 列印狀態）
-- app/src/main/java/com/pos/sunmiprinter/AppSettings.java — SharedPreferences 包裝
-- app/src/main/java/com/pos/sunmiprinter/PrintService.java — Foreground Service（含 WAKE_LOCK）
-- app/src/main/java/com/pos/sunmiprinter/PrintHttpServer.java — NanoHTTPD 路由器（/ping 回 token；readBody 用 UTF-8 byte 解碼）
-- app/src/main/java/com/pos/sunmiprinter/BootReceiver.java — 開機自動啟動
-- app/src/main/java/com/pos/sunmiprinter/LogManager.java — 全 APK 共用日誌
-- app/src/main/java/com/pos/sunmiprinter/PrintQueue.java — 列印任務序列化
-- app/src/main/java/com/pos/sunmiprinter/printer/SunmiPrinterManager.java — AIDL 綁定 + 列印（讀 fields 旗標 + key fallback）
-- app/src/main/java/com/pos/sunmiprinter/printer/BluetoothPrinterManager.java — 藍牙 ESC/POS
-- app/src/main/java/com/pos/sunmiprinter/printer/NetworkPrinterManager.java — 網路 ESC/POS
-- app/src/main/java/com/pos/sunmiprinter/printer/SunmiCallbackAdapter.java — Sunmi 回調轉接
-- app/src/main/assets/test-print.html — 內建測試列印頁
-- app/src/main/AndroidManifest.xml — INTERNET / BLUETOOTH / FOREGROUND_SERVICE / RECEIVE_BOOT_COMPLETED / WAKE_LOCK / REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+**APK repo（jess0937588151-hue/sunmi-pos-v2）**
+- `app/src/main/java/com/pos/sunmiprinter/MainActivity.java` — 健康檢查頁
+- `app/src/main/java/com/pos/sunmiprinter/SettingsActivity.java` — 設定頁
+- `app/src/main/java/com/pos/sunmiprinter/PrintService.java` — Foreground Service
+- `app/src/main/java/com/pos/sunmiprinter/PrintHttpServer.java` — NanoHTTPD（127.0.0.1:8080）
+- `app/src/main/java/com/pos/sunmiprinter/LogManager.java` — 日誌中心
+- `app/src/main/java/com/pos/sunmiprinter/PrintQueue.java` — 單線程列印佇列
+- `app/src/main/java/com/pos/sunmiprinter/printer/SunmiPrinterManager.java`
+- `app/src/main/java/com/pos/sunmiprinter/printer/BluetoothPrinterManager.java`
+- `app/src/main/java/com/pos/sunmiprinter/printer/NetworkPrinterManager.java`
 
 ---
 
 ## 十、AI 工作守則
 
-1. 動手前先讀完此文件，禁止憑記憶或猜測修改
-2. 每次只改一個檔案 → 一個 commit → 清楚的 commit message
-3. 改完更新「進度紀錄」段落
-4. 給使用者改動時必含：完整檔案內容（不是片段插入）、檔案路徑、GitHub edit URL、commit message
-5. 列印議題先看 APK /logs，不要猜中文編碼問題
-6. 多個頁面禁止綁定同一個 button id 的 click handler；新增 button 前先全 repo 搜尋確認 id 沒重複
-7. 標籤模式 qty 展開要同時改 getLabelHtml（瀏覽器）與 buildBridgePayload（APK 路徑），缺一不可
-8. token 相關 endpoint 必須有 401/403 自動重抓重試機制
-9. Sunmi T2 不支援部分新 API、compileSdk=28 不可用 foregroundServiceType
-10. 使用者不寫程式 → 不要叫他「在某行後面插入」，要給整檔；若真有「插入一行」的需求，必須同時附上前後不變的數行作為錨點供使用者確認
-11. 回覆使用者用繁體中文
-12. 在沒讀完整個 repo（特別是 pages 內各檔的事件綁定）前，不要下「字串不存在」「程式碼沒這段」的結論
-13. README 內示範程式碼禁止使用三反引號 ``` 內嵌另一段三反引號區塊（會把外層提前結束、後半變正文）。需要在區塊內展示 JSON / 程式碼時，改用「四個空白縮排」表示，或把內層改成單行 inline code。整份 README 從頭到尾只能有一層 ``` 區塊（或乾脆都不用，全部改縮排）。
-14. 修改 store.js / 新增 js/modules/*.js / 修改 index.html 後，務必提醒使用者升 service-worker.js 的 CACHE_NAME（並把新檔加入 ASSETS），否則所有已安裝 PWA 的裝置會卡舊版快取
-15. 多店架構：所有跨店資料路徑必須以 `state.settings.store.storeId || state.settings.dashboard.storeId` 取得 storeId，絕不寫死；URL 參數綁定店家後要同步寫入兩個欄位
+1. **動手前先讀完這份文件**，禁止憑記憶或猜測修改。
+2. **每次只改一個檔案**，每個檔案一個 commit，commit message 描述清楚做了什麼。
+3. 所有改動完成後**必須更新本文件的「進度紀錄」段落**。
+4. 回覆一律使用**繁體中文**。
+5. 改完任何檔案後，**完整讀取一次該檔案內容**確認沒有語法錯誤、沒有遺漏函式閉合大括號。
+6. 列印與印表機相關修改必須同時驗證收據 / 廚房單 / 標籤三種模式。
+7. 跨店資料路徑一律使用 `state.settings.store.storeId || state.settings.dashboard.storeId`，禁止寫死 `store001`。
+8. PWA 升版後**必須升 service-worker.js 的 CACHE_NAME**，否則使用者要手動清快取才能載入新檔。
+9. 修改 Firebase 安全規則前必須先在 Firebase Console 備份原規則，並回報新增的路徑。
+10. **使用者不寫程式**：所有改動必須給「**完整檔案內容** + 檔案路徑 + GitHub edit 連結 + Commit message」；若必須給片段，至少要包含「上下各 3 行不改動的內容」作為錨點，禁止只說「在第 N 行加上 X」。
+11. 一次 commit 只動一個檔案；多檔案改動拆成多個 commit，每個 commit 都要可獨立還原。
+12. 收到「網頁剩框架沒資料」「畫面空白」「Console SyntaxError」這類回報，**先懷疑上一次改動有沒有破壞語法**，立刻完整讀取該檔案、找出破壞點，不要急著加 console.log 或重寫邏輯。
+13. README 內若需嵌入 markdown 三反引號區塊，內層改用四空白縮排，避免破壞外層 fence。
+14. **新增/刪除前端 JS 檔案後必須升 service-worker.js 的 CACHE_NAME 並把新檔加入 ASSETS pre-cache 清單**，否則 PWA 用戶會載到 404。
+15. 跨店時所有 Firebase 路徑、Google Sheet 分頁名稱、Drive 備份檔名都必須以 `state.settings.store.storeId` 為前綴，禁止把任何一店寫死。
 
 ---
 
-## 十一、版本紀錄
+## 版本紀錄
 
-- 2026-05-11 Claude：v20260608 完工。雲端三層架構（IndexedDB + Firebase posBackup + Google Sheets 增量同步）上線。新增 store.js 內建 IndexedDB wrapper、URL 參數綁定店家、Firebase posBackup 全量備份 10 秒節流、啟動時 confirm 從雲端還原。新增 js/modules/sheets-sync.js 每 15 分鐘 + 變動 10 秒節流增量推送至 Google Apps Script Web App，分頁依 storeId 區分。Apps Script 後端 POS Sync Backend 寫死 spreadsheetId，依 orderNo / sessionId 去重。新增工作守則第 10 條補強「插入錨點」、第 14 條補強「CACHE_NAME 升版提醒」、第 15 條補強「多店 storeId 取法」。
-- 2026-05-09 Claude：v20260607 完工。修復 fields 勾選矩陣（APK + Web）、開錢箱誤判訊息（移除 reports-page.js 重複 handler）、連續開錢箱失敗（fetch retry）、預覽按鈕 pendingPreviewMode 漏設。新增標籤一品項一張（getLabelHtml + buildBridgePayload 雙改）、點餐 modal 數量 +/- 快捷按鈕（純 HTML inline onclick，零 JS 改動）。踩雷紀錄已寫入 v20260607 段落。
-- 2026-05-06 Claude：v20260606 完工，token 自動同步上線，列印鏈路恢復正常。
-- 2026-05-04 Claude：v20260603 APK 商用化補強完成。
-- 2026-05-02 Claude：v20260602 列印橋接版上線。
-- 2026-05-01 Claude：v20260601 架構重構完成（APK 改純後台 HTTP Server）。
+| 版本 | 日期 | 重點 |
+|---|---|---|
+| v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+| v20260602 | 2026-04-xx | 印表機字串排版、token 驗證初版、SW cache 更新 |
+| v20260603 | 2026-04-xx | APK 商用化補強（LogManager、PrintQueue、API Token） |
+| v20260606 | 2026-05-xx | token 自動同步、列印與錢箱回歸 |
+| v20260607 | 2026-05-xx | fields 勾選矩陣 + 標籤一品項一張 + 數量 +/- 按鈕 |
+| v20260608 | 2026-05-11 | 雲端三層架構（IndexedDB + Firebase posBackup + Google Sheets）+ store-config.js 寫死店家綁定 |
