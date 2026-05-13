@@ -405,12 +405,35 @@ function openEndSessionModal(){
       diffEl.style.color = '#f59e0b';
     }
   });
-  document.getElementById('endClosingCash').textContent = '$0';
+    document.getElementById('endClosingCash').textContent = '$0';
   document.getElementById('endCashDiff').textContent = '$0 ✓';
   document.getElementById('endCashDiff').style.color = '#10b981';
 
+  // ─── v20260613：外送金額欄位初始化（熊貓 Grod / Uber） ───
+  const pandaInput = document.getElementById('endDeliveryPanda');
+  const uberInput = document.getElementById('endDeliveryUber');
+  const deliveryTotalEl = document.getElementById('endDeliveryTotal');
+  if(pandaInput) pandaInput.value = '0';
+  if(uberInput) uberInput.value = '0';
+  if(deliveryTotalEl) deliveryTotalEl.textContent = '$0';
+
+  const updateDeliveryTotal = () => {
+    const p = Math.max(0, Number(pandaInput?.value) || 0);
+    const u = Math.max(0, Number(uberInput?.value) || 0);
+    if(deliveryTotalEl) deliveryTotalEl.textContent = '$' + (p + u);
+  };
+  [pandaInput, uberInput].forEach(inp => {
+    if(!inp) return;
+    inp.addEventListener('focus', () => inp.select());
+    inp.addEventListener('input', () => {
+      inp.value = inp.value.replace(/[^0-9]/g, '');
+      updateDeliveryTotal();
+    });
+  });
+
   if(modal) modal.classList.remove('hidden');
 }
+
 
 function confirmEndSession(){
   const modal = document.getElementById('endSessionModal');
@@ -423,10 +446,14 @@ function confirmEndSession(){
     return;
   }
   try{
-    const staffId = document.getElementById('endStaffSelect').value;
+        const staffId = document.getElementById('endStaffSelect').value;
     const cashDetail = getCashDetailFromGrid('endCash');
     const note = document.getElementById('endSessionNote').value || '';
-    const ended = endSession({ staffId, cashDetail, note });
+    // ─── v20260613：讀取外送金額（熊貓 Grod / Uber） ───
+    const deliveryPanda = Math.max(0, Number(document.getElementById('endDeliveryPanda')?.value) || 0);
+    const deliveryUber = Math.max(0, Number(document.getElementById('endDeliveryUber')?.value) || 0);
+    const ended = endSession({ staffId, cashDetail, note, deliveryPanda, deliveryUber });
+
 
     if(modal) modal.classList.add('hidden');
     renderReports();
@@ -453,7 +480,11 @@ function openSessionSummaryModal(session){
   const modal = document.getElementById('sessionSummaryModal');
   if(!modal) return;
 
+  // ─── v20260613：清掉上次插入的外送明細區塊（避免重開時重複） ───
+  modal.querySelectorAll('[data-delivery-detail]').forEach(el => el.remove());
+
   const allOrders = (state.orders || []).filter(o => o.sessionId === session.id);
+
   const orders = getValidOrders(allOrders);
   const voidedOrders = getVoidedOrders(allOrders);
 
@@ -496,15 +527,23 @@ function openSessionSummaryModal(session){
   const voidedCount = voidedOrders.length;
   const voidedAmount = voidedOrders.reduce((s,o)=>s+Number(o.total||0),0);
 
-  const summaryStats = [
+   const summaryStats = [
     ['營業額', money(sales), ''],
     ['訂單數', count, ''],
     ['客單價', money(avg), ''],
     ['折扣', money(discount), '']
   ];
+  // ─── v20260613：外送卡片（藍色，與作廢紅色區隔） ───
+  const deliveryPanda = Number(session.stats?.deliveryPanda || 0);
+  const deliveryUber = Number(session.stats?.deliveryUber || 0);
+  const deliveryTotal = Number(session.stats?.deliveryTotal || 0) || (deliveryPanda + deliveryUber);
+  if(deliveryTotal > 0){
+    summaryStats.push(['🛵 外送', money(deliveryTotal), 'color:#1e40af']);
+  }
   if(voidedCount > 0){
     summaryStats.push(['⚠️ 作廢', `${voidedCount} 單 / ${money(voidedAmount)}`, 'color:#dc2626']);
   }
+
   document.getElementById('summaryStats').innerHTML = summaryStats.map(p =>
     `<div class="stat-card"><div class="label" style="${p[2]}">${p[0]}</div><div class="value" style="${p[2]}">${p[1]}</div></div>`
   ).join('');
@@ -532,6 +571,27 @@ function openSessionSummaryModal(session){
   document.getElementById('summaryPayments').innerHTML = payKeys.length
     ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
     : '<div class="muted">無</div>';
+  const payKeys = Object.keys(payMap);
+  document.getElementById('summaryPayments').innerHTML = payKeys.length
+    ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
+    : '<div class="muted">無</div>';
+
+  // ─── v20260613：在付款方式下方追加「外送明細」(若有) ───
+  if(deliveryTotal > 0){
+    const payEl = document.getElementById('summaryPayments');
+    if(payEl){
+      payEl.insertAdjacentHTML('afterend', `
+        <div style="margin-top:14px" data-delivery-detail>
+          <h3 style="margin:0 0 8px;font-size:15px">🛵 外送明細</h3>
+          <div style="font-size:14px">
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>熊貓 Grod</span><strong>${money(deliveryPanda)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>Uber</span><strong>${money(deliveryUber)}</strong></div>
+            <div style="display:flex;justify-content:space-between;padding:4px 0;color:#1e40af;font-weight:bold"><span>合計（已計入「其他」付款）</span><span>${money(deliveryTotal)}</span></div>
+          </div>
+        </div>
+      `);
+    }
+  }
 
   // TOP5（僅有效單，排除折扣品項）
   const prodMap = {};
