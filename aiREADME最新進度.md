@@ -4,33 +4,96 @@
 > 已完成項目請見 `aiREADME已完成紀錄.md`。
 > 規範與架構說明請見 `aiREADME.md`。
 
-最後更新：2026-05-13
+最後更新：2026-05-14
 
 ---
 
 ## 🚨 已知問題（優先處理）
 
-### 1. reports-page.js 重複貼上造成 SyntaxError（待修）
+### 1. 顧客點餐頁空白：localStorage 配額爆掉（最高優先）
+
+**現象**：開啟 `online-order.html?storeId=xxx` 後畫面只剩購物車按鈕與「我的訂單」按鈕，沒有商品列表也沒有分類。Console 紅字：
+persistAll failed: DOMException: Failed to execute 'setItem' on 'Storage': Setting the value of 'restaurantPosState_v2' exceeded the quota. at persistAll (store.js:343) at applyCloudMenu (realtime-order-service.js:840:3) at handler (realtime-order-service.js:785:7)
+
+Copy
+**原因**：商品圖片以 base64 內嵌存在 `state.products[i].image`，80 樣商品約 4 MB，整包 state 寫入 localStorage（5 MB 上限）時爆掉。`persistAll()` throw 後 `applyCloudMenu` 中斷，連帶 `renderProducts()` 不執行 → 顧客頁空白。
+
+**雙軌處理**：
+- **Step 1（治標，本次優先）**：`js/core/store.js` 第 343 行附近的 localStorage.setItem 用 try/catch 包起來吞掉 QuotaExceededError，讓 IndexedDB 寫入成功就算成功。
+- **Step 2-6（治本）**：見下方「Firebase Storage 圖片遷移計劃」。
+
+### 2. reports-page.js 重複貼上造成 SyntaxError（待修）
 
 **現象**：`openSessionSummaryModal()` 內「付款方式」區塊出現兩次 `const payKeys = Object.keys(payMap)`，會丟出 `SyntaxError: Identifier 'payKeys' has already been declared`，整個 `reports-page.js` 模組載入失敗，POS 報表頁開啟即掛掉。
 
-**位置**：約在 v20260613 Commit 5 修改點 4 附近。
-
-**錨點**（找這段重複的部分）：
-```javascript
-  const payKeys = Object.keys(payMap);
-  document.getElementById('summaryPayments').innerHTML = payKeys.length
-    ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
-    : '<div class="muted">無</div>';
-  const payKeys = Object.keys(payMap);
-  document.getElementById('summaryPayments').innerHTML = payKeys.length
-    ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
-    : '<div class="muted">無</div>';
-```
+**位置**:約在 v20260613 Commit 5 修改點 4 附近。
 
 **修法**：刪除重複的後 4 行，只保留前 4 行。
 
 **Commit 訊息**：`fix(reports-page)：移除誤貼的重複 payKeys 宣告（修復 SyntaxError）`
+
+---
+
+## 🚀 Firebase Storage 圖片遷移計劃（v20260614 規劃中）
+
+### 背景
+
+目前商品圖片以 base64 內嵌方式存在 `state.products[i].image`：
+- 80 樣商品 × 約 50 KB = 約 4 MB 整包 state
+- localStorage 5 MB 上限已爆（見已知問題 1）
+- Firebase Realtime Database `menu/{projectId}` 節點肥到 4 MB+，顧客每次開頁全量下載
+- `startMenuAutoWatch` 每 30 秒輪詢 → 流量爆炸
+- 估算每月 Firebase 免費額度 10 GB 撐不到 2,560 人次，實際更少
+
+### 遷移目標
+
+商品圖片改放 Firebase Storage（`webpos-1f626` 同專案，bucket: `webpos-1f626.firebasestorage.app`），`state.products[i].image` 只存公開 URL 字串（80 chars 左右）。預期：
+- state 體積從 4 MB → < 100 KB
+- 顧客頁首次載入 3.2 MB（圖片走 CDN 並行下載），之後瀏覽器自動快取
+- Firebase Realtime Database 流量降到原本的 1%
+
+### 執行步驟（單店先動 2237-1，測試 OK 後複製到 2234）
+
+**Step 1：治標 store.js（最優先）**
+- 檔案：`js/core/store.js`
+- 改第 343 行附近的 `localStorage.setItem` 用 try/catch 吞掉 QuotaExceededError
+- 立即效果：顧客頁恢復顯示
+- Commit 訊息：`fix(store): localStorage 滿時不中斷 persistAll（IndexedDB 仍寫入）`
+
+**Step 2：開通 Firebase Storage 並補安全規則**
+- 使用者操作：Firebase Console → `webpos-1f626` 專案 → Storage → Get started → 地區選 `asia-southeast1`（與 Database 同區）
+- AI 提供 Storage 安全規則 JSON：admin 可寫、所有人可讀
+- 順手補 Realtime Database 規則缺漏（menu、posBackup、dashboards、sessionHistory；onlineOrders 改雙層）
+- Commit 訊息：手動操作，不涉及 repo
+
+**Step 3：新增 image-upload-service.js**
+- 檔案：`js/modules/image-upload-service.js`（新檔）
+- 提供 `uploadProductImage(file, productId)` 函式：壓縮 → 上傳到 `productImages/{projectId}/{productId}.jpg` → 回傳公開 URL
+- 同步在 `realtime-order-service.js` 初始化 Storage SDK
+- service-worker.js CACHE_NAME 升版並加入新檔到 ASSETS
+- Commit 訊息：`feat(image-upload): 新增 Firebase Storage 圖片上傳服務`
+
+**Step 4：改 products-page.js 上傳流程**
+- 檔案：`js/pages/products-page.js`
+- 現有「選檔 → 讀 base64 → 塞進 state」改為「選檔 → 壓縮 → 呼叫 uploadProductImage → 取得 URL → 塞進 state」
+- 上傳期間顯示「上傳中…」，禁止重複按
+- Commit 訊息：`feat(products): 新增商品圖片改走 Firebase Storage 上傳`
+
+**Step 5：寫一次性遷移按鈕**
+- 檔案：`js/pages/settings-page.js`、`index.html`
+- 「設定 → 本機資料」內加按鈕「將舊圖片遷移到 Storage」
+- 按下後逐項處理 base64 圖片：上傳到 Storage、替換 state 內為 URL、顯示進度
+- 完成後自動呼叫 `syncMenuToFirebase()` 推上去
+- Commit 訊息：`feat(settings): 新增舊商品圖片批次遷移到 Storage`
+
+**Step 6：實機驗證並複製到 2234**
+- 在 2237-1 完整跑過 Step 1-5 + 實機測試（新增商品、編輯商品、顧客頁載入、跨店看板）
+- 全部 OK 後把 Steps 1, 3, 4, 5 的修改複製到 jess0937588151-hue/2234
+
+### 跨店規劃
+
+- 圖片路徑使用 `productImages/{projectId}/...`（不是 `{storeId}`），所有店共用同一份圖檔（與菜單路徑一致原則）
+- Storage 規則：寫入限 admin、讀取公開（圖片本來就要顯示給顧客）
 
 ---
 
@@ -57,14 +120,12 @@
 
 ### POS 端
 
-#### POS service-worker.js（依使用者指示暫不做）
-- 升 CACHE_NAME 至 `pos-v20260613-cache`
-- 加入 `js/core/biz-day.js` 到 ASSETS pre-cache 清單
-- **狀態**：使用者明確說「不做第六點」，需等使用者再下指示才執行
+#### POS service-worker.js（依使用者指示暫不做，但 Step 3 會觸發必要升版）
+- 升 CACHE_NAME 至 `pos-v20260614-cache`
+- 加入 `js/core/biz-day.js`、`js/modules/image-upload-service.js` 到 ASSETS pre-cache 清單
 
 #### 訂單頁「修改」TypeError（早先回報，截圖顯示 orders-page.js:135）
 - **狀態**：v20260613 已透過「加到購物車」流程繞過此 bug，但原本的 `loadOrderToCart` 路徑被移除後是否還會跳錯需實機驗證
-- 若使用者切到 v20260613 後仍會出錯，需另外開 commit 查找根因
 
 ---
 
@@ -72,13 +133,11 @@
 
 - 設定頁營業時間 24 小時制（使用者已在系統設定處理）
 - 預設營業時間改為 14:00–03:00（不改 `DEFAULT_BUSINESS_HOURS`，避免影響既有店）
-- POS service-worker.js CACHE_NAME 升版（暫不做，但未來其他改動觸發 PWA 需要時要記得做）
+- GitHub Pages `images/` 方案存圖片（已評估：POS 前端無法安全 git push，使用者要自己 git 操作不可行）
 
 ---
 
 ## 🧪 待實機驗證項目（v20260613）
-
-下列 v20260613 改動已 commit 但尚未實機驗證，下次接手時請排程驗證：
 
 - [ ] `dashboard-publish.js` 用 BD 切今日後，跨日時段（02:00）儀表板顯示是否正確
 - [ ] 結束值班 Modal 的「熊貓 Grod / Uber」即時加總顯示
@@ -94,13 +153,20 @@
 - **營業日定義**：跨日營業（14:00–03:00）視為同一 BD；預約單依 `reservationAt` 歸屬，其他依 `createdAt`
 - **異常**：`status = void / cancelled / refunded`，獨立顯示，不計入營業額
 - **外送平台**：熊貓 Grod（台灣熊貓被併購交接中暫用此名）+ Uber
-  - 計入「其他」付款，不計入現金
-  - 值班中不能輸入（中間可能換班），只能結班時手動輸入
-  - 已結班的外送加總計入該 BD 今日總覽
-- **訂單修改流程**：加到購物車 → 結帳產生新單 → 另外作廢原單（封閉就地修改的營業額漏洞）
-- **資料保存**：本地與雲端 `sessionHistory` 都保留 90 自然日（避免長期休業導致儲存負擔過大）
+- **訂單修改流程**：加到購物車 → 結帳產生新單 → 另外作廢原單
+- **資料保存**：本地與雲端 `sessionHistory` 都保留 90 自然日
 - **歷史報表**：顯示最近 60 個營業日，自動跳過公休日
 
+---
+
+## 📐 v20260614 圖片遷移關鍵設計決策
+
+- **base64 內嵌不可持續**：localStorage 5 MB 上限、Firebase 流量爆、菜單節點過大
+- **方案選 Firebase Storage**：與既有 Firebase 專案整合最自然、CDN 加速、瀏覽器自動快取
+- **不選 GitHub Pages `images/`**：POS 前端不能安全 git push，使用者不寫程式
+- **圖片路徑跨店共用**：`productImages/{projectId}/{productId}.jpg`（與菜單 `menu/{projectId}` 一致）
+- **遷移採批次自動化**：在 POS 設定頁加按鈕，使用者按一次跑完 80 樣商品
+進度檔補一條「已知問題 3：訂單查詢『加到購物車』TypeError（orders-page.js:138）」，跟治標一起在 Step 1b 處理。
 ---
 
 ## 🔁 接手 SOP
