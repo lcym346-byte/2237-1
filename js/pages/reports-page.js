@@ -571,10 +571,7 @@ function openSessionSummaryModal(session){
   document.getElementById('summaryPayments').innerHTML = payKeys.length
     ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
     : '<div class="muted">無</div>';
-  const payKeys = Object.keys(payMap);
-  document.getElementById('summaryPayments').innerHTML = payKeys.length
-    ? payKeys.map(k=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f1f5f9"><span>${escapeHtml(k)}</span><strong>${money(payMap[k])}</strong></div>`).join('')
-    : '<div class="muted">無</div>';
+  
 
   // ─── v20260613：在付款方式下方追加「外送明細」(若有) ───
   if(deliveryTotal > 0){
