@@ -1047,11 +1047,24 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
     }
   });
 
-  document.getElementById('showProductImagesToggle')?.addEventListener('change', function(e) {
+    document.getElementById('showProductImagesToggle')?.addEventListener('change', function(e) {
     if (!state.settings) state.settings = {};
     state.settings.showProductImages = e.target.checked;
     persistAll();
+    // 立即重新渲染 POS 點餐頁，不必切頁或重整就會生效
+    if (typeof window.refreshPublicProducts === 'function') {
+      window.refreshPublicProducts();
+    }
   });
+
+  // 開啟「本機資料」Modal 時，把目前設定值回填到 checkbox
+  document.querySelectorAll('[data-modal="modalLocalData"]').forEach(function(tile){
+    tile.addEventListener('click', function(){
+      var cb = document.getElementById('showProductImagesToggle');
+      if (cb) cb.checked = !!(state.settings && state.settings.showProductImages);
+    });
+  });
+
 
   // ============================
   // 進單提示音
