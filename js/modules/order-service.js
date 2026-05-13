@@ -9,22 +9,22 @@ export function createOrUpdateOrder(paymentMethod){
   const subtotal = state.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
   const discountAmount = 0;
 const total = subtotal;
- const existing = state.editingOrderId ? state.orders.find(o=>o.id===state.editingOrderId) : null;
+   // ─── v20260613：移除就地修改邏輯，每次結帳都是新訂單（避免營業額漏洞） ───
+  // 「修改」流程改為「加到購物車 → 作廢原單 → 重新結帳」，留下完整審計軌跡
   const order = {
-    id: existing?.id || id(),
-    orderNo: existing?.orderNo || ('OD' + Date.now()),
-    createdAt: existing?.createdAt || new Date().toISOString(),
+    id: id(),
+    orderNo: 'OD' + Date.now(),
+    createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     status: paymentMethod === '待付款' ? 'pending' : 'completed',
     paymentMethod,
     orderType: document.getElementById('orderType').value,
     reservationAt: (document.getElementById('orderType').value === '預約' && document.getElementById('posReservationSlot')) ? document.getElementById('posReservationSlot').value : '',
     reservationReminded: false,
-    sessionId: existing?.sessionId || (getCurrentSession()?.id || null),
-
+    sessionId: getCurrentSession()?.id || null,
 
     tableNo: document.getElementById('tableNo').value.trim(),
-        discountType: 'amount',
+    discountType: 'amount',
     discountValue: 0,
     discountAmount: 0,
 
@@ -32,16 +32,11 @@ const total = subtotal;
     total,
     items: deepCopy(state.cart),
   };
-  if(existing){
-    const idx = state.orders.findIndex(o=>o.id===existing.id);
-    if(idx>=0) state.orders[idx] = order;
-  } else {
-    state.orders.unshift(order);
-  }
+  state.orders.unshift(order);
   state.cart = [];
-  state.editingOrderId = null;
   return order;
 }
+
 
 export function markPendingOrderPaid(orderId, paymentMethod){
   const order = state.orders.find(o=>o.id===orderId);
