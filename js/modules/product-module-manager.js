@@ -1,4 +1,5 @@
 /* 中文備註：模組管理動態彈窗（Batch 06.13/B - product.modules 是 [{moduleId, requiredOverride}] 物件陣列）。
+ * v20260513：複選新增 minSelect / maxSelect 數量規則
  * 對齊 store.js 預設、pos-page.js、products-page.js 的實作。
  */
 import { state, persistAll } from '../core/store.js';
@@ -36,6 +37,15 @@ function ensureModal(){
             <option value="multi">複選</option>
           </select>
           <label style="min-width:auto"><input type="checkbox" id="${MODAL_ID}_required"> 必選</label>
+        </div>
+
+        <div class="form-row" id="${MODAL_ID}_multiRow" style="display:none">
+          <label>複選數量</label>
+          <span>至少</span>
+          <input type="number" class="input" id="${MODAL_ID}_minSel" min="0" step="1" style="max-width:80px" value="1">
+          <span>最多</span>
+          <input type="number" class="input" id="${MODAL_ID}_maxSel" min="1" step="1" style="max-width:80px" placeholder="不限">
+          <span class="muted" style="font-size:12px">（最多留空＝不限；要「七選三」請至少3、最多3）</span>
         </div>
 
         <div style="margin:10px 0 6px;font-weight:600;">子選項</div>
@@ -102,10 +112,27 @@ function ensureModal(){
 
   el.querySelector(`#${MODAL_ID}_search`).addEventListener('input', renderModuleProductList);
   el.querySelector(`#${MODAL_ID}_name`).addEventListener('input', e=>{ if(draft) draft.name = e.target.value; });
-  el.querySelector(`#${MODAL_ID}_rule`).addEventListener('change', e=>{ if(draft) draft.selection = e.target.value; });
+  el.querySelector(`#${MODAL_ID}_rule`).addEventListener('change', e=>{
+    if(draft) draft.selection = e.target.value;
+    updateMultiRowVisibility();
+  });
   el.querySelector(`#${MODAL_ID}_required`).addEventListener('change', e=>{ if(draft) draft.required = e.target.checked; });
+  el.querySelector(`#${MODAL_ID}_minSel`).addEventListener('input', e=>{
+    if(draft) draft.minSelect = Math.max(0, parseInt(e.target.value, 10) || 0);
+  });
+  el.querySelector(`#${MODAL_ID}_maxSel`).addEventListener('input', e=>{
+    if(!draft) return;
+    const v = e.target.value.trim();
+    draft.maxSelect = v === '' ? null : Math.max(1, parseInt(v, 10) || 1);
+  });
 
   return el;
+}
+
+function updateMultiRowVisibility(){
+  const row = document.getElementById(`${MODAL_ID}_multiRow`);
+  if (!row || !draft) return;
+  row.style.display = (draft.selection === 'multi') ? '' : 'none';
 }
 
 function addOption(){
@@ -156,6 +183,8 @@ export function openModuleManage(moduleId){
     name: mod.name||'',
     selection: mod.selection || (mod.multi ? 'multi' : 'single'),
     required: !!mod.required,
+    minSelect: (typeof mod.minSelect === 'number') ? mod.minSelect : (mod.required ? 1 : 0),
+    maxSelect: (typeof mod.maxSelect === 'number') ? mod.maxSelect : null,
     options: JSON.parse(JSON.stringify(mod.options||[]))
   };
   draftSelected = new Set(
@@ -168,8 +197,11 @@ export function openModuleManage(moduleId){
   el.querySelector(`#${MODAL_ID}_name`).value = draft.name;
   el.querySelector(`#${MODAL_ID}_rule`).value = draft.selection;
   el.querySelector(`#${MODAL_ID}_required`).checked = draft.required;
+  el.querySelector(`#${MODAL_ID}_minSel`).value = draft.minSelect;
+  el.querySelector(`#${MODAL_ID}_maxSel`).value = draft.maxSelect == null ? '' : draft.maxSelect;
   el.querySelector(`#${MODAL_ID}_search`).value = '';
   el.style.display = 'flex';
+  updateMultiRowVisibility();
   renderOptions();
   renderModuleProductList();
 }
@@ -217,9 +249,26 @@ export function saveModuleManage(){
   const cleanOpts = (draft.options||[])
     .map(o => ({ id: o.id || rid(), name:(o.name||'').trim(), price:Number(o.price)||0, enabled:o.enabled!==false }))
     .filter(o => o.name);
+
+  // 複選數量規則驗證
+  const isMulti = draft.selection === 'multi';
+  let minSel = isMulti ? Math.max(0, parseInt(draft.minSelect, 10) || 0) : 0;
+  let maxSel = isMulti ? (draft.maxSelect == null ? null : Math.max(1, parseInt(draft.maxSelect, 10) || 1)) : null;
+  if (isMulti && maxSel != null && minSel > maxSel){
+    alert('「至少」不可大於「最多」'); return;
+  }
+  if (isMulti && maxSel != null && maxSel > cleanOpts.length){
+    alert(`「最多」(${maxSel}) 不可超過子選項數量(${cleanOpts.length})`); return;
+  }
+  if (isMulti && draft.required && minSel < 1){
+    minSel = 1; // 必選複選的最少數量自動補為 1
+  }
+
   mod.name = newName;
-  mod.selection = draft.selection === 'multi' ? 'multi' : 'single';
+  mod.selection = isMulti ? 'multi' : 'single';
   mod.required = !!draft.required;
+  mod.minSelect = isMulti ? minSel : 0;
+  mod.maxSelect = isMulti ? maxSel : null;
   mod.options = cleanOpts;
 
   // 套用至商品：勾選=加入物件 {moduleId, requiredOverride:null}；未勾選=移除
