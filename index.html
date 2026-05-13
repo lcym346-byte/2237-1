@@ -261,15 +261,21 @@
           <input id="productName" required>
           <div id="productNameError" class="field-error hidden">請輸入商品名稱</div>
         </div>
-        <div class="form-row">
+                <div class="form-row">
           <label>價格</label>
           <input id="productPrice" type="number" min="0" required>
           <div id="productPriceError" class="field-error hidden">請輸入正確商品價格</div>
         </div>
         <div class="form-row">
+          <label>SKU 商品編號（不可重複，圖片透過 SKU 自動對應）</label>
+          <input id="productSku" placeholder="例：A001" maxlength="32">
+          <div id="productSkuError" class="field-error hidden">SKU 重複，請改其他編號</div>
+        </div>
+        <div class="form-row">
           <label>商品說明（顯示在顧客點餐頁，最多 60 字，可留空）</label>
           <input id="productDescription" maxlength="60" placeholder="例如：現點現炸酥脆美味">
         </div>
+
 
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
           <div class="form-row">
@@ -284,15 +290,13 @@
             </select>
           </div>
         </div>
-                <div class="form-row image-row">
-          <label>商品圖片</label>
+                        <div class="form-row image-row">
+          <label>商品圖片（由 SKU 自動對應，請先到設定 → 匯入 SKU 對應表）</label>
           <input id="productImageData" type="hidden">
-          <div id="productImagePreview" class="product-image-preview muted">尚未選擇圖片</div>
-          <div class="row gap" style="margin-top:6px">
-            <button type="button" id="openImageLibraryBtn" class="secondary-btn small-btn">📁 從圖庫選擇</button>
-            <button type="button" id="removeProductImageBtn" class="secondary-btn small-btn">移除圖片</button>
-          </div>
+          <div id="productImagePreview" class="product-image-preview muted">尚未對應圖片</div>
+          <div id="productImageStatus" class="muted" style="font-size:12px;margin-top:4px"></div>
         </div>
+
 
         <div class="form-row">
           <label>已套用模組</label>
@@ -311,21 +315,7 @@
     </div>
   </div>
 
-  <!-- 商品圖片圖庫挑選彈窗 -->
-  <div id="imageLibraryModal" class="product-modal-backdrop" style="display:none">
-    <div class="product-modal" style="max-width:720px">
-      <div class="row between wrap" style="margin-bottom:10px">
-        <h3 style="margin:0">📁 從圖庫選擇圖片</h3>
-        <button type="button" id="closeImageLibraryBtn" class="ghost-btn">✕</button>
-      </div>
-      <div class="row gap wrap" style="margin-bottom:10px">
-        <input id="imageLibrarySearch" placeholder="搜尋（檔名或備註）" style="flex:1;min-width:160px">
-        <button type="button" id="reloadImageLibraryBtn" class="secondary-btn small-btn">🔄 重新載入</button>
-      </div>
-      <div id="imageLibraryStatus" class="muted" style="font-size:12px;margin-bottom:6px">尚未載入</div>
-      <div id="imageLibraryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;max-height:60vh;overflow-y:auto;padding:4px"></div>
-    </div>
-  </div>
+ 
 </section>
 
 
