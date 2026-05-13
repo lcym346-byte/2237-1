@@ -633,11 +633,19 @@ async function tryRestoreFromCloud(){
 let _persistIdbTimer = null;
 export function persistAll(){
   try {
-    const toSave = collectStateForPersist();
+        const toSave = collectStateForPersist();
     try { localStorage.setItem(LS_KEY, JSON.stringify(toSave)); }
-    catch (e) { console.warn('localStorage write failed:', e); }
+    catch (e) {
+      if (e && (e.name === 'QuotaExceededError' || e.code === 22)) {
+        console.warn('[store] localStorage 配額已滿，僅寫入 IndexedDB');
+        try { localStorage.removeItem(LS_KEY); } catch (_) {}
+      } else {
+        console.warn('localStorage write failed:', e);
+      }
+    }
 
     if (_persistIdbTimer) clearTimeout(_persistIdbTimer);
+
     _persistIdbTimer = setTimeout(() => {
       idbSet(IDB_KEY, toSave);
       _persistIdbTimer = null;
