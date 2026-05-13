@@ -365,14 +365,20 @@
       <span class="tile-label">進單提示音</span>
       <span class="tile-desc">自訂線上訂單提示音效</span>
     </div>
-        <div class="setting-tile" data-modal="modalBusinessHours">
+                <div class="setting-tile" data-modal="modalBusinessHours">
       <span class="tile-icon">🕐</span>
       <span class="tile-label">營業時間</span>
       <span class="tile-desc">每日營業時段，預約功能依據</span>
     </div>
+    <div class="setting-tile" data-modal="modalImageLibrary">
+      <span class="tile-icon">📥</span>
+      <span class="tile-label">SKU 圖庫對應</span>
+      <span class="tile-desc">匯入 gallery.html 下載的 SKU 對應表</span>
+    </div>
 
   </div>
 </section>
+
 
 <!-- ===== 列印設定 Modal ===== -->
 <div id="modalPrint" class="settings-modal-backdrop">
@@ -469,13 +475,56 @@
     </div>
     <div class="settings-modal-footer">
       <button id="saveBusinessHoursBtn" class="sm-btn primary">儲存營業時間</button>
-      <button class="sm-btn" data-close-modal="modalBusinessHours">關閉</button>
+           <button class="sm-btn" data-close-modal="modalBusinessHours">關閉</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== SKU 圖庫對應 Modal ===== -->
+<div id="modalImageLibrary" class="settings-modal-backdrop">
+  <div class="settings-modal" style="max-width:680px">
+    <div class="settings-modal-header">
+      <h3>📥 SKU 圖庫對應</h3>
+      <button class="close-modal-btn" data-close-modal="modalImageLibrary">✕</button>
+    </div>
+    <div class="settings-modal-body">
+      <div class="sm-info-box" style="font-size:13px;color:#475569;margin-bottom:12px">
+        步驟：1) 打開 <a href="https://jess0937588151-hue.github.io/2234/images/products/gallery.html" target="_blank" rel="noopener">圖庫工具</a> 為每張圖片輸入 SKU → 2) 下載 JSON → 3) 在下方匯入。匯入後商品只要 SKU 相同，就會自動套用圖片 URL。
+      </div>
+
+      <div class="sm-section-title">圖庫網址（GitHub Pages）</div>
+      <div class="sm-form-group">
+        <label>Base URL</label>
+        <input id="imageLibraryBaseUrl" placeholder="https://jess0937588151-hue.github.io/2234/images/products/">
+      </div>
+
+      <div class="sm-section-title">匯入 SKU 對應表</div>
+      <div class="sm-btn-row">
+        <input id="imageLibraryFileInput" type="file" accept="application/json,.json" style="flex:1">
+        <button id="imageLibraryImportBtn" class="sm-btn primary">匯入並合併</button>
+        <button id="imageLibraryReplaceBtn" class="sm-btn danger">匯入並覆蓋</button>
+      </div>
+      <div id="imageLibraryImportStatus" class="sm-info-box" style="margin-top:10px;font-size:13px">尚未匯入</div>
+
+      <div class="sm-section-title">目前對應表</div>
+      <div id="imageLibraryListBox" style="max-height:280px;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;background:#f8fafc">
+        （尚無資料）
+      </div>
+      <div class="sm-btn-row" style="margin-top:8px">
+        <button id="imageLibraryClearBtn" class="sm-btn danger">清空對應表</button>
+        <button id="imageLibraryExportBtn" class="sm-btn">匯出目前對應表</button>
+      </div>
+    </div>
+    <div class="settings-modal-footer">
+      <button id="saveImageLibraryBtn" class="sm-btn primary">儲存設定</button>
+      <button class="sm-btn" data-close-modal="modalImageLibrary">關閉</button>
     </div>
   </div>
 </div>
 
 
 <!-- ===== Sunmi 印表機 Modal ===== -->
+
 <div id="modalSunmi" class="settings-modal-backdrop">
   <div class="settings-modal">
     <div class="settings-modal-header">
