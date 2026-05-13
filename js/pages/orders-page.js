@@ -122,14 +122,17 @@ export function getFilteredOrders(){
   }).sort((a,b)=> new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 }
 
-function loadOrderToCart(orderId){
+// v20260613：「修改」改為「加到購物車」，原訂單保持原樣，要修改請另外按作廢
+function addOrderToCart(orderId){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
   const o = state.orders.find(x=>x.id===orderId);
   if(!o) return;
-  if(o.status === 'void') return alert('此訂單已作廢，無法修改');
+  if(o.status === 'void') return alert('此訂單已作廢，無法加到購物車');
+
+  // B 選項：直接覆蓋購物車（不詢問）
   state.cart = deepCopy(o.items);
 
-  state.editingOrderId = o.id;
+  // 不再設 editingOrderId — 結帳會產生新訂單，原訂單不變
   document.getElementById('orderType').value = o.orderType || '內用';
   document.getElementById('tableNo').value = o.tableNo || '';
   document.getElementById('discountValue').value = o.discountValue || 0;
@@ -139,8 +142,9 @@ function loadOrderToCart(orderId){
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('posView').classList.add('active');
   window.refreshAllViews();
-  alert('已載回點餐頁，可修改後重新結帳');
+  alert('已將訂單 ' + (o.orderNo || '') + ' 的品項加到購物車。\n\n⚠️ 此為「重新建單」流程，原訂單仍存在；如需取代，請另外作廢原訂單。');
 }
+
 
 // ── 作廢訂單（取代刪除）──
 // 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
@@ -215,7 +219,7 @@ function renderOrdersSection(wrap, orders, mode){
         }).join('')}
       </div>
       <div class="row gap wrap" style="margin-top:12px">
-        ${isVoid ? '' : '<button class="secondary-btn small-btn">修改</button>'}
+        ${isVoid ? '' : '<button class="secondary-btn small-btn">加到購物車</button>'}
         ${isVoid ? '' : '<button class="danger-btn small-btn">作廢</button>'}
         <button class="secondary-btn small-btn">列印顧客單</button>
         <button class="secondary-btn small-btn">列印廚房單</button>
@@ -225,8 +229,8 @@ function renderOrdersSection(wrap, orders, mode){
     `;
     const btns = Array.from(row.querySelectorAll('button'));
     let idx = 0;
-    if(!isVoid){
-      btns[idx++].onclick = ()=> loadOrderToCart(o.id);
+        if(!isVoid){
+      btns[idx++].onclick = ()=> addOrderToCart(o.id);
       btns[idx++].onclick = ()=> voidOrder(o.id);
     }
     btns[idx++].onclick = ()=> printOrderReceipt(o, 'customer');
