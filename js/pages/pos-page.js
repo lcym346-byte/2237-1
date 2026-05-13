@@ -497,7 +497,8 @@ export function initPOSPage(){
         }
       }
     }
-
+const selections = flattenSelections(product);
+    const extra = selections.reduce((s,x)=>s + Number(x.price||0), 0);
     const payload = {
       rowId: state.configTarget.mode === 'edit' ? state.configTarget.rowId : id(),
       productId: product.id,
