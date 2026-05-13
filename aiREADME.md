@@ -266,6 +266,51 @@ POS 資料採三層持久化，依序：
   - 教訓：以後改 store.js 這類關鍵檔案，必須讀完整檔、把整段函式置換，不要只給「在 X 行加/刪 Y 行」這種片段指引。
 - 線上點餐頁（online-order.html）不該套用 STORE_CONFIG 鎖定，因為它本來就要靠 URL `?storeCode=xxx` 區分顧客掃哪家店的 QR。POS 後台才需要鎖定。
 
+### v20260613 已完成（營業日 BD + 外送 + 修改改加單）
+
+**POS 端：**
+- 新增 `js/core/biz-day.js`：營業日 (Business Day, BD) 共用工具
+  - `getBusinessDay(time, businessHours)`：跨日營業時段（例 14:00–03:00）歸屬同一 BD
+  - `getCurrentBusinessDay`、`getBDRange`、`isOpenDay`、`getRecentBDs`、`getBDsBetween`
+- 修改 `js/modules/dashboard-publish.js`：
+  - 今日範圍改用 BD 切（不再用自然日 00:00–23:59）
+  - 預約待付款單依 `reservationAt` 歸 BD，其他依 `createdAt`
+  - 營業額 = completed + pending（含預約）+ 今日 BD 內已結束班次的外送加總
+  - 異常欄位 `voided` → `abnormal`，移除 `netSalesTotal`
+  - 新增 publish `dashboards/{storeId}/businessHours` 與 `today.delivery`
+  - 心跳節點維持 `heartbeat` 名稱，但內含 `lastSeenAt`（語意：最後更新）
+- 修改 `js/modules/report-session.js`：
+  - import `getBusinessDay`，`sessionHistory/{storeId}/{date}` 的 date 改用 BD
+  - `endSession(opts)` 接收 `deliveryPanda` / `deliveryUber`，加進 stats 與「其他」付款
+  - 上傳雲端後清理 90 自然日前 `sessionHistory` 雲端節點，本地保留 90 天
+- 修改 `index.html`：結束值班 Modal 新增「熊貓 Grod / Uber」金額輸入區塊（藍底）
+- 修改 `js/pages/reports-page.js`：
+  - 結束值班 Modal 綁定外送輸入即時加總
+  - 傳遞 `deliveryPanda` / `deliveryUber` 給 `endSession()`
+  - 班次摘要 Modal 新增「🛵 外送」藍色卡片 + 付款方式下方追加外送明細區塊
+- 修改 `js/modules/order-service.js`：
+  - 移除 `editingOrderId` 就地修改邏輯，每次結帳產生新訂單（封閉營業額漏洞）
+- 修改 `js/pages/orders-page.js`：
+  - 「修改」按鈕改為「加到購物車」，函式改名 `addOrderToCart`
+  - 加到購物車後跳警告：「原訂單仍存在；如需取代請另外作廢原訂單」
+  - 已作廢訂單禁止加到購物車
+
+**看板端 (lcym346-byte/pos-dashboard)：**
+- 新增 `js/biz-day.js`：與 POS 端 `js/core/biz-day.js` 邏輯完全一致（未來修改需同步兩個檔案）
+
+**未完成 / 待辦：**
+- 看板 `js/history-loader.js` 改用 BD 查詢最近 60 個營業日（Commit 8）
+- 看板 `index.html` UI 文案：「淨營業額」→「營業額」、「作廢/取消」→「異常」、「最後心跳」→「最後更新」、新增外送顯示、改用 BD 切週/月（Commit 9）
+- POS `service-worker.js` CACHE_NAME 升版（使用者指示暫不做）
+- 訂單頁「加到購物車」未阻擋待付款狀態的「改為已付款」按鈕的另一條路徑（理論上仍可逐張完成而非作廢，但 v20260613 新流程已是預期）
+
+**關鍵設計決策（與使用者確認）：**
+- 營業日定義：跨日營業（14:00–03:00）視為同一 BD；預約單依 reservationAt 歸屬
+- 異常 = void / cancelled / refunded，獨立顯示不計入營業額
+- 外送平台：熊貓 Grod（台灣熊貓被併購交接中，命名先用此）+ Uber，計入「其他」付款，不計入現金
+- 修改訂單流程改為「加到購物車 → 結帳產生新單 → 另外作廢原單」，留下完整審計軌跡
+- 雲端與本地 sessionHistory 都保留 90 天，避免長期休業導致資料保存負擔過大
+
 ---
 
 ## 八、待辦事項
