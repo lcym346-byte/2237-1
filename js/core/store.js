@@ -112,6 +112,14 @@ const DEFAULT_CLOUD_BACKUP = {
   deviceId: ''
 };
 
+const DEFAULT_IMAGE_LIBRARY = {
+  baseUrl: 'https://jess0937588151-hue.github.io/2234/images/products/',
+  skuMap: {},          // { 'A001': 'A001.jpg', ... }（只存檔名，URL 渲染時拼）
+  importedAt: '',
+  itemCount: 0
+};
+
+
 // ── 工具 ──
 function rid(){ return Math.random().toString(36).slice(2,10); }
 
@@ -156,8 +164,9 @@ function normalizeProducts(products, modulesRef){
         }
       });
     }
-    return {
+        return {
       id: p.id || rid(),
+      sku: (p.sku || '').trim(),
       name: p.name || '',
       price: Number(p.price || 0),
       category: p.category || '未分類',
@@ -169,6 +178,7 @@ function normalizeProducts(products, modulesRef){
     };
   });
 }
+
 
 function deepMerge(target, source){
   if (!source || typeof source !== 'object') return target;
@@ -282,9 +292,11 @@ function buildDefaultState(){
       selectedCategory: '全部',
       showProductImages: true,
       lastCleanupAt: '',
-      store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),
+            store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),
       cloudBackup: JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP)),  // v20260608-b 新增
+      imageLibrary: JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY)),  // v20260614 新增
       realtimeOrder: {
+
         enabled: true,
         deviceRole: 'master',
         apiKey: '', authDomain: '', databaseURL: '',
@@ -371,7 +383,7 @@ function applyHydrate(saved){
         if (!state.settings.store.storeName) state.settings.store.storeName = DEFAULT_STORE_BINDING.storeName;
         if (typeof state.settings.store.boundAt === 'undefined') state.settings.store.boundAt = '';
       }
-      // v20260608-b 新增：補 cloudBackup 預設
+            // v20260608-b 新增：補 cloudBackup 預設
       if (!state.settings.cloudBackup || typeof state.settings.cloudBackup !== 'object') {
         state.settings.cloudBackup = JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP));
       } else {
@@ -381,7 +393,21 @@ function applyHydrate(saved){
           }
         });
       }
+      // v20260614 新增：補 imageLibrary 預設
+      if (!state.settings.imageLibrary || typeof state.settings.imageLibrary !== 'object') {
+        state.settings.imageLibrary = JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY));
+      } else {
+        Object.keys(DEFAULT_IMAGE_LIBRARY).forEach(k => {
+          if (typeof state.settings.imageLibrary[k] === 'undefined') {
+            state.settings.imageLibrary[k] = DEFAULT_IMAGE_LIBRARY[k];
+          }
+        });
+        if (!state.settings.imageLibrary.skuMap || typeof state.settings.imageLibrary.skuMap !== 'object') {
+          state.settings.imageLibrary.skuMap = {};
+        }
+      }
     }
+
 
     if (saved.reports && typeof saved.reports === 'object') {
       state.reports = {
