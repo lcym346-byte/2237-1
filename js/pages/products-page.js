@@ -320,6 +320,50 @@ export function renderPendingMenuList(){
   updatePendingCountLabel();
 }
 
+function getProductListViewMode(){
+  if(!state.settings) state.settings = {};
+  return state.settings.productListViewMode === 'text' ? 'text' : 'card';
+}
+
+function applyProductListViewToggleUI(){
+  const mode = getProductListViewMode();
+  const cardBtn = document.getElementById('productListViewCardBtn');
+  const textBtn = document.getElementById('productListViewTextBtn');
+  if(cardBtn){
+    cardBtn.style.background = mode === 'card' ? '#2563eb' : '';
+    cardBtn.style.color = mode === 'card' ? '#fff' : '';
+    cardBtn.style.borderColor = mode === 'card' ? '#2563eb' : '';
+  }
+  if(textBtn){
+    textBtn.style.background = mode === 'text' ? '#2563eb' : '';
+    textBtn.style.color = mode === 'text' ? '#fff' : '';
+    textBtn.style.borderColor = mode === 'text' ? '#2563eb' : '';
+  }
+}
+
+function bindProductListViewToggle(){
+  const cardBtn = document.getElementById('productListViewCardBtn');
+  const textBtn = document.getElementById('productListViewTextBtn');
+  if(cardBtn && !cardBtn.dataset.bound){
+    cardBtn.dataset.bound = '1';
+    cardBtn.onclick = ()=>{
+      if(!state.settings) state.settings = {};
+      state.settings.productListViewMode = 'card';
+      persistAll();
+      renderProductsTable();
+    };
+  }
+  if(textBtn && !textBtn.dataset.bound){
+    textBtn.dataset.bound = '1';
+    textBtn.onclick = ()=>{
+      if(!state.settings) state.settings = {};
+      state.settings.productListViewMode = 'text';
+      persistAll();
+      renderProductsTable();
+    };
+  }
+}
+
 export function renderProductsTable(){
   const wrap = document.getElementById('productTable');
   if(!wrap) return;
@@ -334,15 +378,64 @@ export function renderProductsTable(){
   const countLbl = document.getElementById('productCountLabel');
   if(countLbl) countLbl.textContent = `共 ${filtered.length} 筆 / 全部 ${(state.products||[]).length} 筆`;
 
+  bindProductListViewToggle();
+  applyProductListViewToggleUI();
+
+  const viewMode = getProductListViewMode();
+
   wrap.innerHTML = '';
+
+  if(!filtered.length){
+    wrap.innerHTML = '<div class="muted" style="padding:20px;text-align:center">沒有符合的商品</div>';
+    return;
+  }
+
+  if(viewMode === 'text'){
+    const list = document.createElement('div');
+    list.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+    filtered.forEach((p)=>{
+      const row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;background:' + (p.enabled===false ? '#f1f5f9' : '#fff') + ';font-size:14px';
+      row.innerHTML = `
+        <span style="flex:0 0 24px;text-align:center;color:${p.enabled===false ? '#94a3b8' : '#10b981'};font-size:16px">${p.enabled===false ? '⊘' : '●'}</span>
+        <span style="flex:1;font-weight:600;color:${p.enabled===false ? '#94a3b8' : '#0f172a'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name)}</span>
+        <span style="flex:0 0 100px;color:#64748b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.category)}</span>
+        <span style="flex:0 0 70px;text-align:right;font-weight:700;color:${p.enabled===false ? '#94a3b8' : '#1d4ed8'}">${money(p.price)}</span>
+        <span style="display:inline-flex;gap:2px;flex:0 0 auto">
+          <button class="move-up" style="padding:2px 6px;font-size:12px">▲</button>
+          <button class="move-down" style="padding:2px 6px;font-size:12px">▼</button>
+          <button class="edit" style="padding:2px 8px;font-size:12px">編輯</button>
+          <button class="toggle" style="padding:2px 8px;font-size:12px">${p.enabled===false?'上架':'下架'}</button>
+          <button class="delete" style="padding:2px 8px;font-size:12px;color:#dc2626">刪</button>
+        </span>
+      `;
+      row.querySelector('.move-up').onclick = ()=> { moveProduct(p.id, 'up'); autoPushIfMaster(); };
+      row.querySelector('.move-down').onclick = ()=> { moveProduct(p.id, 'down'); autoPushIfMaster(); };
+      row.querySelector('.edit').onclick = ()=> openProductEditModal(p);
+      row.querySelector('.toggle').onclick = ()=>{
+        p.enabled = !(p.enabled!==false);
+        persistAll(); renderProductsTable();
+        if(window.refreshPublicProducts) window.refreshPublicProducts();
+        autoPushIfMaster();
+      };
+      row.querySelector('.delete').onclick = ()=>{
+        if(!confirm(`確定刪除「${p.name}」？`)) return;
+        state.products = state.products.filter(x=>x.id!==p.id);
+        persistAll(); renderProductsTable();
+        if(window.refreshPublicProducts) window.refreshPublicProducts();
+        autoPushIfMaster();
+      };
+      list.appendChild(row);
+    });
+    wrap.appendChild(list);
+    return;
+  }
+
+  // 預設：圖示模式（原本行為）
   const grid = document.createElement('div');
   grid.className = 'product-grid';
   wrap.appendChild(grid);
 
-  if(!filtered.length){
-    grid.innerHTML = '<div class="muted" style="grid-column:1/-1;padding:20px;text-align:center">沒有符合的商品</div>';
-    return;
-  }
   filtered.forEach((p)=>{
     const card = document.createElement('div');
     card.className = 'product-card' + (p.enabled===false ? ' disabled' : '');
@@ -361,9 +454,7 @@ export function renderProductsTable(){
         <button class="delete">刪除</button>
       </div>`;
 
-
-
-        card.querySelector('.move-up').onclick = ()=> { moveProduct(p.id, 'up'); autoPushIfMaster(); };
+    card.querySelector('.move-up').onclick = ()=> { moveProduct(p.id, 'up'); autoPushIfMaster(); };
     card.querySelector('.move-down').onclick = ()=> { moveProduct(p.id, 'down'); autoPushIfMaster(); };
     card.querySelector('.edit').onclick = ()=> openProductEditModal(p);
     card.querySelector('.toggle').onclick = ()=>{
@@ -372,7 +463,6 @@ export function renderProductsTable(){
       if(window.refreshPublicProducts) window.refreshPublicProducts();
       autoPushIfMaster();
     };
-    
     card.querySelector('.delete').onclick = ()=>{
       if(!confirm(`確定刪除「${p.name}」？`)) return;
       state.products = state.products.filter(x=>x.id!==p.id);
@@ -381,9 +471,9 @@ export function renderProductsTable(){
       autoPushIfMaster();
     };
     grid.appendChild(card);
-
   });
 }
+
 
 export function resetProductForm(){
   const idEl = document.getElementById('productId');
