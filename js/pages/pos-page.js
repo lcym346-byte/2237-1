@@ -149,31 +149,56 @@ function renderProductConfig(product){
     const mod = state.modules.find(m=>m.id===att.moduleId);
     if(!mod) return;
     const required = att.requiredOverride === null ? mod.required : att.requiredOverride;
+    const isMulti = mod.selection === 'multi';
+    const minSel = isMulti ? (Number(mod.minSelect) || 0) : 0;
+    const maxSel = isMulti ? (mod.maxSelect == null ? null : Number(mod.maxSelect)) : null;
+
+    // 規則提示文字
+    let ruleHint = isMulti ? '多選' : '單選';
+    if(isMulti){
+      if(minSel > 0 && maxSel != null && minSel === maxSel) ruleHint = `多選（須選 ${minSel} 項）`;
+      else if(minSel > 0 && maxSel != null) ruleHint = `多選（${minSel}〜${maxSel} 項）`;
+      else if(maxSel != null) ruleHint = `多選（最多 ${maxSel} 項）`;
+      else if(minSel > 0) ruleHint = `多選（至少 ${minSel} 項）`;
+    }
+
     const block = document.createElement('div');
     block.className = 'module-block';
     block.innerHTML = `
       <div class="module-header">
         <div>
           <strong>${escapeHtml(mod.name)}</strong>
-          <div class="muted">${required ? '必選' : '非必選'}・${mod.selection === 'multi' ? '多選' : '單選'}</div>
+          <div class="muted">${required ? '必選' : '非必選'}・${ruleHint}</div>
         </div>
       </div>
       <div class="option-list"></div>
     `;
     const list = block.querySelector('.option-list');
+    const curSelArr = Array.isArray(state.currentSelections[mod.id]) ? state.currentSelections[mod.id] : [];
+    const atMax = isMulti && maxSel != null && curSelArr.length >= maxSel;
+
     mod.options.filter(o=>o.enabled!==false).forEach(opt=>{
       const active = Array.isArray(state.currentSelections[mod.id]) ?
         state.currentSelections[mod.id].includes(opt.id) :
         state.currentSelections[mod.id] === opt.id;
+      const disabled = isMulti && atMax && !active;
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'option-chip' + (active ? ' active' : '');
+      btn.className = 'option-chip' + (active ? ' active' : '') + (disabled ? ' disabled' : '');
+      if(disabled){
+        btn.style.opacity = '0.4';
+        btn.style.cursor = 'not-allowed';
+      }
       btn.innerHTML = `<span>${escapeHtml(opt.name)}</span><strong>${opt.price ? '+' + money(opt.price) : money(0)}</strong>`;
       btn.onclick = ()=>{
-        if(mod.selection === 'multi'){
+        if(isMulti){
           const arr = state.currentSelections[mod.id] || [];
-          if(arr.includes(opt.id)) state.currentSelections[mod.id] = arr.filter(x=>x!==opt.id);
-          else state.currentSelections[mod.id] = [...arr, opt.id];
+          if(arr.includes(opt.id)){
+            state.currentSelections[mod.id] = arr.filter(x=>x!==opt.id);
+          } else {
+            if(maxSel != null && arr.length >= maxSel) return; // 達上限不再加入
+            state.currentSelections[mod.id] = [...arr, opt.id];
+          }
         } else {
           state.currentSelections[mod.id] = state.currentSelections[mod.id] === opt.id ? null : opt.id;
         }
@@ -185,6 +210,7 @@ function renderProductConfig(product){
   });
   updateItemPricePreview(product);
 }
+
 
 function openProductConfigForNew(productId){
   const product = state.products.find(p=>p.id===productId);
@@ -443,19 +469,35 @@ export function initPOSPage(){
     const product = state.products.find(p=>p.id===state.configTarget?.productId);
     if(!product) return closeProductConfig();
 
-    for(const att of product.modules || []){
+       for(const att of product.modules || []){
       const mod = state.modules.find(m=>m.id===att.moduleId);
       if(!mod) continue;
       const required = att.requiredOverride === null ? mod.required : att.requiredOverride;
       const val = state.currentSelections[mod.id];
+      const isMulti = mod.selection === 'multi';
+
       if(required){
         const missing = Array.isArray(val) ? val.length === 0 : !val;
         if(missing) return alert(`請先選擇「${mod.name}」`);
       }
+
+      // 複選數量驗證
+      if(isMulti){
+        const cnt = Array.isArray(val) ? val.length : 0;
+        const minSel = Number(mod.minSelect) || 0;
+        const maxSel = mod.maxSelect == null ? null : Number(mod.maxSelect);
+        if(required && cnt < Math.max(1, minSel)){
+          return alert(`「${mod.name}」至少需選 ${Math.max(1, minSel)} 項`);
+        }
+        if(!required && minSel > 0 && cnt > 0 && cnt < minSel){
+          return alert(`「${mod.name}」若要選擇，至少需選 ${minSel} 項`);
+        }
+        if(maxSel != null && cnt > maxSel){
+          return alert(`「${mod.name}」最多只能選 ${maxSel} 項`);
+        }
+      }
     }
 
-    const selections = flattenSelections(product);
-    const extra = selections.reduce((s,x)=>s + Number(x.price||0), 0);
     const payload = {
       rowId: state.configTarget.mode === 'edit' ? state.configTarget.rowId : id(),
       productId: product.id,
