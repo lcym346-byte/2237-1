@@ -38,19 +38,16 @@ function ensureModal(){
           </select>
           <label style="min-width:auto"><input type="checkbox" id="${MODAL_ID}_required"> 必選</label>
         </div>
-
-                <div class="form-row" id="${MODAL_ID}_multiRow" style="display:none;flex-wrap:wrap;align-items:center;gap:6px">
+        <div class="form-row" id="${MODAL_ID}_multiRow" style="display:none;flex-wrap:wrap;align-items:center;gap:8px">
           <label style="width:100%;margin-bottom:2px">複選數量</label>
           <span>至少</span>
-          <input type="number" class="input" id="${MODAL_ID}_minSel" min="0" step="1" value="1"
-                 style="width:72px;min-width:72px;flex:0 0 72px;text-align:center">
+          <input type="number" id="${MODAL_ID}_minSel" min="0" step="1" value="1"
+                 style="width:144px !important;min-width:144px;max-width:144px;flex:0 0 144px;height:36px;padding:6px 10px;font-size:16px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box">
           <span>最多</span>
-          <input type="number" class="input" id="${MODAL_ID}_maxSel" min="1" step="1" placeholder="不限"
-                 style="width:72px;min-width:72px;flex:0 0 72px;text-align:center">
-          <div class="muted" style="font-size:12px;width:100%;margin-top:4px">
-            （最多留空＝不限；要「七選三」請至少 3、最多 3）
-          </div>
+          <input type="number" id="${MODAL_ID}_maxSel" min="1" step="1" placeholder="不限"
+                 style="width:144px !important;min-width:144px;max-width:144px;flex:0 0 144px;height:36px;padding:6px 10px;font-size:16px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box">
         </div>
+
 
 
         <div style="margin:10px 0 6px;font-weight:600;">子選項</div>
