@@ -100,11 +100,12 @@ function focusFirstInvalidField(result){
 
 function createExcelTemplateRows(){
   return [
-    { 商品名稱:'紅茶', 價格:30, 分類:'飲料', 狀態:'啟用' },
-    { 商品名稱:'奶茶', 價格:45, 分類:'飲料', 狀態:'啟用' },
-    { 商品名稱:'雞排', 價格:80, 分類:'炸物', 狀態:'啟用' }
+    { SKU:'A001', 商品名稱:'紅茶', 價格:30, 分類:'飲料', 狀態:'啟用' },
+    { SKU:'A002', 商品名稱:'奶茶', 價格:45, 分類:'飲料', 狀態:'啟用' },
+    { SKU:'A003', 商品名稱:'雞排', 價格:80, 分類:'炸物', 狀態:'啟用' }
   ];
 }
+
 function buildWorkbookFromRows(rows){
   if(!window.XLSX) throw new Error('XLSX library not loaded');
   const workbook = window.XLSX.utils.book_new();
@@ -125,29 +126,51 @@ function downloadBlob(blob, filename){
   setTimeout(()=> URL.revokeObjectURL(url), 1200);
 }
 function normalizeImportedRow(row){
+  const sku = String(row['SKU'] ?? row['sku'] ?? row['編號'] ?? '').trim();
   const name = String(row['商品名稱'] ?? row['名稱'] ?? row['name'] ?? row['Name'] ?? '').trim();
   const price = Number(row['價格'] ?? row['售價'] ?? row['price'] ?? row['Price'] ?? 0);
   const category = String(row['分類'] ?? row['category'] ?? row['Category'] ?? '未分類').trim() || '未分類';
   const enabledText = String(row['狀態'] ?? row['啟用'] ?? row['enabled'] ?? '啟用').trim();
   const enabled = !['false', '停用', '0', '關閉'].includes(enabledText);
-  return { name, price, category, enabled };
+  return { sku, name, price, category, enabled };
 }
+
 function importExcelRowsToPending(rows){
   const imported = [];
+  const dupSkus = [];
+  const skuMap = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.skuMap) || {};
+  const baseUrl = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.baseUrl) || '';
+  // 收集現有 SKU 以便檢查重複
+  const existingSkus = new Set();
+  (state.products || []).forEach(p => { if(p.sku) existingSkus.add(String(p.sku).trim()); });
+  (state.pendingProducts || []).forEach(p => { if(p.sku) existingSkus.add(String(p.sku).trim()); });
   rows.forEach(raw => {
     const item = normalizeImportedRow(raw);
     if(!item.name) return;
     if(!(item.price > 0)) return;
+    // SKU 重複檢查（同批次內或與既有商品衝突）
+    if(item.sku){
+      if(existingSkus.has(item.sku)){ dupSkus.push(item.sku); return; }
+      existingSkus.add(item.sku);
+    }
     const exists = (state.pendingProducts||[]).some(p => p.name === item.name && Number(p.price) === Number(item.price))
       || state.products.some(p => p.name === item.name && Number(p.price) === Number(item.price));
     if(exists) return;
+    // 透過 SKU 自動對應圖片 URL
+    let image = '';
+    if(item.sku && skuMap[item.sku] && baseUrl){
+      image = baseUrl + skuMap[item.sku];
+    }
     imported.push({
-      id: id(), name: item.name, price: item.price,
+      id: id(), sku: item.sku, name: item.name, price: item.price,
       category: item.category || '未分類', enabled: item.enabled,
-      modules: [], image: '',
+      modules: [], image,
       sortOrder: state.products.length + imported.length, status: 'pending'
     });
   });
+  if(dupSkus.length){
+    alert('以下 SKU 已存在，已略過：\n' + dupSkus.join(', '));
+  }
   if(!imported.length){ alert('Excel 沒有可匯入的新資料'); return; }
   if(!Array.isArray(state.pendingProducts)) state.pendingProducts = [];
   state.pendingProducts.unshift(...imported);
@@ -156,7 +179,8 @@ function importExcelRowsToPending(rows){
   window.refreshAllViews();
   alert(`已匯入 ${imported.length} 筆到待上架商品`);
 }
-async function importExcelFile(file){
+
+aasync function importExcelFile(file){
   if(!window.XLSX){ alert('Excel 套件尚未載入，請重新整理'); return; }
   const arrayBuffer = await file.arrayBuffer();
   const workbook = window.XLSX.read(arrayBuffer, { type:'array' });
@@ -167,7 +191,24 @@ async function importExcelFile(file){
   importExcelRowsToPending(rows);
 }
 
+function exportProductsToExcel(){
+  if(!window.XLSX){ alert('Excel 套件尚未載入，請重新整理'); return; }
+  const rows = (state.products || []).map(p => ({
+    SKU: p.sku || '',
+    商品名稱: p.name || '',
+    價格: Number(p.price || 0),
+    分類: p.category || '未分類',
+    狀態: p.enabled === false ? '停用' : '啟用'
+  }));
+  if(!rows.length){ alert('沒有商品可匯出'); return; }
+  const workbook = buildWorkbookFromRows(rows);
+  const blob = workbookToBlob(workbook);
+  const filename = 'products-' + new Date().toISOString().slice(0,10) + '.xlsx';
+  downloadBlob(blob, filename);
+}
+
 export function renderCategoryOptions(){
+
   const sel = document.getElementById('productCategory');
   if(!sel) return;
   const current = sel.value;
