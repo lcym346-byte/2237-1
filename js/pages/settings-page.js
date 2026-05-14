@@ -4,8 +4,6 @@
    ============================================================ */
 
 import { state, persistAll } from '../core/store.js';
-import { autoPushIfMaster } from './products-page.js';
-
 import { buildCartPreviewOrder, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getPrintSettings, previewInModal, getReceiptHtml, getLabelHtml } from '../modules/print-service.js';
 import { detectPrinters, clearDetectCache, getBridgeInfo, browserPrintHtml as bridgeBrowserPrint } from '../modules/print-bridge.js';
 
