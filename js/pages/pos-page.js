@@ -267,7 +267,7 @@ function mergeOrPushCartItem(payload){
 export function renderTabs(){
   const wrap = document.getElementById('categoryTabs');
   wrap.innerHTML = '';
-  ['全部', ...state.categories].forEach(cat=>{
+    [...state.categories.filter(c => c !== '全部'), '全部'].forEach(cat=>{
     const b = document.createElement('button');
     b.className = 'category-chip' + (state.settings.selectedCategory===cat ? ' active' : '');
     b.textContent = cat;
