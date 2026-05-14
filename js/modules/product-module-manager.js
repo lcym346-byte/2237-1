@@ -1,9 +1,20 @@
 /* 中文備註：模組管理動態彈窗（Batch 06.13/B - product.modules 是 [{moduleId, requiredOverride}] 物件陣列）。
  * v20260513：複選新增 minSelect / maxSelect 數量規則
- * 對齊 store.js 預設、pos-page.js、products-page.js 的實作。
+ * v20260515：儲存/刪除後自動推送雲端（主機才推）
  */
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml } from '../core/utils.js';
+import { syncMenuToFirebase, getRealtimeConfig } from './realtime-order-service.js';
+
+// 主機自動推送雲端（從機略過、不丟錯）
+function autoPushIfMaster(){
+  try{
+    const cfg = getRealtimeConfig();
+    if(cfg.deviceRole !== 'master') return;
+    if(!cfg.enabled) return;
+    syncMenuToFirebase().catch(err => console.warn('[module] autoPush 失敗：', err.message));
+  }catch(e){ console.warn('[module] autoPush exception:', e); }
+}
 
 function rid(){ return Math.random().toString(36).slice(2,10); }
 
@@ -47,8 +58,6 @@ function ensureModal(){
           <input type="number" id="${MODAL_ID}_maxSel" min="1" step="1" placeholder="不限"
                  style="width:144px !important;min-width:144px;max-width:144px;flex:0 0 144px;height:36px;padding:6px 10px;font-size:16px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box">
         </div>
-
-
 
         <div style="margin:10px 0 6px;font-weight:600;">子選項</div>
         <div id="${MODAL_ID}_options"></div>
@@ -252,7 +261,6 @@ export function saveModuleManage(){
     .map(o => ({ id: o.id || rid(), name:(o.name||'').trim(), price:Number(o.price)||0, enabled:o.enabled!==false }))
     .filter(o => o.name);
 
-  // 複選數量規則驗證
   const isMulti = draft.selection === 'multi';
   let minSel = isMulti ? Math.max(0, parseInt(draft.minSelect, 10) || 0) : 0;
   let maxSel = isMulti ? (draft.maxSelect == null ? null : Math.max(1, parseInt(draft.maxSelect, 10) || 1)) : null;
@@ -263,7 +271,7 @@ export function saveModuleManage(){
     alert(`「最多」(${maxSel}) 不可超過子選項數量(${cleanOpts.length})`); return;
   }
   if (isMulti && draft.required && minSel < 1){
-    minSel = 1; // 必選複選的最少數量自動補為 1
+    minSel = 1;
   }
 
   mod.name = newName;
@@ -273,7 +281,6 @@ export function saveModuleManage(){
   mod.maxSelect = isMulti ? maxSel : null;
   mod.options = cleanOpts;
 
-  // 套用至商品：勾選=加入物件 {moduleId, requiredOverride:null}；未勾選=移除
   (state.products||[]).forEach(p=>{
     p.modules = Array.isArray(p.modules) ? p.modules.slice() : [];
     p.modules = p.modules.filter(a => a && typeof a === 'object' && a.moduleId);
@@ -286,6 +293,7 @@ export function saveModuleManage(){
   });
 
   persistAll();
+  autoPushIfMaster();   // ★ 新增：自動推雲端
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshAllViews && window.refreshAllViews(); } catch(e){}
   closeModuleManage();
@@ -304,6 +312,7 @@ export function deleteModuleManage(){
   });
   state.modules = (state.modules||[]).filter(m => m.id !== delId);
   persistAll();
+  autoPushIfMaster();   // ★ 新增：自動推雲端
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshAllViews && window.refreshAllViews(); } catch(e){}
   closeModuleManage();
