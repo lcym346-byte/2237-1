@@ -19,6 +19,19 @@
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
 
 ---
+## 2026-05-15（補）
+
+### 模組子選項可單獨停售
+- 需求：模組（如「七選三」配料）中的某個子選項賣完時，要能單獨關閉該選項；模組規則、其他選項、其他商品都不受影響；補貨後可再打開。
+- 現況檢查：
+  - `js/core/store.js` 的 `normalizeModules` 已支援子選項 `enabled` 欄位（預設 true）。
+  - `js/pages/pos-page.js` 渲染模組選項時已用 `mod.options.filter(o=>o.enabled!==false)` 過濾。
+  - `js/pages/online-order-page.js` 同樣以 `enabled!==false` 過濾。
+  - `js/modules/product-module-manager.js` 的 `saveModuleManage()` 已在 `cleanOpts` 保留 `enabled` 欄位。
+  - 唯一缺口：管理 UI（`renderOptions()`）沒有提供切換 `enabled` 的勾選框。
+- 修法：只改 `js/modules/product-module-manager.js` 的 `renderOptions()`，每個子選項列加入「啟用/停售」勾選框，未勾選時整列以半透明灰底顯示並標註「停售」；勾選框 `change` 事件即時更新 `draft.options[i].enabled` 並重繪。
+- 影響檔案：`js/modules/product-module-manager.js`（v20260515-c）
+- 驗證：商品管理 → 模組 → 開啟設定 → 取消某選項的「啟用」→ 儲存 → POS 點餐與線上點餐畫面該選項消失，模組規則（min/max）不變；再勾回後恢復顯示；Firebase `menu/default` 的 `updatedAt` 即時更新。
 
 ## v20260613（2026-05-13）— 營業日 BD + 外送 + 修改改加單
 
