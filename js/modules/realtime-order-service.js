@@ -746,6 +746,7 @@ export async function fetchAndMergeMenuFromFirebase(){
       const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
       merged.push({
         id: cp.id,
+        sku: cp.sku || '', 
         name: cp.name || '',
         price: Number(cp.price || 0),
         category: cp.category || '未分類',
@@ -828,7 +829,7 @@ function applyCloudMenu(data){
       const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
       const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
       merged.push({
-        id: cp.id, name: cp.name || '', price: Number(cp.price || 0),
+        id: cp.id, sku: cp.sku || '', name: cp.name || '', price: Number(cp.price || 0),
         category: cp.category || '未分類', image: cp.image || '',
         description: cp.description || '',
         modules: Array.isArray(cp.modules) ? cp.modules : [],
