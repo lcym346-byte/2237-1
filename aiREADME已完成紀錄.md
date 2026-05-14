@@ -17,7 +17,44 @@
 | v20260603 | 2026-04-xx | APK 商用化補強（LogManager、PrintQueue、API Token） |
 | v20260602 | 2026-04-xx | 印表機字串排版、token 驗證初版、SW cache 更新 |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+| v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+
+---
+
+## 2026-05-15（晚）
+
+### 新增成本管理模組
+- 需求：報表內加「成本管理」按鈕，自動從現有菜單生成品項清單，可輸入成本、匯入/匯出 Excel；結束值班時根據販售品項計算預估獲利。
+- 設計決策：
+  - 成本儲存位置採用 `state.settings.costMap[productId] = { cost, updatedAt }`（**Option A**），不污染 `state.products` 欄位，與既有匯入/匯出邏輯解耦。
+  - 成本資料**不跨店共用**（使用者明確指示），透過既有 `posBackup/{storeId}/state` 自動雲端備份。
+  - Excel 欄位：`SKU | 品名 | 分類 | 售價 | 成本 | 毛利 | 毛利率`，匯入以 SKU 為主鍵，無 SKU 時用品名對應。
+  - 未設成本品項處理方式：跳過並在 UI 顯示提示（選項 b）。
+- 影響檔案：
+  - `js/modules/cost-manage.js`（新檔，含 modal HTML、Excel 匯入匯出、`calcSessionProfit()` API）
+  - `js/pages/reports-page.js`（新增 import、`costManageBtn` handler 改為 `openCostManageModal`、`renderCurrentSessionData()` 與 `openSessionSummaryModal()` 加入預估獲利卡片）
+  - `service-worker.js`（升 CACHE_NAME + ASSETS 加入 cost-manage.js）
+- 踩雷：modal 一開始用了 `modal-panel` class 導致樣式破掉（白底/置中/陰影都沒），改用既有 `modal-dialog wide` 即可。
+
+### 修復看板異常單金額顯示 0 元
+- 症狀：POS 端結帳並作廢一筆 $75 訂單後，看板「異常單金額」與「異常單數」始終顯示 0。
+- 根因：POS 端 `dashboard-publish.js` v20260613 把 `today` 物件內的異常欄位名稱從 `voided` 改為 `abnormal`，但看板端 `pos-dashboard/index.html` 仍讀 `today.voided`。兩邊版號都標 v20260613，POS 在 5/12 21:58 改完之後，看板 5/13 11:09 的更新沒同步欄位名，導致欄位永遠對不上。
+- 排除其他可能：完整檢查看板 `history-loader.js` 與 `print-service-dashboard.js`，兩者都不讀 `today.voided` 路徑，只用 `sessionHistory/` 與內部 `isVoidedStatus()`；POS 端內部其他模組也沒有回讀 `today.*`。因此改名只影響「即時看板首頁卡片」這一個地方。
+- 修法：把 POS 端 `dashboard-publish.js` 內 `calcTodayStats()` 的 `abnormal` 全部還原為 `voided`（變數名、return key、檔頭註解共 7 處）。
+- 影響檔案：`js/modules/dashboard-publish.js`（v20260515）
+- 同步修改看板端：`pos-dashboard/index.html` 把 UI 文字「最後心跳」改為「最後更新」（heartbeat 在繁中語境應翻成「更新」/「連線狀態」，非直譯「心跳」；Firebase 節點名 `heartbeat`、變數名 `hb` 不動以保相容）。
+- 教訓：未來修改任何 Firebase 寫入欄位名稱前，必須先 grep 看板 repo 是否有對應讀取碼，並同 commit 同步兩邊。已在 `aiREADME最新進度.md` 新增「v20260614 欄位命名規約」段落。
+
+### POS 與線上點餐頁分類標籤「全部」改到最後
+- 需求：使用者覺得「全部」放在第一個位置不順手，改放最後。
+- 修法：
+  - `js/pages/pos-page.js` 的 `renderTabs()`：`['全部', ...state.categories]` 改為 `[...state.categories.filter(c => c !== '全部'), '全部']`。
+  - `js/pages/online-order-page.js` 的 `renderCategoryTabs()`：`['全部', ...cats.filter(...)]` 改為 `[...cats.filter(...), '全部']`。
+- 過濾邏輯（`selectedCategory==='全部'` 顯示全部商品）不變，因為比對的是字串本身，跟順序無關。
+- 影響檔案：`js/pages/pos-page.js`、`js/pages/online-order-page.js`、`service-worker.js`（升 CACHE_NAME）
+
 ## 2026-05-15
+
 
 ### 修復 orders-page.js addOrderToCart TypeError
 - 症狀：訂單查詢頁按「加到購物車」會跳 `Uncaught TypeError: Cannot set properties of null (setting 'value') at addOrderToCart (orders-page.js:138)`，購物車內容不會帶過去。
