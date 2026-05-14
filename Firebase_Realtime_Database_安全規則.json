@@ -1,8 +1,10 @@
 {
   "rules": {
+    // 預設全部拒絕（未列出的路徑都不能讀寫）
     ".read": false,
     ".write": false,
 
+    // 員工資料：每位員工只能讀自己那筆，只有 admin 能寫
     "staff": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
@@ -11,20 +13,23 @@
       }
     },
 
+    // 菜單：任何人可讀（顧客點餐用），登入者可寫（POS 同步用）
     "menu": {
       "$projectId": {
         ".read": "auth != null",
-        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')"
+        ".write": "auth != null"
       }
     },
 
+    // POS 店家備份：依 storeId 分店存放，登入者可讀寫
     "posBackup": {
       "$storeId": {
-        ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')",
-        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')"
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     },
 
+    // 客戶資料：登入者可讀寫
     "customers": {
       "$customerKey": {
         ".read": "auth != null",
@@ -32,6 +37,7 @@
       }
     },
 
+    // 客戶訂單歷史：依建立時間與查詢鍵建立索引，登入者可讀寫
     "customerOrders": {
       ".indexOn": ["createdAt", "customerLookupKey"],
       "$orderId": {
@@ -40,36 +46,22 @@
       }
     },
 
+    // 線上訂單：依分店代碼分群（如 store001），索引常用查詢欄位，登入者可讀寫
     "onlineOrders": {
       "$storeCode": {
         ".indexOn": ["createdAt", "status", "customerPhone"],
-
         "$orderId": {
-          ".read": "auth != null && ((root.child('staff').child(auth.uid).child('role').val() === 'staff') || (root.child('staff').child(auth.uid).child('role').val() === 'admin') || (data.child('customerUid').val() === auth.uid))",
-          ".write": "auth != null && ((!data.exists() && newData.child('customerUid').val() === auth.uid) || (data.exists() && ((root.child('staff').child(auth.uid).child('role').val() === 'staff') || (root.child('staff').child(auth.uid).child('role').val() === 'admin'))))",
-          ".validate": "newData.hasChildren(['orderNo','customerUid','customerName','customerPhone','orderType','items','subtotal','total','status','createdAt','updatedAt'])",
-
-          "orderNo": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 40" },
-          "customerUid": { ".validate": "newData.isString() && newData.val() === auth.uid" },
-          "customerName": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 40" },
-          "customerPhone": { ".validate": "newData.isString() && newData.val().length >= 6 && newData.val().length <= 20" },
-          "customerNote": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 200)" },
-          "orderType": { ".validate": "newData.val() === '線上點餐-內用' || newData.val() === '線上點餐-外帶'" },
-          "subtotal": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "total": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-          "status": { ".validate": "newData.val() === 'pending_confirm' || newData.val() === 'confirmed' || newData.val() === 'rejected'" },
-          "prepTimeMinutes": { ".validate": "!newData.exists() || (newData.isNumber() && newData.val() >= 1 && newData.val() <= 240)" },
-          "estimatedReadyAt": { ".validate": "!newData.exists() || newData.isString()" },
-          "replyMessage": { ".validate": "!newData.exists() || (newData.isString() && newData.val().length <= 120)" },
-          "createdAt": { ".validate": "newData.isString()" },
-          "updatedAt": { ".validate": "newData.isString()" },
-          "items": {
-            ".validate": "newData.hasChildren()",
-            "$itemId": {
-              ".validate": "newData.hasChildren(['productId','name','basePrice','qty','extraPrice']) && newData.child('name').isString() && newData.child('basePrice').isNumber() && newData.child('qty').isNumber() && newData.child('qty').val() > 0 && newData.child('extraPrice').isNumber()"
-            }
-          }
+          ".read": "auth != null",
+          ".write": "auth != null"
         }
+      }
+    },
+
+    // 多店即時看板：依 storeId 分店，含 heartbeat / today / session / businessHours / _debug 等子節點，登入者可讀寫
+    "dashboards": {
+      "$storeId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
       }
     }
   }
