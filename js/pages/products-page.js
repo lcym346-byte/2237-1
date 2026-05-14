@@ -138,25 +138,55 @@ function normalizeImportedRow(row){
 function importExcelRowsToPending(rows){
   const imported = [];
   const dupSkus = [];
+  const updatedSkus = [];   // 已補 SKU 的現有商品
+  const updatedImages = []; // 順帶補上圖片的商品
   const skuMap = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.skuMap) || {};
   const baseUrl = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.baseUrl) || '';
-  // 收集現有 SKU 以便檢查重複
+
+  // 收集現有 SKU（排除空字串），用於重複檢查
   const existingSkus = new Set();
   (state.products || []).forEach(p => { if(p.sku) existingSkus.add(String(p.sku).trim()); });
   (state.pendingProducts || []).forEach(p => { if(p.sku) existingSkus.add(String(p.sku).trim()); });
+
   rows.forEach(raw => {
     const item = normalizeImportedRow(raw);
     if(!item.name) return;
     if(!(item.price > 0)) return;
-    // SKU 重複檢查（同批次內或與既有商品衝突）
+
+    // 1) 先比對現有商品「商品名稱」是否存在
+    const matchProduct = (state.products || []).find(p => (p.name || '').trim() === item.name);
+    if(matchProduct){
+      // 已存在 → 補 SKU 與圖片
+      if(item.sku){
+        // 若該 SKU 已被別的商品使用，記錄為衝突並略過
+        const conflict = (state.products || []).find(p => p.sku === item.sku && p !== matchProduct);
+        if(conflict){
+          dupSkus.push(item.sku + '（與「' + (conflict.name||'') + '」衝突）');
+        } else {
+          if(matchProduct.sku !== item.sku){
+            matchProduct.sku = item.sku;
+            updatedSkus.push(item.name + ' → ' + item.sku);
+          }
+          // 順帶套用圖庫圖片
+          if(skuMap[item.sku] && baseUrl){
+            const url = baseUrl + skuMap[item.sku];
+            if(matchProduct.image !== url){
+              matchProduct.image = url;
+              updatedImages.push(item.name);
+            }
+          }
+        }
+      }
+      return; // 已存在的商品不進待上架
+    }
+
+    // 2) 不存在 → 走原本「進待上架」流程
     if(item.sku){
       if(existingSkus.has(item.sku)){ dupSkus.push(item.sku); return; }
       existingSkus.add(item.sku);
     }
-    const exists = (state.pendingProducts||[]).some(p => p.name === item.name && Number(p.price) === Number(item.price))
-      || state.products.some(p => p.name === item.name && Number(p.price) === Number(item.price));
-    if(exists) return;
-    // 透過 SKU 自動對應圖片 URL
+    const existsPending = (state.pendingProducts||[]).some(p => p.name === item.name && Number(p.price) === Number(item.price));
+    if(existsPending) return;
     let image = '';
     if(item.sku && skuMap[item.sku] && baseUrl){
       image = baseUrl + skuMap[item.sku];
@@ -168,17 +198,26 @@ function importExcelRowsToPending(rows){
       sortOrder: state.products.length + imported.length, status: 'pending'
     });
   });
-  if(dupSkus.length){
-    alert('以下 SKU 已存在，已略過：\n' + dupSkus.join(', '));
+
+  // 結果回報
+  const msgs = [];
+  if(updatedSkus.length) msgs.push('✓ 已補 SKU：' + updatedSkus.length + ' 筆');
+  if(updatedImages.length) msgs.push('✓ 已套用圖片：' + updatedImages.length + ' 筆');
+  if(imported.length) msgs.push('✓ 新增到待上架：' + imported.length + ' 筆');
+  if(dupSkus.length) msgs.push('⚠ SKU 衝突已略過：' + dupSkus.join(', '));
+
+  if(updatedSkus.length || updatedImages.length || imported.length){
+    if(imported.length){
+      if(!Array.isArray(state.pendingProducts)) state.pendingProducts = [];
+      state.pendingProducts.unshift(...imported);
+      document.getElementById('pendingMenuPanel')?.removeAttribute('hidden');
+    }
+    persistAll();
+    window.refreshAllViews();
   }
-  if(!imported.length){ alert('Excel 沒有可匯入的新資料'); return; }
-  if(!Array.isArray(state.pendingProducts)) state.pendingProducts = [];
-  state.pendingProducts.unshift(...imported);
-  document.getElementById('pendingMenuPanel')?.removeAttribute('hidden');
-  persistAll();
-  window.refreshAllViews();
-  alert(`已匯入 ${imported.length} 筆到待上架商品`);
+  alert(msgs.length ? msgs.join('\n') : 'Excel 沒有可匯入的新資料');
 }
+
 
 async function importExcelFile(file){
   if(!window.XLSX){ alert('Excel 套件尚未載入，請重新整理'); return; }
