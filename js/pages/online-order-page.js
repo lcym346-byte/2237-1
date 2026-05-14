@@ -125,7 +125,8 @@ function mergeOrPushCartItem(payload){
 
 function renderCategoryTabs(){
   const wrap = document.getElementById('onlineCategoryTabs');
-  const categories = ['全部', ...state.categories.filter(c => c && c !== '全部')];
+  const cats = Array.isArray(state.categories) ? state.categories : [];
+  const categories = ['全部', ...cats.filter(c => c && c !== '全部')];
   wrap.innerHTML = categories.map(c => `<button class="online-category-chip ${onlineState.selectedCategory===c ? 'active' : ''}" data-category="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
   wrap.querySelectorAll('button').forEach(btn=>{
     btn.onclick = ()=>{
@@ -139,7 +140,8 @@ function renderCategoryTabs(){
 function renderProducts(){
   const keyword = document.getElementById('onlineSearchInput').value.trim();
   const grid = document.getElementById('onlineProductGrid');
-  const list = [...state.products].sort((a,b)=>a.sortOrder-b.sortOrder).filter(p=>{
+  const prods = Array.isArray(state.products) ? state.products : [];
+  const list = [...prods].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).filter(p=>{
     if(p.enabled === false) return false;
     const catOk = onlineState.selectedCategory === '全部' || p.category === onlineState.selectedCategory;
     const kwOk = !keyword || [p.name, p.category, ...(p.aliases||[])].join(' ').includes(keyword);
@@ -477,7 +479,7 @@ async function submitOnlineOrder(){
     localStorage.setItem('online_customer_phone', phone);
 
     const { signInCustomerAnonymously } = await import('../modules/realtime-order-service.js');
-    await signInCustomerAnonymously();
+        await signInCustomerAnonymously();
     const stopWatch = await watchCustomerOrder(orderId, (remote)=>{
       if(!remote) return;
       if(remote.status === 'confirmed'){
@@ -486,16 +488,24 @@ async function submitOnlineOrder(){
         closeCartDrawer();
         document.getElementById('onlineCustomerNote').value = '';
         openStatusOverlay('店家已確認訂單', buildConfirmedMessage(remote, orderId), true);
-        stopWatch();
+        try{ stopWatch(); }catch(e){}
+        window.removeEventListener('beforeunload', onlineState._cleanupWatch);
+        onlineState._cleanupWatch = null;
       }else if(remote.status === 'rejected'){
         openStatusOverlay('店家已拒絕訂單', remote.replyMessage || '很抱歉，店家目前無法接單，請稍後再試。', true);
-        stopWatch();
+        try{ stopWatch(); }catch(e){}
+        window.removeEventListener('beforeunload', onlineState._cleanupWatch);
+        onlineState._cleanupWatch = null;
       }else{
         const pendingText = remote.replyMessage || '訂單已送出，請稍候店家確認。';
         openStatusOverlay('等待店家確認訂單', pendingText);
       }
     }, onlineState.storeCode);
+    // 頁面關閉時自動解除監聽，避免記憶體洩漏
+    onlineState._cleanupWatch = ()=>{ try{ stopWatch(); }catch(e){} };
+    window.addEventListener('beforeunload', onlineState._cleanupWatch);
   }catch(err){
+
     closeStatusOverlay();
     alert(err.message || '送出訂單失敗');
   }
@@ -524,20 +534,49 @@ async function init(){
     document.getElementById('onlineStoreMeta').textContent = getStoreMeta();
   }
 
-  // 步驟 3：讀雲端菜單
-  try {
-    await fetchMenuFromFirebase();
+    // 步驟 3：讀雲端菜單（手機可能因網路或 Firebase CDN 慢失敗，給重試機制）
+  const grid = document.getElementById('onlineProductGrid');
+  grid.innerHTML = '<div class="online-empty card">📡 載入店家菜單中…</div>';
+
+  let menuLoaded = false;
+  for(let attempt = 1; attempt <= 3 && !menuLoaded; attempt++){
+    try{
+      await fetchMenuFromFirebase();
+      menuLoaded = true;
+    }catch(err){
+      console.warn(`讀取雲端菜單失敗（第 ${attempt} 次）：`, err);
+      if(attempt < 3){
+        grid.innerHTML = `<div class="online-empty card">📡 載入中…（重試 ${attempt}/3）</div>`;
+        await new Promise(r => setTimeout(r, 1500 * attempt));
+      }
+    }
+  }
+
+  if(!menuLoaded){
+    grid.innerHTML = `
+      <div class="online-empty card" style="text-align:center;padding:32px">
+        <div style="font-size:40px;margin-bottom:12px">⚠️</div>
+        <div style="font-size:16px;margin-bottom:8px">無法載入店家菜單</div>
+        <div class="muted" style="font-size:13px;margin-bottom:16px">請檢查網路連線後重新整理頁面</div>
+        <button class="primary-btn" onclick="location.reload()">🔄 重新載入</button>
+      </div>
+    `;
+    return;
+  }
+
+  try{
     await startMenuAutoWatch(() => {
       renderCategoryTabs();
       renderProducts();
     });
-  } catch(err) {
-    console.error('讀取雲端菜單失敗：', err);
+  }catch(err){
+    console.warn('啟動菜單監聽失敗（不影響顯示）：', err);
   }
 
   renderCategoryTabs();
   renderProducts();
   renderCart();
+
 
   const _savedName = localStorage.getItem('online_customer_name') || '';
   const _savedPhone = localStorage.getItem('online_customer_phone') || '';
@@ -649,9 +688,10 @@ async function handleMyOrdersSearch(){
   btn.disabled = true;
   btn.textContent = '查詢中…';
   result.innerHTML = '<div class="muted">查詢中，請稍候…</div>';
-  try{
-    const list = await lookupOrdersByCustomer(phone, name);
+   try{
+    const list = await lookupOrdersByCustomer(phone, name, onlineState.storeCode);
     renderMyOrdersList(list);
+
     try{
       localStorage.setItem('online_customer_name', name);
       localStorage.setItem('online_customer_phone', phone);
