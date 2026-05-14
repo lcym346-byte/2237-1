@@ -1,6 +1,9 @@
 /* 中文備註：模組管理動態彈窗（Batch 06.13/B - product.modules 是 [{moduleId, requiredOverride}] 物件陣列）。
  * v20260513：複選新增 minSelect / maxSelect 數量規則
- * v20260515：儲存/刪除後自動推送雲端（主機才推）
+ * v20260515-b：儲存/刪除後自動推送雲端（主機才推）
+ * v20260515-c：子選項加入「啟用/停售」開關（單獨關閉某選項，模組規則與其他選項不受影響）
+ *   - POS 與線上點餐原本就用 .filter(o=>o.enabled!==false) 過濾，邏輯層不用改
+ *   - 停售的選項在編輯列以半透明灰底顯示，視覺即時反映
  */
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml } from '../core/utils.js';
@@ -59,7 +62,7 @@ function ensureModal(){
                  style="width:144px !important;min-width:144px;max-width:144px;flex:0 0 144px;height:36px;padding:6px 10px;font-size:16px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box">
         </div>
 
-        <div style="margin:10px 0 6px;font-weight:600;">子選項</div>
+        <div style="margin:10px 0 6px;font-weight:600;">子選項（取消「啟用」勾選＝該選項停售，POS／線上點餐都不會顯示）</div>
         <div id="${MODAL_ID}_options"></div>
         <button class="btn small" data-act="addOpt">＋ 新增子選項</button>
 
@@ -153,24 +156,40 @@ function addOption(){
   renderOptions();
 }
 
+// v20260515-c：每列加入「啟用/停售」checkbox；停售列半透明灰底；勾選即時重繪
 function renderOptions(){
   const wrap = document.getElementById(`${MODAL_ID}_options`);
   if (!wrap || !draft) return;
   const len = (draft.options||[]).length;
-  wrap.innerHTML = (draft.options||[]).map((opt, i) => `
-    <div class="sub-option-row">
+  wrap.innerHTML = (draft.options||[]).map((opt, i) => {
+    const isEnabled = opt.enabled !== false;
+    const rowStyle = isEnabled ? '' : 'opacity:0.55;background:#f1f5f9;';
+    const statusColor = isEnabled ? '#16a34a' : '#b91c1c';
+    const statusText = isEnabled ? '啟用' : '停售';
+    return `
+    <div class="sub-option-row" style="${rowStyle}">
       <button type="button" class="btn small" data-act="optUp" data-i="${i}" ${i===0?'disabled':''} style="min-width:32px">▲</button>
       <button type="button" class="btn small" data-act="optDown" data-i="${i}" ${i===len-1?'disabled':''} style="min-width:32px">▼</button>
+      <label style="display:inline-flex;align-items:center;gap:4px;min-width:auto;cursor:pointer;user-select:none;white-space:nowrap;padding:0 4px;" title="取消勾選＝停售此選項，POS／線上點餐都不顯示">
+        <input type="checkbox" data-fld="enabled" data-i="${i}" ${isEnabled ? 'checked' : ''}>
+        <span style="font-size:12px;font-weight:600;color:${statusColor}">${statusText}</span>
+      </label>
       <input class="input" data-fld="name" data-i="${i}" placeholder="子選項名稱" value="${escapeHtml(opt.name||'')}">
       <input class="input" data-fld="price" data-i="${i}" type="number" step="1" placeholder="加價" value="${Number(opt.price||0)}" style="max-width:90px;">
       <button type="button" class="btn small" data-act="rmOpt" data-i="${i}">移除</button>
-    </div>`).join('');
+    </div>`;
+  }).join('');
   wrap.querySelectorAll('input[data-fld]').forEach(inp=>{
-    inp.addEventListener('input', (e)=>{
+    const evtName = inp.type === 'checkbox' ? 'change' : 'input';
+    inp.addEventListener(evtName, (e)=>{
       const i = parseInt(e.target.getAttribute('data-i'),10);
       const fld = e.target.getAttribute('data-fld');
       if (isNaN(i) || !draft.options[i]) return;
       if (fld === 'price') draft.options[i].price = Number(e.target.value)||0;
+      else if (fld === 'enabled'){
+        draft.options[i].enabled = e.target.checked;
+        renderOptions();  // 即時重繪該列灰階樣式
+      }
       else draft.options[i][fld] = e.target.value;
     });
   });
@@ -293,7 +312,7 @@ export function saveModuleManage(){
   });
 
   persistAll();
-  autoPushIfMaster();   // ★ 新增：自動推雲端
+  autoPushIfMaster();
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshAllViews && window.refreshAllViews(); } catch(e){}
   closeModuleManage();
@@ -312,7 +331,7 @@ export function deleteModuleManage(){
   });
   state.modules = (state.modules||[]).filter(m => m.id !== delId);
   persistAll();
-  autoPushIfMaster();   // ★ 新增：自動推雲端
+  autoPushIfMaster();
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshAllViews && window.refreshAllViews(); } catch(e){}
   closeModuleManage();
