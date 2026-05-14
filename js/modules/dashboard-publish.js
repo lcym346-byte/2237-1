@@ -3,7 +3,7 @@
  *   - 今日範圍改用「營業日 BD」切（跨日營業時段歸屬同一 BD）
  *   - 預約待付款單依 reservationAt 歸屬 BD（不是 createdAt）
  *   - 營業額 = completed + pending（含預約待付款）+ 今日 BD 內已結束班次的外送加總
- *   - 異常欄位 voided → abnormal（status=void/cancelled/refunded）
+ *   - 異常欄位 voided（status=void/cancelled/refunded）保持看板相容
  *   - 新增 publish dashboards/{storeId}/businessHours 節點供看板讀取
  *   - 新增 today.delivery {panda, uber, total} 外送金額（從已結束班次 stats 累加）
  *   - 移除 netSalesTotal（避免混淆，營業額本身已是正確值）
@@ -101,14 +101,14 @@ function calcTodayStats(){
   });
 
   // 異常統計（作廢 / 取消 / 退款）
-  const abnormal = { amount: 0, count: 0, byType: { void: 0, cancelled: 0, refunded: 0 } };
+  const voided = { amount: 0, count: 0, byType: { void: 0, cancelled: 0, refunded: 0 } };
   todayOrders.forEach(o => {
     const status = String(o.status || '').toLowerCase();
     if(!['void','cancelled','refunded'].includes(status)) return;
     const amt = Number(o.total || o.subtotal || 0);
-    abnormal.amount += amt;
-    abnormal.count += 1;
-    if(abnormal.byType[status] !== undefined) abnormal.byType[status] += amt;
+    voided.amount += amt;
+    voided.count += 1;
+    if(voided.byType[status] !== undefined) voided.byType[status] += amt;
   });
 
   // 今日 BD 內已結束班次的外送加總（從 state.reports.sessions 撈）
@@ -136,7 +136,7 @@ function calcTodayStats(){
     orderCount,
     avgTicket,
     payments,
-    abnormal,
+    voided,
     delivery
   };
 }
