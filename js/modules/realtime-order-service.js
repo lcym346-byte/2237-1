@@ -11,7 +11,7 @@ import { getCurrentSession } from './report-session.js';
 import { fmtLocalDateTime } from '../core/utils.js';
 
 
-const FIREBASE_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
+const FIREBASE_BASE = 'https://www.gstatic.com/firebasejs/10.14.1';
 const DEFAULT_FIREBASE_CONFIG = {
   enabled: true,
   apiKey: 'AIzaSyBOmGn6HQI0O6RU6Iu2hh44TbFoneblbyk',
