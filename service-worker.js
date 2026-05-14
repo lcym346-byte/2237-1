@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v20260614-sw-fix-cache';
+const CACHE_NAME = 'pos-v20260614-swfix-cache';
 const ASSETS = [
   './',
   './index.html',
@@ -16,11 +16,13 @@ const ASSETS = [
   './js/core/store.js',
   './js/core/storage.js',
   './js/core/utils.js',
+  './js/core/store-config.js',
   './js/pages/pos-page.js',
   './js/pages/orders-page.js',
   './js/pages/reports-page.js',
   './js/pages/products-page.js',
   './js/pages/settings-page.js',
+  './js/pages/online-order-page.js',
   './js/modules/cart-service.js',
   './js/modules/order-service.js',
   './js/modules/report-session.js',
@@ -49,22 +51,17 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-
-  // Firebase CDN 和外部 API 不做快取
   const url = new URL(event.request.url);
   if (url.origin !== location.origin) return;
-
-  // 127.0.0.1 APK 端不做快取（避免攔截到 ping/print）
   if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return;
-
   event.respondWith(
     fetch(event.request).then((response) => {
-      // ★ 修正：只快取完整 200 回應，避開 206 partial response 與 opaque 回應
-      // 原本沒判斷 status，A123.mp3 等被 Range 請求回 206 時 cache.put 會拋錯，
-      // 連帶讓整個 fetch handler 失敗（含 Firebase Auth iframe）
+      // 只快取完整、同源、200 的回應，避免 206 partial / opaque 讓 cache.put 拋錯
       if (response && response.status === 200 && response.type === 'basic') {
         const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone)).catch(()=>{});
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(event.request, clone).catch(() => {});
+        });
       }
       return response;
     }).catch(() => {
