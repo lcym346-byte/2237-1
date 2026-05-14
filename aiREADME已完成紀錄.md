@@ -17,6 +17,41 @@
 | v20260603 | 2026-04-xx | APK 商用化補強（LogManager、PrintQueue、API Token） |
 | v20260602 | 2026-04-xx | 印表機字串排版、token 驗證初版、SW cache 更新 |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+## 2026-05-15
+
+### 修復 orders-page.js addOrderToCart TypeError
+- 症狀：訂單查詢頁按「加到購物車」會跳 `Uncaught TypeError: Cannot set properties of null (setting 'value') at addOrderToCart (orders-page.js:138)`，購物車內容不會帶過去。
+- 根因：第 138 行 `document.getElementById('discountValue').value = o.discountValue || 0;` 中的 `#discountValue` 是舊版折扣機制的 input 欄位，已從 index.html 移除。新版折扣改用「負金額品項」直接 push 到 cart，原訂單的折扣已隨 `state.cart = deepCopy(o.items)` 一併帶過去，不需再單獨設定。
+- 修法：刪除第 138 行（`discountValue.value = …`）與第 139 行（`state.settings.discountType = …`），保留 `orderType` 與 `tableNo` 兩行。
+- 影響檔案：`js/pages/orders-page.js`（v20260515-d）
+- 驗證：訂單頁按「加到購物車」→ 自動切到 POS 頁 → 購物車含原訂單品項與折扣品項 → 結帳產生新單 → 原訂單不變。
+
+### 模組子選項可單獨停售
+- 需求：「七選三」配料中某選項賣完時，要能單獨關閉該選項；模組規則、其他選項、其他商品都不受影響。
+- 現況檢查：`store.js` 的 `normalizeModules` 已支援子選項 `enabled` 欄位；`pos-page.js`、`online-order-page.js` 渲染時已用 `.filter(o=>o.enabled!==false)` 過濾；`product-module-manager.js` 的 `saveModuleManage()` 已在 `cleanOpts` 保留 `enabled`。唯一缺口是管理 UI 無切換開關。
+- 修法：在 `product-module-manager.js` 的 `renderOptions()` 為每個子選項列加入啟用/停售 checkbox，停售列以半透明灰底顯示。`addOption()` 新增時帶 `enabled:true`。
+- 影響檔案：`js/modules/product-module-manager.js`（v20260515-c）
+- 驗證：商品管理 → 模組 → 取消某選項勾選 → 儲存 → POS 與線上點餐均不顯示停售項目；模組規則（min/max）不變；勾回後恢復顯示。
+
+### 修復 store.js localStorage 配額爆掉
+- 症狀：顧客點餐頁空白；Console 紅字 `persistAll failed: DOMException: ... exceeded the quota at store.js:343`。
+- 修法：`persistAll()` 內的 `localStorage.setItem` 加 try/catch，捕捉 `QuotaExceededError` 後 console.warn 並 `removeItem(LS_KEY)`，讓 IndexedDB 寫入仍正常進行。
+- 影響檔案：`js/core/store.js`
+
+### 修復 reports-page.js 重複 payKeys 宣告
+- 症狀：報表頁開啟即掛掉，Console `SyntaxError: Identifier 'payKeys' has already been declared`。
+- 修法：刪除重複的後 4 行 payKeys 宣告。
+- 影響檔案：`js/pages/reports-page.js`
+
+### 看板端 BD 查詢改造
+- `pos-dashboard/js/history-loader.js`：從「自然日 60 天」改為「最近 60 個營業日」，跳過公休日，新舊 key 並存相容。
+- `pos-dashboard/index.html`：多讀 `dashboards/{storeId}/businessHours`；UI 文字「淨營業額→營業額」「作廢/取消→異常」「最後心跳→最後更新」；新增外送 $X 顯示；移除淨營業額欄位。
+- 對應原進度檔的 Commit 8、Commit 9。
+
+### v20260614 圖片方案改採 GitHub Pages
+- 原規劃的 Firebase Storage 方案因要收費而作廢。
+- 改用既有的 `jess0937588151-hue/2234/images/products/gallery.html` 工具產生 SKU → URL 對應表，匯入到 POS `state.settings.imageLibrary.skuMap`，商品依 SKU 自動套圖。
+- index.html 內的「SKU 圖庫對應」Modal、`imageLibraryBaseUrl`、`imageLibraryImportBtn` 與 store.js 的 `imageLibrary` 預設值即為此方案實作。
 
 ---
 ## 2026-05-15（補）
