@@ -133,10 +133,10 @@ function addOrderToCart(orderId){
   state.cart = deepCopy(o.items);
 
   // 不再設 editingOrderId — 結帳會產生新訂單，原訂單不變
+  // v20260515-d：移除對已不存在的 #discountValue 欄位的設定
+  // （新版折扣以「負金額品項」存在 cart 內，已隨上面 deepCopy(o.items) 一併帶過去）
   document.getElementById('orderType').value = o.orderType || '內用';
   document.getElementById('tableNo').value = o.tableNo || '';
-  document.getElementById('discountValue').value = o.discountValue || 0;
-  state.settings.discountType = o.discountType || 'amount';
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.querySelector('.nav-btn[data-view="posView"]').classList.add('active');
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
