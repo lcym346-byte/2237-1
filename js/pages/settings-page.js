@@ -445,18 +445,31 @@ function escapeHtml(s){
 function parseImageLibraryJson(text){
   var data = JSON.parse(text);
   var map = {};
-  // 支援兩種格式：
-  // 1) { "A001": "A001.jpg", "A002": "A002.png" }
+  // 支援三種格式：
+  // 1) { "A001":"A001.jpg", "A002":"A002.png" }
   // 2) [ {"sku":"A001","file":"A001.jpg"}, ... ]
+  // 3) gallery.html 匯出：{ version, baseUrl, items:[{sku,file},...] }
+  var rows = null;
   if(Array.isArray(data)){
-    data.forEach(function(row){
+    rows = data;
+  } else if(data && typeof data === 'object' && Array.isArray(data.items)){
+    rows = data.items;
+    // 若 JSON 自帶 baseUrl，順便同步到 imageLibrary.baseUrl 欄位（呼叫端會處理）
+    if(data.baseUrl){
+      var baseInput = document.getElementById('imageLibraryBaseUrl');
+      if(baseInput && !baseInput.value) baseInput.value = String(data.baseUrl);
+    }
+  }
+  if(rows){
+    rows.forEach(function(row){
       if(row && row.sku && row.file){
         map[String(row.sku).trim()] = String(row.file).trim();
       }
     });
   } else if(data && typeof data === 'object'){
     Object.keys(data).forEach(function(k){
-      if(data[k]) map[String(k).trim()] = String(data[k]).trim();
+      var v = data[k];
+      if(v && typeof v === 'string') map[String(k).trim()] = String(v).trim();
     });
   } else {
     throw new Error('JSON 格式無法解析');
@@ -464,6 +477,7 @@ function parseImageLibraryJson(text){
   if(Object.keys(map).length === 0) throw new Error('JSON 內沒有有效資料');
   return map;
 }
+
 
 async function importImageLibraryFile(replaceMode){
   var fileInput = document.getElementById('imageLibraryFileInput');
