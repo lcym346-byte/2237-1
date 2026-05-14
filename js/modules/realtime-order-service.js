@@ -657,19 +657,21 @@ export async function syncMenuToFirebase(){
   const menuData = {
     categories: state.categories || [],
     products: (state.products || []).map(function(p){
-      return {
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        category: p.category,
-        image: p.image || '',
-        description: p.description || '',
-        modules: p.modules || [],
-        sortOrder: p.sortOrder || 0,
-        enabled: p.enabled !== false,
-        soldOut: p.soldOut === true
-      };
-    }),
+  return {
+    id: p.id,
+    sku: p.sku || '',
+    name: p.name,
+    price: p.price,
+    category: p.category,
+    image: p.image || '',
+    description: p.description || '',
+    modules: p.modules || [],
+    sortOrder: p.sortOrder || 0,
+    enabled: p.enabled !== false,
+    soldOut: p.soldOut === true
+  };
+}),
+
     modules: state.modules || [],
     updatedAt: new Date().toISOString()
   };
