@@ -22,7 +22,8 @@
 - 待辦：把 cart-service.js 內這四個 function 直接移除，避免未來誤用。pos-page.js、orders-page.js 若仍有 import 也一併清掉。
 
 ### 2234 同步（使用者自行處理）
-- 本次 2237-1 的修改（模組子選項停售、addOrderToCart TypeError）由使用者自行手動複製到 2234。
+- 本次 2237-1 的修改（模組子選項停售、addOrderToCart TypeError、成本管理模組、看板異常單欄位修正、分類「全部」改到最後）由使用者自行手動複製到 2234。
+- 看板修改（最後更新文字 + abnormal→voided 對齊）由使用者自行複製到 pos-dashboard repo（已完成）。
 
 ---
 
@@ -62,6 +63,15 @@
 - **不採用 Firebase Storage**：要收費，不適合多店長期使用
 - **採用 GitHub Pages + SKU 對應表**：圖片放在 `jess0937588151-hue/2234/images/products/`，由 `gallery.html` 工具產生 SKU → URL 對應表，匯入到 POS `state.settings.imageLibrary.skuMap`，商品依 SKU 自動套圖
 - **優點**：免費、CDN 快、image 欄位只存 URL（不含 base64），localStorage 不會爆
+
+---
+
+## 📐 v20260614 欄位命名規約（給未來 AI 參考）
+
+- **POS 端 `dashboard-publish.js` 寫入 Firebase `dashboards/{storeId}/today` 的異常欄位名稱固定為 `voided`**（不是 `abnormal`）。
+- 看板端 `pos-dashboard/index.html` 讀的也是 `today.voided`。
+- 兩邊必須一致，2026-05-12~13 曾因 POS 端把 `voided` 改名為 `abnormal` 但看板沒同步，導致異常單金額永遠顯示 0。2026-05-15 已還原。
+- **規則**：未來修改任何 Firebase 寫入欄位名稱前，必須先 grep 看板 repo 是否有對應讀取程式碼。
 
 ---
 
