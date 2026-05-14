@@ -10,6 +10,7 @@
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml, money, downloadFile, fmtLocalDateTime } from '../core/utils.js';
 import { printSessionReportViaBridge } from '../modules/print-service.js';
+import { openCostManageModal, calcSessionProfit } from '../modules/cost-manage.js';
 import {
   CASH_DENOMINATIONS,
   calcCashTotal,
@@ -128,7 +129,7 @@ function renderCurrentSessionData(){
   const voidedCount = voidedOrders.length;
   const voidedAmount = voidedOrders.reduce((s,o)=>s+Number(o.total||0),0);
 
-  const cards = document.getElementById('reportCards');
+    const cards = document.getElementById('reportCards');
   if(cards){
     const baseCards = [
       ['營業額', money(sales), ''],
@@ -136,10 +137,22 @@ function renderCurrentSessionData(){
       ['客單價', money(avg), ''],
       ['折扣', money(discount), '']
     ];
+    // ─── v20260515-e：預估獲利卡片（綠色；未設成本品項從統計中跳過） ───
+    const profitInfo = calcSessionProfit(orders, sales);
+    if(orders.length > 0){
+      const rateText = (profitInfo.profitRate * 100).toFixed(1) + '%';
+      const profitColor = profitInfo.profit < 0 ? 'color:#dc2626' : 'color:#059669';
+      baseCards.push(['💵 預估獲利', `${money(profitInfo.profit)} (${rateText})`, profitColor]);
+    }
+    // 若有沒設成本的品項才顯示
+    if(profitInfo.missingItems.length > 0){
+      baseCards.push(['⚠️ 未設成本', `${profitInfo.missingItems.length} 項`, 'color:#f59e0b']);
+    }
     // 若有作廢單才顯示作廢卡片（紅色標示）
     if(voidedCount > 0){
       baseCards.push(['⚠️ 作廢', `${voidedCount} 單 / ${money(voidedAmount)}`, 'color:#dc2626']);
     }
+
     cards.innerHTML = baseCards.map(p =>
       `<div class="stat-card"><div class="label" style="${p[2]}">${p[0]}</div><div class="value" style="${p[2]}">${p[1]}</div></div>`
     ).join('');
@@ -527,13 +540,24 @@ function openSessionSummaryModal(session){
   const voidedCount = voidedOrders.length;
   const voidedAmount = voidedOrders.reduce((s,o)=>s+Number(o.total||0),0);
 
-   const summaryStats = [
+      const summaryStats = [
     ['營業額', money(sales), ''],
     ['訂單數', count, ''],
     ['客單價', money(avg), ''],
     ['折扣', money(discount), '']
   ];
+  // ─── v20260515-e：預估獲利卡片（綠色；未設成本品項從統計中跳過） ───
+  const profitInfo = calcSessionProfit(orders, sales);
+  if(orders.length > 0){
+    const rateText = (profitInfo.profitRate * 100).toFixed(1) + '%';
+    const profitColor = profitInfo.profit < 0 ? 'color:#dc2626' : 'color:#059669';
+    summaryStats.push(['💵 預估獲利', `${money(profitInfo.profit)} (${rateText})`, profitColor]);
+  }
+  if(profitInfo.missingItems.length > 0){
+    summaryStats.push(['⚠️ 未設成本', `${profitInfo.missingItems.length} 項`, 'color:#f59e0b']);
+  }
   // ─── v20260613：外送卡片（藍色，與作廢紅色區隔） ───
+
   const deliveryPanda = Number(session.stats?.deliveryPanda || 0);
   const deliveryUber = Number(session.stats?.deliveryUber || 0);
   const deliveryTotal = Number(session.stats?.deliveryTotal || 0) || (deliveryPanda + deliveryUber);
@@ -1048,9 +1072,9 @@ export function initReportsPage(){
   document.getElementById('confirmStartSessionBtn')?.addEventListener('click', confirmStartSession);
   document.getElementById('confirmEndSessionBtn')?.addEventListener('click', confirmEndSession);
   document.getElementById('reportExportBtn')?.addEventListener('click', exportCurrentReportCsv);
-  document.getElementById('costManageBtn')?.addEventListener('click', () => {
-    alert('💰 成本管理功能將在 Batch 06.16/7 提供');
-  });
+  document.getElementById('costManageBtn')?.addEventListener('click', openCostManageModal);
+
+  
   document.getElementById('toggleTopProductsBtn')?.addEventListener('click', () => {
     const el = document.getElementById('topProducts');
     el?.classList.toggle('collapsed');
