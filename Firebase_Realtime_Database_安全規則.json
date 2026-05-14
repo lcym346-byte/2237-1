@@ -47,8 +47,10 @@
     },
 
     // 線上訂單：依分店代碼分群（如 store001），索引常用查詢欄位，登入者可讀寫
+    // ★ $storeCode 層加 .read：讓 POS 能監聽整個店的訂單清單（onValue 對父層生效）
     "onlineOrders": {
       "$storeCode": {
+        ".read": "auth != null",
         ".indexOn": ["createdAt", "status", "customerPhone"],
         "$orderId": {
           ".read": "auth != null",
