@@ -260,7 +260,7 @@ function markLookupTime(){
  *   3. 從 Firebase /onlineOrders 用 customerLookupKey 過濾
  *   4. 回傳該顧客所有訂單（含狀態）
  */
-export async function lookupOrdersByCustomer(fullPhone, name){
+export async function lookupOrdersByCustomer(fullPhone, name, storeCode){
   // 節流檢查
   const check = checkLookupRateLimit();
   if (!check.allowed) {
@@ -270,6 +270,11 @@ export async function lookupOrdersByCustomer(fullPhone, name){
   const normPhone = String(fullPhone || '').replace(/\D/g, '');
   const normName = String(name || '').trim();
   if (!normPhone || !normName) throw new Error('請輸入完整姓名與電話');
+
+  // 多店分流：顧客端必須帶 storeCode 才能命中 /onlineOrders/{storeCode}
+  const code = String(storeCode || '').trim();
+  if (!code) throw new Error('缺少店家代碼，請從店家提供的 QR code 重新進入查詢');
+  if (/[.#$\/\[\]]/.test(code)) throw new Error('店家代碼含非法字元');
 
   markLookupTime();
 
@@ -283,9 +288,10 @@ export async function lookupOrdersByCustomer(fullPhone, name){
     // 顧客需先匿名登入（onlineOrders 規則允許匿名讀自己的單）
     await rt.signInCustomerAnonymously();
 
-    // 查 /onlineOrders 中 customerLookupKey 一致的訂單
-    const ref = await rt._getRef('onlineOrders');
+    // 查 /onlineOrders/{storeCode} 中 customerLookupKey 一致的訂單
+    const ref = await rt._getRef(`onlineOrders/${code}`);
     const snapshot = await rt._dbApi().get(ref);
+
     const all = snapshot.val() || {};
 
     const matched = Object.entries(all)
@@ -359,19 +365,25 @@ export async function cleanupOldOrders(){
   state.settings.lastCleanupAt = new Date().toISOString();
   persistAll();
 
-  // Firebase 端清理（best-effort，失敗不影響本機）
+    // Firebase 端清理（best-effort，失敗不影響本機）
   let fbRemoved = 0;
   try {
     const rt = await import('./realtime-order-service.js');
     const cfg = rt.getRealtimeConfig();
     if (cfg.enabled && rt.getRealtimeAuthUser && rt.getRealtimeAuthUser()) {
+      // 多店分流：取本店 storeCode，沒有就跳過 Firebase 清理（本機已清）
+      let storeCode = '';
+      try { storeCode = rt.getStoreCode(); } catch(e){ /* 沒設 storeId 就略過雲端 */ }
+
       for (const o of toRemove) {
         const orderId = String(o.id || '').replace(/^online_/, '');
         if (!orderId) continue;
         try {
-          // 刪 onlineOrders/{id}
-          const onlineRef = await rt._getRef(`onlineOrders/${orderId}`);
-          await rt._dbApi().remove(onlineRef);
+          // 刪 onlineOrders/{storeCode}/{id}（多店分流路徑）
+          if (storeCode) {
+            const onlineRef = await rt._getRef(`onlineOrders/${storeCode}/${orderId}`);
+            await rt._dbApi().remove(onlineRef);
+          }
           // 刪 customerOrders/{phone}/{id}
           const phone = String(o.customerPhone || '').replace(/\D/g, '');
           if (phone) {
@@ -387,6 +399,7 @@ export async function cleanupOldOrders(){
   } catch (e) {
     console.warn('cleanupOldOrders Firebase 端清理失敗（本機已成功）：', e.message);
   }
+
 
   return {
     removed: before - state.orders.length,
