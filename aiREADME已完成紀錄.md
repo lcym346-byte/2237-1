@@ -245,6 +245,33 @@ APK 每次重啟/重裝會用 UUID 重新生成 API token，但 Web 端 localSto
 - D10 預約 30 分鐘前自動提醒列印
 
 ---
+## 2026-05-15
+
+### 修復分類/模組儲存後不同步到雲端的問題
+- 症狀：商品管理頁新增/修改/刪除分類或模組後，雲端 menu 節點不會更新；
+  Firebase 雲端的 categories 與 modules 一直是舊的，下載回來也是舊的。
+- 根因：`product-category-manager.js` 的 `saveCategoryManage` / `deleteCategoryManage`
+  與 `product-module-manager.js` 的 `saveModuleManage` / `deleteModuleManage`
+  結尾只呼叫 `persistAll()`（只寫 localStorage），未呼叫 `syncMenuToFirebase()`。
+  只有商品（products）會在按「⬆ 上傳」時才推送，分類與模組從未被自動推送。
+- 修法：兩個 manager 各新增 `autoPushIfMaster()`（從機/未啟用即時不會推送、不丟錯），
+  在 save 與 delete 的 `persistAll()` 之後呼叫，達到「分類/模組變動 → 自動推雲端」。
+- 影響檔案：
+  - js/modules/product-category-manager.js（v20260515）
+  - js/modules/product-module-manager.js（v20260515）
+- 驗證：F12 Console 應出現「菜單同步成功」；
+  Firebase Console `menu/{projectId}` 節點 updatedAt 會即時更新。
+
+### 釐清雲端菜單實際路徑
+- 本機 `state.realtimeOrderConfig.projectId` 為 undefined，
+  程式碼 `cfg.projectId || 'default'` 取 'default'，
+  所以實際上傳/下載都在 `menu/default`，非 `menu/webpos-1f626`（舊）。
+- 上傳與下載路徑一致，功能正常，不需修改 projectId。
+
+### 移除 index.html 商品管理頁多餘的 < 符號
+- 位置：`<div class="products-main"> < <div class="panel-block">` 中間多一個 `<`
+- 修法：刪除該字元即可。
+
 
 > 詳細的當前進行中項目請見 `aiREADME最新進度.md`。
 > 規範與架構說明請見 `aiREADME.md`。
