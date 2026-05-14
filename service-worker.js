@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v20260614-swfix-cache';
+const CACHE_NAME = 'pos-v20260615-swfix-cache';
 const ASSETS = [
   './',
   './index.html',
