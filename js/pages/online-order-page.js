@@ -126,7 +126,7 @@ function mergeOrPushCartItem(payload){
 function renderCategoryTabs(){
   const wrap = document.getElementById('onlineCategoryTabs');
   const cats = Array.isArray(state.categories) ? state.categories : [];
-  const categories = ['全部', ...cats.filter(c => c && c !== '全部')];
+  const categories = [...cats.filter(c => c && c !== '全部'), '全部'];
   wrap.innerHTML = categories.map(c => `<button class="online-category-chip ${onlineState.selectedCategory===c ? 'active' : ''}" data-category="${escapeHtml(c)}">${escapeHtml(c)}</button>`).join('');
   wrap.querySelectorAll('button').forEach(btn=>{
     btn.onclick = ()=>{
