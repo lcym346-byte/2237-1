@@ -180,7 +180,7 @@ function importExcelRowsToPending(rows){
   alert(`已匯入 ${imported.length} 筆到待上架商品`);
 }
 
-aasync function importExcelFile(file){
+async function importExcelFile(file){
   if(!window.XLSX){ alert('Excel 套件尚未載入，請重新整理'); return; }
   const arrayBuffer = await file.arrayBuffer();
   const workbook = window.XLSX.read(arrayBuffer, { type:'array' });
