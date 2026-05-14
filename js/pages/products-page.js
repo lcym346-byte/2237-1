@@ -1056,14 +1056,17 @@ export function initProductsPage(){
       downloadBlob(blob, '菜單匯入範本.xlsx');
     }catch(e){ alert('範本下載失敗：' + e.message); }
   });
-  document.getElementById('excelImportInput')?.addEventListener('change', async (e)=>{
+    document.getElementById('excelImportInput')?.addEventListener('change', async (e)=>{
     const file = e.target.files && e.target.files[0];
     if(!file) return;
     await importExcelFile(file);
     e.target.value = '';
   });
 
+  document.getElementById('excelExportBtn')?.addEventListener('click', exportProductsToExcel);
+
   document.getElementById('addCategoryBtn')?.addEventListener('click', ()=>{
+
     const name = prompt('請輸入新分類名稱');
     if(!name) return;
     const trimmed = name.trim();
