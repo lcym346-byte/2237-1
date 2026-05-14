@@ -1,8 +1,20 @@
 /* 中文備註：分類管理動態彈窗（Batch 06.10/3-fix - 字串陣列版）。
  * state.categories 是 ["未分類","主餐",...] 字串陣列，用 name 當 key。
+ * v20260515: 儲存/刪除後自動推送雲端（主機才推）
  */
 import { state, persistAll } from '../core/store.js';
 import { escapeHtml } from '../core/utils.js';
+import { syncMenuToFirebase, getRealtimeConfig } from './realtime-order-service.js';
+
+// 主機自動推送雲端（從機略過、不丟錯）
+function autoPushIfMaster(){
+  try{
+    const cfg = getRealtimeConfig();
+    if(cfg.deviceRole !== 'master') return;
+    if(!cfg.enabled) return;
+    syncMenuToFirebase().catch(err => console.warn('[category] autoPush 失敗：', err.message));
+  }catch(e){ console.warn('[category] autoPush exception:', e); }
+}
 
 const MODAL_ID = '__categoryManageDynamicModal';
 let targetCatName = null;
@@ -130,17 +142,16 @@ export function saveCategoryManage(){
     if (newName !== oldName && (state.categories||[]).includes(newName)){
       alert('已存在相同名稱的分類'); return;
     }
-    // 重新命名：陣列中替換
     const idx = state.categories.indexOf(oldName);
     if (idx >= 0) state.categories[idx] = newName;
   }
   const finalName = oldName === '未分類' ? '未分類' : newName;
-  // 套用商品歸屬：選中=屬於此分類；未選且原本屬於此分類=改為「未分類」
   (state.products||[]).forEach(p=>{
     if (draftSelected.has(p.id)) p.category = finalName;
     else if (p.category === oldName) p.category = '未分類';
   });
   persistAll();
+  autoPushIfMaster();   // ★ 新增：自動推雲端
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshProductsPage && window.refreshProductsPage(); } catch(e){}
   closeCategoryManage();
@@ -153,6 +164,7 @@ export function deleteCategoryManage(){
   (state.products||[]).forEach(p=>{ if (p.category === targetCatName) p.category = '未分類'; });
   state.categories = (state.categories||[]).filter(name => name !== targetCatName);
   persistAll();
+  autoPushIfMaster();   // ★ 新增：自動推雲端
   try { window.refreshPublicProducts && window.refreshPublicProducts(); } catch(e){}
   try { window.refreshProductsPage && window.refreshProductsPage(); } catch(e){}
   closeCategoryManage();
