@@ -523,6 +523,15 @@ async function init(){
   }
   onlineState.storeCode = code;
 
+  // 顧客端不需做雲端備份（那是 POS 主機的功能），關掉避免每 10 秒噴 PERMISSION_DENIED
+  try{
+    if(state.settings && state.settings.cloudBackup){
+      state.settings.cloudBackup.enabled = false;
+    }
+  }catch(e){}
+
+  onlineState.storeCode = code;
+
   // 步驟 2：頁首顯示店名（先用 URL 帶的 storeName，否則顯示 storeCode）
   try{
     const params = new URLSearchParams(window.location.search);
