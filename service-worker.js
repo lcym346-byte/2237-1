@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v20260614-debug-cache';
+const CACHE_NAME = 'pos-v20260614-sw-fix-cache';
 const ASSETS = [
   './',
   './index.html',
@@ -59,8 +59,13 @@ self.addEventListener('fetch', (event) => {
 
   event.respondWith(
     fetch(event.request).then((response) => {
-      const clone = response.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+      // ★ 修正：只快取完整 200 回應，避開 206 partial response 與 opaque 回應
+      // 原本沒判斷 status，A123.mp3 等被 Range 請求回 206 時 cache.put 會拋錯，
+      // 連帶讓整個 fetch handler 失敗（含 Firebase Auth iframe）
+      if (response && response.status === 200 && response.type === 'basic') {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone)).catch(()=>{});
+      }
       return response;
     }).catch(() => {
       return caches.match(event.request).then(cached => cached || caches.match('./index.html'));
