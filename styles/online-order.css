@@ -54,23 +54,24 @@ body{background:#f6f8fb}
 .online-toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
 @media (max-width: 600px) {
-  .online-order-layout {
-    flex-direction: column;
+  /* 手機版改單欄、緊湊內距（對應實際 class .online-layout / .online-left） */
+  .online-layout {
+    grid-template-columns: 1fr !important;
     padding: 6px;
     gap: 8px;
   }
 
-  .online-customer-panel {
+  .online-left {
     width: 100%;
     max-width: 100%;
     position: static;
-    padding: 10px;
   }
 
   .online-product-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 6px;
   }
+
 
     .online-product-card {
       font-size: 12px;
