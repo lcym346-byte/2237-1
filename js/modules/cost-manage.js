@@ -93,7 +93,7 @@ function ensureModal(){
   modal.className = 'modal hidden';
   modal.innerHTML = `
     <div class="modal-backdrop" data-cm-close></div>
-    <div class="modal-panel" style="max-width:880px;width:95%;max-height:90vh;display:flex;flex-direction:column">
+        <div class="modal-dialog wide" style="max-width:880px;width:min(94vw,880px);max-height:90vh;padding:0;display:flex;flex-direction:column;overflow:hidden">
       <div class="modal-header" style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #e2e8f0">
         <h2 style="margin:0;font-size:18px">💰 成本管理</h2>
         <button type="button" class="ghost-btn" data-cm-close style="font-size:20px;padding:4px 10px">✕</button>
