@@ -570,9 +570,19 @@ const selections = flattenSelections(product);
       renderCart();
     };
   }
+  if(document.getElementById('clearCartBtn')){
+    document.getElementById('clearCartBtn').onclick = ()=>{
+      if(!state.cart.length) return;
+      if(!confirm('確定要清空購物車？')) return;
+      state.cart = [];
+      state.editingOrderId = null;
+      renderCart();
+    };
+  }
   document.getElementById('discountAmountBtn').onclick = ()=>{
     const val = prompt('請輸入折扣金額（正數）');
     if(!val) return;
+
     const amount = Math.abs(Number(val));
     if(!amount || amount <= 0) return alert('請輸入正確金額');
     mergeOrPushCartItem({
