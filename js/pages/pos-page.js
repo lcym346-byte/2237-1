@@ -7,7 +7,8 @@ import { getDiscountResult, getDiscountType, setDiscountType, handleDiscountInpu
 import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-service.js';
 import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
 import { hasOpenSession } from '../modules/report-session.js';
-import { getRealtimeAuthUser, signInPOSWithGoogle } from '../modules/realtime-order-service.js';
+import { getRealtimeAuthUser, signInPOSWithGoogle, waitForAuthReady } from '../modules/realtime-order-service.js';
+
 // ── 預約功能（POS 端） ──
 const POS_WEEKDAY_MAP = ['sun','mon','tue','wed','thu','fri','sat'];
 
@@ -645,12 +646,16 @@ const selections = flattenSelections(product);
 //   1) 未 Google 登入 → 顯示「請先登入即時接單」遮罩 + 登入按鈕
 //   2) 已登入但未開班 → 顯示「尚未開始值班」遮罩 + 前往報表頁按鈕
 //   3) 已登入且已開班 → 隱藏遮罩
-function refreshPosLockState(){
+async function refreshPosLockState(){
   const lock = document.getElementById('posLockOverlay');
   if(!lock) return;
 
+  // 等 Firebase Auth 從 IndexedDB 還原完成，避免剛刷新時拿到舊快取或 null
+  try { await waitForAuthReady(); } catch(e){ /* 即時接單未啟用時略過 */ }
+
   // 跟「即時接單設定」彈窗(posGoogleAccountBox)用同一份判斷
   const authUser = getRealtimeAuthUser();
+
 
   if(!authUser){
     // 第 1 層：未登入 Google
