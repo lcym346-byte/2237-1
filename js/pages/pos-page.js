@@ -711,5 +711,5 @@ function refreshPosLockState(){
   lock.style.display = 'none';
 }
 
-}
+
 
