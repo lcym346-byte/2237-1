@@ -1,10 +1,10 @@
 {
   "rules": {
-    // 預設全部拒絕（未列出的路徑都不能讀寫）
+    //"_說明_全域": "預設拒絕所有讀寫，必須在子節點明確開放才能存取",
     ".read": false,
     ".write": false,
 
-    // 員工資料：每位員工只能讀自己那筆，只有 admin 能寫
+    //"_說明_staff": "員工白名單：自己讀自己的 UID 節點；只有 admin 能寫；必填 role 與 email",
     "staff": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
@@ -13,8 +13,7 @@
       }
     },
 
-    // 菜單：任何人可讀（顧客點餐頁未登入也要能載入菜單），登入者可寫（POS 同步用）
-    // ★ 修正：原本 .read 寫成 auth != null 會讓顧客點餐頁完全打不開
+    //"_說明_menu": "菜單資料：任何人可讀（含未登入顧客掃 QR），僅登入帳號可寫",
     "menu": {
       "$projectId": {
         ".read": true,
@@ -22,7 +21,7 @@
       }
     },
 
-    // POS 店家備份：依 storeId 分店存放，登入者可讀寫
+    //"_說明_posBackup": "POS 端本地備份：登入後可讀寫自己店的快照",
     "posBackup": {
       "$storeId": {
         ".read": "auth != null",
@@ -30,7 +29,7 @@
       }
     },
 
-    // 客戶資料：登入者可讀寫
+    //"_說明_customers": "顧客主檔：登入後可讀寫",
     "customers": {
       "$customerKey": {
         ".read": "auth != null",
@@ -38,7 +37,7 @@
       }
     },
 
-    // 客戶訂單歷史：依建立時間與查詢鍵建立索引，登入者可讀寫
+    //"_說明_customerOrders": "顧客訂單：依 createdAt / customerLookupKey 建索引以加速查詢",
     "customerOrders": {
       ".indexOn": ["createdAt", "customerLookupKey"],
       "$orderId": {
@@ -47,8 +46,7 @@
       }
     },
 
-    // 線上訂單：依分店代碼分群（如 store001），索引常用查詢欄位
-    // ★ $storeCode 層加 .read：讓 POS 能監聽整個店的訂單清單（onValue 對父層生效）
+    //"_說明_onlineOrders": "線上點餐單：依店別分類，依 createdAt / status / customerPhone 建索引",
     "onlineOrders": {
       "$storeCode": {
         ".read": "auth != null",
@@ -60,8 +58,18 @@
       }
     },
 
-    // 多店即時看板：依 storeId 分店，含 heartbeat / today / session / businessHours / _debug 等子節點，登入者可讀寫
+    //"_說明_dashboards": "多店即時看板資料：登入後可讀寫（POS 端寫入心跳/今日營業，看板端讀取顯示）",
     "dashboards": {
+      ".read": "auth != null",
+      "$storeId": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
+    },
+
+    //"_說明_sessionHistory": "歷史班次紀錄：POS 端結班時寫入，多店看板讀取產生歷史報表；保留 90 天由 POS 端自動清理",
+    "sessionHistory": {
+      ".read": "auth != null",
       "$storeId": {
         ".read": "auth != null",
         ".write": "auth != null"
