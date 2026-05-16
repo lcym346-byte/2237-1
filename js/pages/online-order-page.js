@@ -681,6 +681,22 @@ async function init(){
       const val = onlineState.currentSelections[mod.id];
       const missing = Array.isArray(val) ? val.length === 0 : !val;
       if(required && missing) return alert(`請先選擇「${mod.name}」`);
+    // 複選時檢查「至少／最多」數量規則（POS 主機 pos-page.js 同款邏輯）
+    if(mod.selection === 'multi' && Array.isArray(val)){
+      const cnt = val.length;
+      const minSel = (typeof mod.minSelect === 'number') ? mod.minSelect : (mod.required ? 1 : 0);
+      const maxSel = (typeof mod.maxSelect === 'number') ? mod.maxSelect : null;
+      if(required && cnt < Math.max(1, minSel)){
+        return alert(`「${mod.name}」為必選，至少需選 ${Math.max(1, minSel)} 項（目前已選 ${cnt} 項）`);
+      }
+      if(minSel > 0 && cnt > 0 && cnt < minSel){
+        return alert(`「${mod.name}」若要選擇，至少需選 ${minSel} 項（目前已選 ${cnt} 項）`);
+      }
+      if(maxSel != null && cnt > maxSel){
+        return alert(`「${mod.name}」最多只能選 ${maxSel} 項（目前已選 ${cnt} 項）`);
+      }
+    }
+
     }
     const selections = flattenSelections(product);
     const extra = selections.reduce((s,x)=>s + Number(x.price||0), 0);
