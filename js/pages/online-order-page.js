@@ -449,11 +449,57 @@ async function submitOnlineOrder(){
   if(!name) return alert('請輸入姓名');
   if(!phone) return alert('請輸入電話');
 
-  let reservationAt = '';
+ let reservationAt = '';
   if(orderType === '預約'){
     reservationAt = document.getElementById('onlineReservationSlot').value;
     if(!reservationAt) return alert('請選擇預約取餐時段');
+  } else {
+    // 非營業時間禁止外帶/內用下單，只允許改用「預約」並挑選營業時段
+    // 注意：營業時間判斷沿用「預約」用的 getBusinessHoursConfig() 與 WEEKDAY_MAP，
+    // 兩邊永遠同一份設定，未來改預約規則這裡會跟著對。
+    const _bh = getBusinessHoursConfig();
+    const _now = new Date();
+    const _todayKey = WEEKDAY_MAP[_now.getDay()];
+    const _todaySegs = Array.isArray(_bh[_todayKey]) ? _bh[_todayKey] : [];
+    let _isOpen = false;
+    for(const seg of _todaySegs){
+      if(!seg || !seg.start || !seg.end) continue;
+      const [sH, sM] = String(seg.start).split(':').map(Number);
+      const [eH, eM] = String(seg.end).split(':').map(Number);
+      if(Number.isNaN(sH) || Number.isNaN(eH)) continue;
+      const segStart = new Date(_now.getFullYear(), _now.getMonth(), _now.getDate(), sH, sM, 0, 0);
+      const segEnd   = new Date(_now.getFullYear(), _now.getMonth(), _now.getDate(), eH, eM, 0, 0);
+      if(segEnd <= segStart) segEnd.setDate(segEnd.getDate() + 1); // 跨日（同預約寫法）
+      if(_now >= segStart && _now < segEnd){ _isOpen = true; break; }
+    }
+    if(!_isOpen){
+      // 再檢查「前一天的跨日時段」尾巴（例：昨天 14:00–今天 03:00，現在是凌晨 02:00）
+      const _yest = new Date(_now); _yest.setDate(_yest.getDate() - 1);
+      const _yestKey = WEEKDAY_MAP[_yest.getDay()];
+      const _yestSegs = Array.isArray(_bh[_yestKey]) ? _bh[_yestKey] : [];
+      for(const seg of _yestSegs){
+        if(!seg || !seg.start || !seg.end) continue;
+        const [sH, sM] = String(seg.start).split(':').map(Number);
+        const [eH, eM] = String(seg.end).split(':').map(Number);
+        if(Number.isNaN(sH) || Number.isNaN(eH)) continue;
+        const segStart = new Date(_yest.getFullYear(), _yest.getMonth(), _yest.getDate(), sH, sM, 0, 0);
+        const segEnd   = new Date(_yest.getFullYear(), _yest.getMonth(), _yest.getDate(), eH, eM, 0, 0);
+        if(segEnd <= segStart){
+          segEnd.setDate(segEnd.getDate() + 1);
+          if(_now >= segStart && _now < segEnd){ _isOpen = true; break; }
+        }
+      }
+    }
+    if(!_isOpen){
+      alert('目前為非營業時間，外帶／內用暫停接單。\n請改選「預約」並挑選店家營業時段內的取餐時間。');
+      document.getElementById('onlineOrderType').value = '預約';
+      toggleReservationBlock();
+      return;
+    }
   }
+
+  const realtimeCfg = getRealtimeConfig();
+
 
   const realtimeCfg = getRealtimeConfig();
   if(!realtimeCfg.enabled) return alert('店家尚未啟用即時接單');
