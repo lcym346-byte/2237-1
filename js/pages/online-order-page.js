@@ -677,7 +677,7 @@ async function init(){
     for(const att of product.modules || []){
       const mod = state.modules.find(m=>m.id===att.moduleId);
       if(!mod) continue;
-      const required = att.requiredOverride === null ? mod.required : att.requiredOverride;
+      const required = att.requiredOverride == null ? mod.required : att.requiredOverride;
       const val = onlineState.currentSelections[mod.id];
       const missing = Array.isArray(val) ? val.length === 0 : !val;
       if(required && missing) return alert(`請先選擇「${mod.name}」`);
