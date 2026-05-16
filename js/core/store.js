@@ -124,19 +124,30 @@ const DEFAULT_IMAGE_LIBRARY = {
 function rid(){ return Math.random().toString(36).slice(2,10); }
 
 function normalizeModules(modules){
-  return (modules || []).map(m => ({
-    id: m.id || rid(),
-    name: m.name || '未命名模組',
-    selection: m.selection === 'multi' ? 'multi' : 'single',
-    required: !!m.required,
-    options: (m.options || []).map(o => ({
-      id: o.id || rid(),
-      name: o.name || '',
-      price: Number(o.price || 0),
-      enabled: o.enabled !== false
-    }))
-  }));
+  return (modules || []).map(m => {
+    const isMulti = m.selection === 'multi' || m.multi === true;
+    // 修正：之前漏存 minSelect/maxSelect，導致 POS 重新整理後複選規則被砍回預設(1/不限)
+    const minSel = isMulti ? Math.max(0, parseInt(m.minSelect, 10) || 0) : 0;
+    const maxSel = isMulti
+      ? (m.maxSelect == null || m.maxSelect === '' ? null : Math.max(1, parseInt(m.maxSelect, 10) || 1))
+      : null;
+    return {
+      id: m.id || rid(),
+      name: m.name || '未命名模組',
+      selection: isMulti ? 'multi' : 'single',
+      required: !!m.required,
+      minSelect: minSel,
+      maxSelect: maxSel,
+      options: (m.options || []).map(o => ({
+        id: o.id || rid(),
+        name: o.name || '',
+        price: Number(o.price || 0),
+        enabled: o.enabled !== false
+      }))
+    };
+  });
 }
+
 
 function normalizeProducts(products, modulesRef){
   const modulesArr = Array.isArray(modulesRef) ? modulesRef : [];
