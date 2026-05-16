@@ -7,7 +7,7 @@ import { getDiscountResult, getDiscountType, setDiscountType, handleDiscountInpu
 import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-service.js';
 import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
 import { hasOpenSession } from '../modules/report-session.js';
-
+import { getRealtimeAuthUser, signInPOSWithGoogle } from '../modules/realtime-order-service.js';
 // ── 預約功能（POS 端） ──
 const POS_WEEKDAY_MAP = ['sun','mon','tue','wed','thu','fri','sat'];
 
@@ -618,7 +618,7 @@ const selections = flattenSelections(product);
     renderCart();
   };
   // ── 06.16/5：未開班鎖定 POS 頁 ──
-  refreshPosLockState();
+  ();
   // 切換到 POS 頁時刷新鎖定狀態
   const posNavBtn = document.querySelector('[data-view="posView"]');
   if(posNavBtn){
@@ -641,14 +641,75 @@ const selections = flattenSelections(product);
   window.refreshPosLockState = refreshPosLockState;
 
 }
-// ── 06.16/5：依班次狀態決定是否鎖定 POS 頁 ──
+// ── 點餐頁鎖定：分三層判斷（沿用「即時接單設定」彈窗的同一份 getRealtimeAuthUser）──
+//   1) 未 Google 登入 → 顯示「請先登入即時接單」遮罩 + 登入按鈕
+//   2) 已登入但未開班 → 顯示「尚未開始值班」遮罩 + 前往報表頁按鈕
+//   3) 已登入且已開班 → 隱藏遮罩
 function refreshPosLockState(){
   const lock = document.getElementById('posLockOverlay');
   if(!lock) return;
-  if(hasOpenSession()){
-    lock.style.display = 'none';
-  } else {
+
+  // 跟「即時接單設定」彈窗(posGoogleAccountBox)用同一份判斷
+  const authUser = getRealtimeAuthUser();
+
+  if(!authUser){
+    // 第 1 層：未登入 Google
+    lock.innerHTML = `
+      <div style="background:#fff;border-radius:14px;padding:30px;max-width:380px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,0.3)">
+        <div style="font-size:48px;margin-bottom:8px">🔑</div>
+        <h2 style="margin:0 0 10px;color:#0f172a">請先登入即時接單</h2>
+        <p style="color:#64748b;font-size:14px;margin:0 0 16px">點餐前必須先完成 POS Google 登入。<br>登入後即可開始值班並接收線上訂單。</p>
+        <button id="posLockGoogleSignInBtn" class="primary-btn" style="background:#4285f4;width:100%;padding:12px">🔐 使用 Google 登入</button>
+      </div>
+    `;
     lock.style.display = 'flex';
+    const signBtn = document.getElementById('posLockGoogleSignInBtn');
+    if(signBtn){
+      signBtn.onclick = async ()=>{
+        signBtn.disabled = true;
+        signBtn.textContent = '登入中…';
+        try{
+          // 優先呼叫 app.js 已寫好的 posGoogleLogin（含驗權與啟動監聽）
+          if(typeof window.posGoogleLogin === 'function'){
+            await window.posGoogleLogin();
+          } else {
+            await signInPOSWithGoogle();
+          }
+          refreshPosLockState(); // 登入後重新檢查
+        }catch(err){
+          alert('Google 登入失敗：' + (err.message || err));
+          signBtn.disabled = false;
+          signBtn.textContent = '🔐 使用 Google 登入';
+        }
+      };
+    }
+    return;
   }
+
+  // 第 2 層：已登入但未開班
+  if(!hasOpenSession()){
+    lock.innerHTML = `
+      <div style="background:#fff;border-radius:14px;padding:30px;max-width:380px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,0.3)">
+        <div style="font-size:48px;margin-bottom:8px">🔒</div>
+        <h2 style="margin:0 0 10px;color:#0f172a">尚未開始值班</h2>
+        <p style="color:#64748b;font-size:14px;margin:0 0 16px">已登入：${escapeHtml(authUser.email || authUser.displayName || '已登入')}<br>請到報表頁開始值班才能點餐與結帳。</p>
+        <button id="goToReportsBtn" class="primary-btn" style="background:#10b981;width:100%;padding:12px">📊 前往報表頁開班</button>
+      </div>
+    `;
+    lock.style.display = 'flex';
+    const goBtn = document.getElementById('goToReportsBtn');
+    if(goBtn){
+      goBtn.onclick = ()=>{
+        const reportsNav = document.querySelector('[data-view="reportsView"]');
+        if(reportsNav) reportsNav.click();
+      };
+    }
+    return;
+  }
+
+  // 第 3 層：已登入且已開班
+  lock.style.display = 'none';
+}
+
 }
 
