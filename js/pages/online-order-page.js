@@ -191,7 +191,9 @@ function renderProductConfig(product){
   (product.modules || []).forEach(att=>{
     const mod = state.modules.find(m=>m.id===att.moduleId);
     if(!mod) return;
-    const required = att.requiredOverride === null ? mod.required : att.requiredOverride;
+// 注意：requiredOverride 不能用 === null，因為 Firebase 會把 null 吃掉，
+//       同步回顧客端時會變 undefined（不是 null）。用 == null 同時涵蓋兩者。
+const required = (att.requiredOverride == null) ? mod.required : att.requiredOverride;
     const block = document.createElement('div');
     block.className = 'module-block';
     block.innerHTML = `
