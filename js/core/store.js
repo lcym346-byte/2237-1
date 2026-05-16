@@ -681,12 +681,11 @@ export function persistAll(){
       }
     }
 
-    if (_persistIdbTimer) clearTimeout(_persistIdbTimer);
-
-    _persistIdbTimer = setTimeout(() => {
-      idbSet(IDB_KEY, toSave);
-      _persistIdbTimer = null;
-    }, 500);
+       // 立即寫入 IndexedDB（不再 500ms 節流）
+    // 原本的 500ms 節流會造成「關班後 500ms 內刷新 → IDB 還沒寫到 → 第二輪 hydrate 用舊 IDB 蓋掉 localStorage 的新狀態」
+    // 改成立即寫入，避免關班/結帳等關鍵操作的資料遺失視窗
+    if (_persistIdbTimer) { clearTimeout(_persistIdbTimer); _persistIdbTimer = null; }
+    try { idbSet(IDB_KEY, toSave); } catch (e) { console.warn('[store] IndexedDB 寫入失敗（已有 localStorage 兜底）:', e); }
 
     // 雲端備份（10 秒節流，合併期間多次寫入）
     if (state.settings?.cloudBackup?.enabled !== false) {
