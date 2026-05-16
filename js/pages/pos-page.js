@@ -710,6 +710,6 @@ function refreshPosLockState(){
   // 第 3 層：已登入且已開班
   lock.style.display = 'none';
 }
-}
+
 
 
