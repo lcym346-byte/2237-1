@@ -618,7 +618,7 @@ const selections = flattenSelections(product);
     renderCart();
   };
   // ── 06.16/5：未開班鎖定 POS 頁 ──
-  ();
+  
   // 切換到 POS 頁時刷新鎖定狀態
   const posNavBtn = document.querySelector('[data-view="posView"]');
   if(posNavBtn){
@@ -710,6 +710,6 @@ function refreshPosLockState(){
   // 第 3 層：已登入且已開班
   lock.style.display = 'none';
 }
-
+}
 
 
