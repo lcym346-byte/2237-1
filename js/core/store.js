@@ -498,12 +498,20 @@ export const state = buildDefaultState();
   // 第二輪：async 讀 IndexedDB
   idbGet(IDB_KEY).then(async idbData => {
     try {
-      if (idbData && typeof idbData === 'object') {
-        applyHydrate(idbData);
-        applyStoreBindingFromUrl(state);
-        syncStoreToDashboard();
-        try { window.dispatchEvent(new CustomEvent('pos-state-hydrated', { detail: { source: 'idb' } })); } catch (e) {}
-        console.log('[store] IndexedDB 載入完成，orders=' + (state.orders||[]).length + ' sessions=' + ((state.reports||{}).sessions||[]).length);
+            if (idbData && typeof idbData === 'object'){
+        if (saved) {
+          // localStorage 已成功 hydrate（最新）→ 不再用 IDB 覆蓋，避免「IDB 節流寫入延遲」造成關班後刷新回溯到舊資料
+          // 反向把最新 state 寫回 IDB，讓兩邊一致
+          try { idbSet(IDB_KEY, collectStateForPersist()); } catch (_) {}
+          console.log('[store] localStorage 已是最新，IndexedDB 同步為當前狀態（orders=' + (state.orders||[]).length + '）');
+        } else {
+          // localStorage 為空（例如 iPad 釋放空間清掉了）→ 用 IDB 當還原來源
+          applyHydrate(idbData);
+          applyStoreBindingFromUrl(state);
+          syncStoreToDashboard();
+          try { window.dispatchEvent(new CustomEvent('pos-state-hydrated', { detail: { source: 'idb' } })); } catch (e) {}
+          console.log('[store] IndexedDB 載入完成（localStorage 為空），orders=' + (state.orders||[]).length + ' sessions=' + ((state.reports||{}).sessions||[]).length);
+        }
       } else if (saved) {
         // IndexedDB 沒資料但 localStorage 有 → 自動遷移
         const migrate = collectStateForPersist();
@@ -514,6 +522,7 @@ export const state = buildDefaultState();
         // IndexedDB 與 localStorage 都空 → 嘗試從雲端還原
         await tryRestoreFromCloud();
       }
+
     } catch (e) {
       console.error('IndexedDB hydrate failed:', e);
     }
