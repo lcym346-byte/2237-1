@@ -498,7 +498,6 @@ async function submitOnlineOrder(){
     }
   }
 
-  const realtimeCfg = getRealtimeConfig();
 
 
   const realtimeCfg = getRealtimeConfig();
