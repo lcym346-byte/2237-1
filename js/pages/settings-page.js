@@ -6,6 +6,7 @@
 import { state, persistAll } from '../core/store.js';
 import { buildCartPreviewOrder, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getPrintSettings, previewInModal, getReceiptHtml, getLabelHtml } from '../modules/print-service.js';
 import { detectPrinters, clearDetectCache, getBridgeInfo, browserPrintHtml as bridgeBrowserPrint } from '../modules/print-bridge.js';
+import { mountPromotionSettingsUI } from '../modules/promotion-ui.js';
 
 // ── 列印欄位矩陣（顧客單 / 廚房單 / 標籤 各自勾選） ──
 const PRINT_FIELD_DEFS = [
@@ -1274,3 +1275,16 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
   // ============================
   console.log('settings-page.js initialized (modal mode)');
 }
+
+// === 促銷 UI 自動掛載 ===
+(function mountPromoOnReady(){
+  function tryMount(){
+    try { mountPromotionSettingsUI(); }
+    catch(e){ console.warn('促銷 UI 掛載失敗', e); }
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(tryMount, 100);
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(tryMount, 100); });
+  }
+})();
