@@ -1,78 +1,93 @@
 {
   "rules": {
-    //"_說明_全域": "預設拒絕所有讀寫，必須在子節點明確開放才能存取",
     ".read": false,
     ".write": false,
-
-    //"_說明_staff": "員工白名單：自己讀自己的 UID 節點；只有 admin 能寫；必填 role 與 email",
     "staff": {
       "$uid": {
-        ".read": "auth != null && auth.uid === $uid",
+        ".read": "auth != null && (auth.uid === $uid || root.child('staff').child(auth.uid).child('role').val() === 'admin')",
         ".write": "auth != null && root.child('staff').child(auth.uid).child('role').val() === 'admin'",
-        ".validate": "newData.hasChildren(['role','email'])"
+        ".validate": "newData.hasChildren(['role','email']) && newData.child('role').isString() && (newData.child('role').val() === 'admin' || newData.child('role').val() === 'staff') && newData.child('email').isString()"
       }
     },
-
-    //"_說明_menu": "菜單資料：任何人可讀（含未登入顧客掃 QR），僅登入帳號可寫",
     "menu": {
       "$projectId": {
         ".read": true,
-        ".write": "auth != null"
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('canPublishMenu').val() === true)",
+        ".validate": "newData.hasChildren(['categories','products','modules','updatedAt'])"
       }
     },
-
-    //"_說明_posBackup": "POS 端本地備份：登入後可讀寫自己店的快照",
-    "posBackup": {
-      "$storeId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-
-    //"_說明_customers": "顧客主檔：登入後可讀寫",
-    "customers": {
-      "$customerKey": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-
-    //"_說明_customerOrders": "顧客訂單：依 createdAt / customerLookupKey 建索引以加速查詢",
-    "customerOrders": {
-      ".indexOn": ["createdAt", "customerLookupKey"],
-      "$orderId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
-      }
-    },
-
-    //"_說明_onlineOrders": "線上點餐單：依店別分類，依 createdAt / status / customerPhone 建索引",
     "onlineOrders": {
       "$storeCode": {
-        ".read": "auth != null",
-        ".indexOn": ["createdAt", "status", "customerPhone"],
+        ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeCode).val() === true)",
+        ".indexOn": [
+          "createdAt",
+          "status",
+          "customerUid",
+          "customerLookupKey"
+        ],
         "$orderId": {
-          ".read": "auth != null",
-          ".write": "auth != null"
+          ".read": "auth != null && (data.child('customerUid').val() === auth.uid || root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeCode).val() === true)",
+          ".write": "auth != null && ((!data.exists() && newData.child('customerUid').val() === auth.uid && newData.child('storeCode').val() === $storeCode && newData.child('status').val() === 'pending_confirm') || (data.exists() && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeCode).val() === true) && newData.child('storeCode').val() === $storeCode))",
+          ".validate": "newData.hasChildren(['storeCode','customerUid','customerName','customerPhone','items','status','createdAt','updatedAt']) && newData.child('storeCode').val() === $storeCode && newData.child('customerUid').isString() && newData.child('customerName').isString() && newData.child('customerPhone').isString() && newData.child('items').hasChildren() && (newData.child('status').val() === 'pending_confirm' || newData.child('status').val() === 'confirmed' || newData.child('status').val() === 'rejected' || newData.child('status').val() === 'completed' || newData.child('status').val() === 'cancelled')"
         }
       }
     },
-
-    //"_說明_dashboards": "多店即時看板資料：登入後可讀寫（POS 端寫入心跳/今日營業，看板端讀取顯示）",
-    "dashboards": {
-      ".read": "auth != null",
-      "$storeId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+    "customerOrderLookup": {
+      "$storeCode": {
+        "$lookupKey": {
+          ".read": "auth != null",
+          "$orderId": {
+            ".write": "auth != null && ((!data.exists() && newData.child('customerUid').val() === auth.uid) || (data.exists() && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeCode).val() === true)))",
+            ".validate": "newData.hasChildren(['id','orderNo','createdAt','updatedAt','status','total','customerUid','items']) && newData.child('customerUid').isString()"
+          }
+        }
       }
     },
-
-    //"_說明_sessionHistory": "歷史班次紀錄：POS 端結班時寫入，多店看板讀取產生歷史報表；保留 90 天由 POS 端自動清理",
-    "sessionHistory": {
-      ".read": "auth != null",
+    "publicOnlineStores": {
+      "$storeCode": {
+        ".read": true,
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeCode).val() === true)",
+        ".validate": "newData.hasChildren(['storeId','promotions','updatedAt']) && newData.child('storeId').val() === $storeCode",
+        "promotions": {
+          ".validate": "newData.hasChildren(['enabled','banners','coupons'])"
+        },
+        "productAvailability": {
+          "$productId": {
+            ".validate": "newData.hasChildren(['enabled','soldOut','updatedAt']) && newData.child('enabled').isBoolean() && newData.child('soldOut').isBoolean() && newData.child('updatedAt').isString()"
+          }
+        }
+      }
+    },
+    "dashboards": {
+      ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')",
       "$storeId": {
-        ".read": "auth != null",
-        ".write": "auth != null"
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeId).val() === true)"
+      }
+    },
+    "posBackup": {
+      "$storeId": {
+        ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeId).val() === true)",
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeId).val() === true)"
+      }
+    },
+    "sessionHistory": {
+      "$storeId": {
+        ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeId).val() === true)",
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('stores').child($storeId).val() === true)"
+      }
+    },
+    "customers": {
+      "$customerKey": {
+        ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')",
+        ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')"
+      }
+    },
+    "customerOrders": {
+      "$customerKey": {
+        "$orderId": {
+          ".read": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')",
+          ".write": "auth != null && (root.child('staff').child(auth.uid).child('role').val() === 'admin' || root.child('staff').child(auth.uid).child('role').val() === 'staff')"
+        }
       }
     }
   }

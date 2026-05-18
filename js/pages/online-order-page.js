@@ -8,12 +8,14 @@ import { state } from '../core/store.js';
 import { escapeHtml, id, money, fmtLocalDateTime} from '../core/utils.js';
 import { getRealtimeConfig, pushOnlineOrder, watchCustomerOrder, fetchMenuFromFirebase, startMenuAutoWatch } from '../modules/realtime-order-service.js';
 import { lookupOrdersByCustomer } from '../modules/customer-service.js';
+import { calculatePromotion, getPublicPromotionsConfig } from '../modules/promotion-service.js';
 
 const onlineState = {
   selectedCategory: '全部',
   cart: [],
   currentSelections: {},
   configTarget: null,
+  promotionCode: '',
   storeCode: ''      // ← 多店分流：從 URL 取得
 };
 
@@ -23,7 +25,7 @@ const onlineState = {
 function readStoreCodeFromUrl(){
   try{
     const params = new URLSearchParams(window.location.search);
-    const code = String(params.get('storeId') || '').trim();
+    const code = String(params.get('storeId') || params.get('storeCode') || '').trim();
     if(!code) return '';
     if(/[.#$\/\[\]]/.test(code)) return '';
     return code;
@@ -75,6 +77,72 @@ function getStoreName(){
 
 function getStoreMeta(){
   return state.settings?.realtimeOrder?.onlineStoreSubtitle || '內用 / 外帶皆可';
+}
+
+function renderPromotionBanners(){
+  const area = document.getElementById('onlinePromotionArea');
+  if(!area) return;
+  const promo = getPublicPromotionsConfig();
+  if(!promo.enabled || !Array.isArray(promo.banners) || !promo.banners.length){
+    area.style.display = 'none';
+    area.innerHTML = '';
+    return;
+  }
+  const couponText = Array.isArray(promo.coupons) && promo.coupons.length
+    ? '<div style="font-size:12px;margin-top:6px;opacity:.9">可用優惠碼：' + promo.coupons.map(c => escapeHtml(c.code) + '（' + escapeHtml(c.title || '') + '）').join('、') + '</div>'
+    : '';
+  area.style.display = 'block';
+  area.innerHTML = promo.banners.slice(0, 3).map(function(b){
+    const theme = String(b.theme || promo.theme || 'orange').toLowerCase();
+    const color = theme === 'red' ? '#ef4444' : theme === 'green' ? '#16a34a' : theme === 'blue' ? '#2563eb' : '#f97316';
+    const title = Object.prototype.hasOwnProperty.call(b || {}, 'title') ? String(b.title || '').trim() : String(promo.heroTitle || '').trim();
+    const subtitle = Object.prototype.hasOwnProperty.call(b || {}, 'subtitle') ? String(b.subtitle || '').trim() : String(promo.heroSubtitle || '').trim();
+    const titleHtml = title ? `<div style="font-size:20px;font-weight:800;letter-spacing:.02em">${escapeHtml(title)}</div>` : '';
+    const subtitleHtml = subtitle ? `<div style="font-size:13px;opacity:.92;margin-top:4px;line-height:1.5">${escapeHtml(subtitle)}</div>` : '';
+    return `
+      <div style="background:linear-gradient(135deg,${color},#0f172a);color:#fff;border-radius:16px;padding:16px;margin-bottom:10px;box-shadow:0 12px 28px rgba(15,23,42,.18)">
+        <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+          <div>
+            <div style="display:inline-block;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:3px 10px;font-size:12px;margin-bottom:8px">${escapeHtml(b.badge || promo.heroBadge || '活動')}</div>
+            ${titleHtml}
+            ${subtitleHtml}
+            ${couponText}
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function getPromotionResult(){
+  const code = String(onlineState.promotionCode || '').trim();
+  if(!code) return null;
+  return calculatePromotion(onlineState.cart, code);
+}
+
+function updatePromotionSummary(subtotal){
+  const discountRow = document.getElementById('onlineDiscountRow');
+  const discountText = document.getElementById('onlineDiscountText');
+  const grandTotalText = document.getElementById('onlineGrandTotalText');
+  const msg = document.getElementById('onlineCouponMessage');
+  const input = document.getElementById('onlineCouponInput');
+  const promo = getPromotionResult();
+  let discount = 0;
+  if(input && document.activeElement !== input) input.value = onlineState.promotionCode || '';
+  if(promo && promo.ok){
+    discount = Number(promo.discount || 0);
+    if(discountRow) discountRow.style.display = '';
+    if(discountText) discountText.textContent = '-' + money(discount);
+    if(msg){ msg.style.color = '#16a34a'; msg.textContent = promo.message || ('已套用 ' + promo.code); }
+  }else{
+    if(discountRow) discountRow.style.display = 'none';
+    if(discountText) discountText.textContent = '-$0';
+    if(msg){
+      msg.style.color = promo && promo.message ? '#ef4444' : '#64748b';
+      msg.textContent = promo && promo.message ? promo.message : '若有店家提供的優惠碼，可在此輸入。';
+    }
+  }
+  if(grandTotalText) grandTotalText.textContent = money(Math.max(0, Number(subtotal || 0) - discount));
 }
 
 function createConfigState(product){
@@ -142,7 +210,7 @@ function renderProducts(){
   const grid = document.getElementById('onlineProductGrid');
   const prods = Array.isArray(state.products) ? state.products : [];
   const list = [...prods].sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).filter(p=>{
-    if(p.enabled === false) return false;
+    if(p.enabled === false || p.soldOut === true) return false;
     const catOk = onlineState.selectedCategory === '全部' || p.category === onlineState.selectedCategory;
     const kwOk = !keyword || [p.name, p.category, ...(p.aliases||[])].join(' ').includes(keyword);
     return catOk && kwOk;
@@ -232,7 +300,7 @@ const required = (att.requiredOverride == null) ? mod.required : att.requiredOve
 }
 
 function openProductConfigForNew(productId){
-  const product = state.products.find(p=>p.id===productId && p.enabled!==false);
+  const product = state.products.find(p=>p.id===productId && p.enabled!==false && p.soldOut!==true);
   if(!product) return;
   onlineState.configTarget = { mode:'new', productId };
   onlineState.currentSelections = createConfigState(product);
@@ -245,7 +313,7 @@ function openProductConfigForNew(productId){
 function openProductConfigForEdit(rowId){
   const item = onlineState.cart.find(x=>x.rowId===rowId);
   if(!item) return;
-  const product = state.products.find(p=>p.id===item.productId && p.enabled!==false);
+  const product = state.products.find(p=>p.id===item.productId && p.enabled!==false && p.soldOut!==true);
   if(!product) return;
   onlineState.configTarget = { mode:'edit', rowId, productId:item.productId };
   onlineState.currentSelections = createConfigState(product);
@@ -265,7 +333,16 @@ function closeProductConfig(){
   onlineState.currentSelections = {};
 }
 
+function purgeUnavailableCartItems(){
+  const before = onlineState.cart.length;
+  onlineState.cart = onlineState.cart.filter(function(item){
+    return !!state.products.find(function(p){ return p.id === item.productId && p.enabled !== false && p.soldOut !== true; });
+  });
+  if(before !== onlineState.cart.length) showOnlineToast('部分停售或售完品項已自動從購物車移除');
+}
+
 function renderCart(){
+  purgeUnavailableCartItems();
   const list = document.getElementById('onlineCartList');
   list.innerHTML = '';
   if(!onlineState.cart.length){
@@ -303,6 +380,7 @@ function renderCart(){
   const totalQty = onlineState.cart.reduce((s,x)=>s + x.qty, 0);
   document.getElementById('onlineSubtotalText').textContent = money(subtotal);
   document.getElementById('onlineTotalQtyText').textContent = String(totalQty);
+  updatePromotionSummary(subtotal);
   document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
   updateFloatingCartBadge();
 }
@@ -448,8 +526,18 @@ async function submitOnlineOrder(){
   const phone = document.getElementById('onlineCustomerPhone').value.trim();
   const customerNote = document.getElementById('onlineCustomerNote').value.trim();
   const orderType = document.getElementById('onlineOrderType').value || '外帶';
-  if(!name) return alert('請輸入姓名');
-  if(!phone) return alert('請輸入電話');
+  if(!name){
+    const el = document.getElementById('onlineCustomerName');
+    if(el && el.scrollIntoView){ try{ el.scrollIntoView({ block: 'center' }); }catch(e){ el.scrollIntoView(true); } }
+    if(el) el.focus();
+    return alert('請輸入姓名');
+  }
+  if(!phone){
+    const el = document.getElementById('onlineCustomerPhone');
+    if(el && el.scrollIntoView){ try{ el.scrollIntoView({ block: 'center' }); }catch(e){ el.scrollIntoView(true); } }
+    if(el) el.focus();
+    return alert('請輸入電話');
+  }
 
  let reservationAt = '';
   if(orderType === '預約'){
@@ -506,6 +594,11 @@ async function submitOnlineOrder(){
   if(!realtimeCfg.enabled) return alert('店家尚未啟用即時接單');
 
   const subtotal = onlineState.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
+  const promo = getPromotionResult();
+  if(onlineState.promotionCode && (!promo || !promo.ok)){
+    return alert((promo && promo.message) || '優惠碼無法使用，請清除或重新輸入');
+  }
+  const discountAmount = promo && promo.ok ? Number(promo.discount || 0) : 0;
   const payload = {
     orderNo: 'ON' + Date.now(),
     customerName: name,
@@ -516,7 +609,9 @@ async function submitOnlineOrder(){
     reservationReminded: false,
     items: JSON.parse(JSON.stringify(onlineState.cart)),
     subtotal,
-    total: subtotal
+    promotionCode: promo && promo.ok ? promo.code : '',
+    discountAmount,
+    total: Math.max(0, subtotal - discountAmount)
   };
 
   try{
@@ -527,30 +622,38 @@ async function submitOnlineOrder(){
 
     const { signInCustomerAnonymously } = await import('../modules/realtime-order-service.js');
         await signInCustomerAnonymously();
-    const stopWatch = await watchCustomerOrder(orderId, (remote)=>{
-      if(!remote) return;
-      if(remote.status === 'confirmed'){
-        onlineState.cart = [];
-        renderCart();
-        closeCartDrawer();
-        document.getElementById('onlineCustomerNote').value = '';
-        openStatusOverlay('店家已確認訂單', buildConfirmedMessage(remote, orderId), true);
-        try{ stopWatch(); }catch(e){}
-        window.removeEventListener('beforeunload', onlineState._cleanupWatch);
-        onlineState._cleanupWatch = null;
-      }else if(remote.status === 'rejected'){
-        openStatusOverlay('店家已拒絕訂單', remote.replyMessage || '很抱歉，店家目前無法接單，請稍後再試。', true);
-        try{ stopWatch(); }catch(e){}
-        window.removeEventListener('beforeunload', onlineState._cleanupWatch);
-        onlineState._cleanupWatch = null;
-      }else{
-        const pendingText = remote.replyMessage || '訂單已送出，請稍候店家確認。';
-        openStatusOverlay('等待店家確認訂單', pendingText);
-      }
-    }, onlineState.storeCode);
-    // 頁面關閉時自動解除監聽，避免記憶體洩漏
-    onlineState._cleanupWatch = ()=>{ try{ stopWatch(); }catch(e){} };
-    window.addEventListener('beforeunload', onlineState._cleanupWatch);
+    try{
+      const stopWatch = await watchCustomerOrder(orderId, (remote)=>{
+        if(!remote) return;
+        if(remote.status === 'confirmed'){
+          onlineState.cart = [];
+          renderCart();
+          closeCartDrawer();
+          document.getElementById('onlineCustomerNote').value = '';
+          openStatusOverlay('店家已確認訂單', buildConfirmedMessage(remote, orderId), true);
+          try{ stopWatch(); }catch(e){}
+          window.removeEventListener('beforeunload', onlineState._cleanupWatch);
+          onlineState._cleanupWatch = null;
+        }else if(remote.status === 'rejected'){
+          openStatusOverlay('店家已拒絕訂單', remote.replyMessage || '很抱歉，店家目前無法接單，請稍後再試。', true);
+          try{ stopWatch(); }catch(e){}
+          window.removeEventListener('beforeunload', onlineState._cleanupWatch);
+          onlineState._cleanupWatch = null;
+        }else{
+          const pendingText = remote.replyMessage || '訂單已送出，請稍候店家確認。';
+          openStatusOverlay('等待店家確認訂單', pendingText);
+        }
+      }, onlineState.storeCode, (watchErr)=>{
+        console.warn('訂單已送出但狀態監聽失敗：', watchErr);
+        openStatusOverlay('訂單已送出', '店家已收到訂單；目前無法即時追蹤狀態，請留意店家通知。', true);
+      });
+      // 頁面關閉時自動解除監聽，避免記憶體洩漏
+      onlineState._cleanupWatch = ()=>{ try{ stopWatch(); }catch(e){} };
+      window.addEventListener('beforeunload', onlineState._cleanupWatch);
+    }catch(watchErr){
+      console.warn('訂單已送出但無法啟動狀態監聽：', watchErr);
+      openStatusOverlay('訂單已送出', '店家已收到訂單；目前無法即時追蹤狀態，請留意店家通知。', true);
+    }
   }catch(err){
 
     closeStatusOverlay();
@@ -597,7 +700,7 @@ async function init(){
   let menuLoaded = false;
   for(let attempt = 1; attempt <= 3 && !menuLoaded; attempt++){
     try{
-      await fetchMenuFromFirebase();
+      await fetchMenuFromFirebase(code);
       menuLoaded = true;
     }catch(err){
       console.warn(`讀取雲端菜單失敗（第 ${attempt} 次）：`, err);
@@ -624,13 +727,16 @@ async function init(){
     await startMenuAutoWatch(() => {
       renderCategoryTabs();
       renderProducts();
-    });
+      renderPromotionBanners();
+      renderCart();
+    }, code);
   }catch(err){
     console.warn('啟動菜單監聽失敗（不影響顯示）：', err);
   }
 
   renderCategoryTabs();
   renderProducts();
+  renderPromotionBanners();
   renderCart();
 
 
@@ -666,13 +772,40 @@ async function init(){
 
   document.getElementById('openCartBtn').onclick = openCartDrawer;
   document.getElementById('closeCartBtn').onclick = closeCartDrawer;
+  const applyCouponBtn = document.getElementById('applyOnlineCouponBtn');
+  if(applyCouponBtn){
+    applyCouponBtn.onclick = ()=>{
+      const input = document.getElementById('onlineCouponInput');
+      onlineState.promotionCode = String((input && input.value) || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+      if(input) input.value = onlineState.promotionCode;
+      renderCart();
+    };
+  }
+  const clearCouponBtn = document.getElementById('clearOnlineCouponBtn');
+  if(clearCouponBtn){
+    clearCouponBtn.onclick = ()=>{
+      onlineState.promotionCode = '';
+      const input = document.getElementById('onlineCouponInput');
+      if(input) input.value = '';
+      renderCart();
+    };
+  }
+  const couponInput = document.getElementById('onlineCouponInput');
+  if(couponInput){
+    couponInput.addEventListener('keydown', ev => {
+      if(ev.key === 'Enter'){
+        ev.preventDefault();
+        if(applyCouponBtn) applyCouponBtn.click();
+      }
+    });
+  }
   document.querySelector('.online-drawer-backdrop').onclick = closeCartDrawer;
   document.getElementById('closeOnlineProductModal').onclick = closeProductConfig;
   document.getElementById('cancelOnlineProductBtn').onclick = closeProductConfig;
   document.querySelector('#onlineProductModal .modal-backdrop').onclick = closeProductConfig;
 
   document.getElementById('saveOnlineProductBtn').onclick = ()=>{
-    const product = state.products.find(p=>p.id===onlineState.configTarget?.productId);
+    const product = state.products.find(p=>p.id===onlineState.configTarget?.productId && p.enabled!==false && p.soldOut!==true);
     if(!product) return closeProductConfig();
     for(const att of product.modules || []){
       const mod = state.modules.find(m=>m.id===att.moduleId);
@@ -769,7 +902,7 @@ async function handleMyOrdersSearch(){
       localStorage.setItem('online_customer_phone', phone);
     }catch(e){}
   }catch(err){
-    result.innerHTML = `<div style="color:#ef4444">${err.message || '查詢失敗'}</div>`;
+    result.innerHTML = `<div style="color:#ef4444">${escapeHtml(err.message || '查詢失敗')}</div>`;
   }finally{
     btn.disabled = false;
     btn.textContent = '查詢我的訂單';
@@ -799,23 +932,23 @@ function renderMyOrdersList(list){
   result.innerHTML = list.map(o => {
     const s = statusMap[o.status] || { text: o.status || '處理中', color: '#64748b' };
     const created = o.createdAt ? fmtLocalDateTime(o.createdAt) : '';
-    const resv = o.reservationAt ? `<div style="color:#10b981;font-size:13px">📅 預約取餐：${fmtLocalDateTime(o.reservationAt)}</div>` : '';
+    const resv = o.reservationAt ? `<div style="color:#10b981;font-size:13px">預約取餐：${escapeHtml(fmtLocalDateTime(o.reservationAt))}</div>` : '';
     const itemsText = Array.isArray(o.items)
-      ? o.items.map(it => `${it.name} x${it.qty}`).join('、')
+      ? o.items.map(it => `${escapeHtml(it.name || '')} x${Number(it.qty || 0)}`).join('、')
       : '';
-    const reply = o.replyMessage ? `<div style="font-size:12px;color:#475569;margin-top:4px">店家訊息：${o.replyMessage}</div>` : '';
+    const reply = o.replyMessage ? `<div style="font-size:12px;color:#475569;margin-top:4px">店家訊息：${escapeHtml(o.replyMessage)}</div>` : '';
     return `
       <div style="border:1px solid #e2e8f0;border-radius:10px;padding:12px;background:#fff">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-          <strong style="font-size:14px">${o.orderNo || o.id}</strong>
-          <span style="background:${s.color};color:#fff;font-size:12px;padding:2px 10px;border-radius:12px">${s.text}</span>
+          <strong style="font-size:14px">${escapeHtml(o.orderNo || o.id)}</strong>
+          <span style="background:${s.color};color:#fff;font-size:12px;padding:2px 10px;border-radius:12px">${escapeHtml(s.text)}</span>
         </div>
-        <div style="font-size:12px;color:#64748b;margin-bottom:4px">${created} · ${o.orderType || '線上點餐'}</div>
+        <div style="font-size:12px;color:#64748b;margin-bottom:4px">${escapeHtml(created)} · ${escapeHtml(o.orderType || '線上點餐')}</div>
         ${resv}
         <div style="font-size:13px;color:#334155;margin-top:6px">${itemsText}</div>
         <div style="display:flex;justify-content:space-between;margin-top:8px;font-size:13px">
-          <span class="muted">小計</span>
-          <strong style="color:#ef4444">$${o.total || o.subtotal || 0}</strong>
+          <span class="muted">應付金額</span>
+          <strong style="color:#ef4444">${money(o.total || o.subtotal || 0)}</strong>
         </div>
         ${reply}
       </div>

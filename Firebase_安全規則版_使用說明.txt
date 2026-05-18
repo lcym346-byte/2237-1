@@ -10,15 +10,46 @@ Firebase 安全規則版 + POS Google 登入版 使用說明
 
 3. 在 POS 設定頁填入 Firebase 設定後，按「POS Google 登入」。
 
-4. 登入成功後，請到 Realtime Database 手動建立 staff 節點：
+4. 登入成功後，請到 Realtime Database 手動建立 staff 節點。
+
+總管理 / 主店帳號（可修改共用雲端菜單）：
 staff / 你的uid / role = "admin"
 staff / 你的uid / email = "你的gmail"
+staff / 你的uid / stores / store001 = true
 
-5. 如果 POS Google 登入後顯示「沒有權限」，通常代表 staff / 你的uid / role 尚未建立，或不是 admin / staff。
+分店帳號（可接自己店訂單、發布自己店廣告/看板，但不能修改共用雲端菜單）：
+staff / 分店uid / role = "staff"
+staff / 分店uid / email = "分店gmail"
+staff / 分店uid / stores / store002 = true
 
-6. 顧客頁會用匿名登入送單，customerUid 會自動寫入。
+特殊授權：如果某個 staff 也要能修改共用雲端菜單，才額外加：
+staff / 分店uid / canPublishMenu = true
 
-7. 流程：
+5. 共用菜單權限設計：
+- menu/{projectId}：所有人可讀，只有 admin 或 canPublishMenu=true 可寫。
+- 一般分店 staff 按「讀取雲端菜單」可取得共用菜單。
+- 一般分店 staff 按「上傳菜單」會被拒絕，避免覆蓋主要菜單資料。
+
+6. 店別資料權限：
+- onlineOrders/{storeCode}：顧客可送單；該店 staff/admin 可接單。
+- dashboards/{storeId}：該店 staff/admin 可更新自己的看板。
+- publicOnlineStores/{storeCode}：該店 staff/admin 可發布自己的線上點餐廣告。
+
+7. 廣告 / 促銷同步說明：
+- POS → 設定 → 廣告促銷 →「儲存並發布廣告」會寫入 publicOnlineStores/{storeCode}/promotions。
+- 顧客線上點餐頁會讀取該店 publicOnlineStores/{storeCode}/promotions，手機會自動更新，不需要請客人清除快取。
+- 手機顧客頁也會讀取 publicOnlineStores/{storeCode}/productAvailability；分店即使不能修改共用菜單，也可以發布自己店的商品上架/下架/售完狀態。
+- publicOnlineStores/{storeCode} 現在明確驗證 promotions 與 productAvailability；POS 發布與顧客讀取都對齊同一路徑，商品狀態欄位為 productAvailability/{productId}/enabled 與 soldOut。
+- 顧客頁只以 publicOnlineStores/{storeCode}/promotions 當該店廣告來源；若該店尚未發布廣告，不再顯示共用菜單裡的舊午餐預設廣告。
+- 廣告主標題與副標題可以空白；空白時顧客頁不顯示該標題欄位。
+- 優惠碼可以不填；不填時只顯示活動廣告，不做價格折扣。
+- 促銷模板不只有價格折扣，也包含新品上市、限時/節慶、套餐推薦、會員集點、贈品活動、預購預約、社群分享等活動型促銷。
+
+8. 如果 POS Google 登入後顯示「沒有權限」，通常代表 staff / 你的uid / role 尚未建立，或不是 admin / staff。
+
+9. 顧客頁會用匿名登入送單，customerUid 會自動寫入。
+
+10. 流程：
 - 顧客送單
 - POS 線上待確認收到
 - POS 輸入備餐時間並確認接單

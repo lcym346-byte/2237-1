@@ -153,7 +153,7 @@ window.posGoogleLogin = async function(){
   try{
     const user = await signInPOSWithGoogle();
     const accountBox = document.getElementById('posGoogleAccountBox');
-    if(accountBox) accountBox.textContent = 'POS 登入帳號：' + (user.email || user.displayName || '已登入');
+    if(accountBox) accountBox.textContent = 'POS 登入帳號：' + (user.email || user.displayName || '已登入') + ' / UID：' + (user.uid || '');
 
     // 驗證 staff 權限
     try{

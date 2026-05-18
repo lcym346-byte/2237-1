@@ -6,6 +6,8 @@
 import { state, persistAll } from '../core/store.js';
 import { buildCartPreviewOrder, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getPrintSettings, previewInModal, getReceiptHtml, getLabelHtml } from '../modules/print-service.js';
 import { detectPrinters, clearDetectCache, getBridgeInfo, browserPrintHtml as bridgeBrowserPrint } from '../modules/print-bridge.js';
+import { applyPromotionTemplate, ensurePromotionsConfig, getPromotionTemplates, setPromotionsConfig } from '../modules/promotion-service.js';
+import { publishOnlineStorePromotionsNow } from '../modules/realtime-order-service.js';
 
 // ── 列印欄位矩陣（顧客單 / 廚房單 / 標籤 各自勾選） ──
 const PRINT_FIELD_DEFS = [
@@ -243,6 +245,102 @@ function applyDeviceRoleLock(){
   }
 }
 
+function firebaseImportStatus(message, isError){
+  var box = document.getElementById('firebaseConfigImportStatus');
+  if(!box) return;
+  box.style.display = 'block';
+  box.style.color = isError ? '#b91c1c' : '#166534';
+  box.textContent = message;
+}
+
+function extractFirebaseValue(text, key){
+  var raw = String(text || '');
+  var re = new RegExp(key + '\\s*:\\s*(["' + "'" + '])([^"' + "'" + ']*)["' + "'" + ']', 'i');
+  var m = raw.match(re);
+  return m ? String(m[2] || '').trim() : '';
+}
+
+function parseFirebaseConfigText(text){
+  var raw = String(text || '').trim();
+  if(!raw) throw new Error('沒有可匯入的內容');
+  var keys = ['apiKey','authDomain','databaseURL','projectId','storageBucket','messagingSenderId','appId','measurementId'];
+  var cfg = {};
+
+  // 支援純 JSON：{ "apiKey":"..." }
+  try {
+    var json = JSON.parse(raw);
+    if(json && typeof json === 'object'){
+      keys.forEach(function(k){ if(json[k]) cfg[k] = String(json[k]).trim(); });
+    }
+  } catch (_) {}
+
+  // 支援 Firebase Console 複製的 JS snippet：const firebaseConfig = { apiKey: "..." };
+  keys.forEach(function(k){
+    if(!cfg[k]) cfg[k] = extractFirebaseValue(raw, k);
+  });
+
+  if(!cfg.apiKey && !cfg.projectId && !cfg.appId){
+    throw new Error('找不到 Firebase config 欄位，請確認貼上的是 firebaseConfig 物件或 JSON');
+  }
+  return cfg;
+}
+
+function applyFirebaseConfigToForm(cfg){
+  var map = {
+    apiKey: 'firebaseApiKey',
+    authDomain: 'firebaseAuthDomain',
+    databaseURL: 'firebaseDatabaseUrl',
+    projectId: 'firebaseProjectId',
+    storageBucket: 'firebaseStorageBucket',
+    messagingSenderId: 'firebaseMessagingSenderId',
+    appId: 'firebaseAppId',
+    measurementId: 'firebaseMeasurementId'
+  };
+  Object.keys(map).forEach(function(k){
+    var el = document.getElementById(map[k]);
+    if(el && typeof cfg[k] !== 'undefined') el.value = cfg[k] || '';
+  });
+  var missing = [];
+  ['apiKey','authDomain','projectId','appId'].forEach(function(k){ if(!cfg[k]) missing.push(k); });
+  if(!cfg.databaseURL) missing.push('databaseURL（Realtime Database URL 需到 Firebase Realtime Database 頁面確認）');
+  var msg = missing.length
+    ? '已匯入可辨識欄位，但仍缺：' + missing.join('、') + '。確認後請按「儲存即時接單設定」。'
+    : 'Firebase 設定已匯入欄位，確認後請按「儲存即時接單設定」。';
+  firebaseImportStatus(msg, missing.length > 0);
+}
+
+function readFirebaseConfigFile(file, done){
+  var reader = new FileReader();
+  reader.onload = function(){ done(null, String(reader.result || '')); };
+  reader.onerror = function(){ done(reader.error || new Error('讀取檔案失敗')); };
+  reader.readAsText(file, 'utf-8');
+}
+
+function importFirebaseConfigFromUI(){
+  var textEl = document.getElementById('firebaseConfigImportText');
+  var fileEl = document.getElementById('firebaseConfigFileInput');
+  var text = textEl ? String(textEl.value || '').trim() : '';
+  function applyText(raw){
+    try {
+      var cfg = parseFirebaseConfigText(raw);
+      applyFirebaseConfigToForm(cfg);
+    } catch (e) {
+      firebaseImportStatus('匯入失敗：' + (e && e.message ? e.message : e), true);
+    }
+  }
+  if(text){
+    applyText(text);
+    return;
+  }
+  if(fileEl && fileEl.files && fileEl.files[0]){
+    readFirebaseConfigFile(fileEl.files[0], function(err, raw){
+      if(err){ firebaseImportStatus('匯入失敗：' + (err.message || err), true); return; }
+      applyText(raw);
+    });
+    return;
+  }
+  firebaseImportStatus('請先選擇 .txt/.json/.js 檔，或貼上 Firebase SDK 設定內容。', true);
+}
 
 
 // ── Google 備份：讀取欄位 ──
@@ -269,10 +367,49 @@ function loadSoundStatus() {
 var WEEKDAY_KEYS = ['mon','tue','wed','thu','fri','sat','sun'];
 var WEEKDAY_LABELS = {mon:'週一',tue:'週二',wed:'週三',thu:'週四',fri:'週五',sat:'週六',sun:'週日'};
 
+function normalizeTimeValue(value, fallback){
+  var v = String(value || '').trim();
+  return /^\d{2}:\d{2}$/.test(v) ? v : fallback;
+}
+
+function cloneBusinessHours(input){
+  var out = {};
+  var src = (input && typeof input === 'object') ? input : {};
+  WEEKDAY_KEYS.forEach(function(k){
+    out[k] = Array.isArray(src[k]) ? src[k].slice(0, 4).map(function(slot){
+      return {
+        start: normalizeTimeValue(slot && slot.start, '11:00'),
+        end: normalizeTimeValue(slot && slot.end, '21:00')
+      };
+    }) : [];
+  });
+  return out;
+}
+
 function getBusinessHours(){
-  var bh = (state.settings && state.settings.businessHours) || {};
-  WEEKDAY_KEYS.forEach(function(k){ if(!Array.isArray(bh[k])) bh[k] = []; });
-  return bh;
+  if(!state.settings) state.settings = {};
+  state.settings.businessHours = cloneBusinessHours(state.settings.businessHours);
+  return state.settings.businessHours;
+}
+
+function persistBusinessHoursFromUI(options){
+  var opts = options || {};
+  var bh = collectAllBusinessHours();
+  var error = '';
+  WEEKDAY_KEYS.forEach(function(key){
+    (bh[key]||[]).forEach(function(s, i){
+      if(!s.start || !s.end){
+        error = WEEKDAY_LABELS[key] + ' 第'+(i+1)+'時段未填完整';
+      }
+    });
+  });
+  if(error){
+    if(!opts.silent) alert('儲存失敗：' + error);
+    return false;
+  }
+  state.settings.businessHours = cloneBusinessHours(bh);
+  persistAll();
+  return true;
 }
 
 function renderBusinessHoursForm(){
@@ -328,7 +465,8 @@ function bindBusinessHoursEvents(){
       } else {
         bh[key] = [{start:'11:00', end:'21:00'}];
       }
-      state.settings.businessHours = bh;
+      state.settings.businessHours = cloneBusinessHours(bh);
+      persistAll();
       renderBusinessHoursForm();
     };
     card.querySelector('.bh-add-slot').onclick = function(){
@@ -336,7 +474,8 @@ function bindBusinessHoursEvents(){
       if(bh[key].length >= 4) return;
       collectDayFromUI(card, key, bh);
       bh[key].push({start:'17:00', end:'21:00'});
-      state.settings.businessHours = bh;
+      state.settings.businessHours = cloneBusinessHours(bh);
+      persistAll();
       renderBusinessHoursForm();
     };
     card.querySelectorAll('.bh-remove').forEach(function(btn){
@@ -344,9 +483,15 @@ function bindBusinessHoursEvents(){
         var bh = getBusinessHours();
         collectDayFromUI(card, key, bh);
         bh[key].splice(Number(btn.dataset.idx), 1);
-        state.settings.businessHours = bh;
+        state.settings.businessHours = cloneBusinessHours(bh);
+        persistAll();
         renderBusinessHoursForm();
       };
+    });
+    card.querySelectorAll('.bh-start, .bh-end').forEach(function(input){
+      input.oninput = function(){ persistBusinessHoursFromUI({ silent: true }); };
+      input.onchange = function(){ persistBusinessHoursFromUI({ silent: true }); };
+      input.onblur = function(){ persistBusinessHoursFromUI({ silent: true }); };
     });
   });
 }
@@ -374,19 +519,9 @@ function collectAllBusinessHours(){
 }
 
 function saveBusinessHours(){
-  var bh = collectAllBusinessHours();
-  var error = '';
-  WEEKDAY_KEYS.forEach(function(key){
-    (bh[key]||[]).forEach(function(s, i){
-      if(!s.start || !s.end){
-        error = WEEKDAY_LABELS[key] + ' 第'+(i+1)+'時段未填完整';
-      }
-    });
-  });
-  if(error){ alert('儲存失敗：' + error); return; }
-  state.settings.businessHours = bh;
-  persistAll();
-  alert('營業時間已儲存');
+  if(persistBusinessHoursFromUI({ silent: false })){
+    alert('營業時間已儲存，重新整理後仍會保留');
+  }
 }
 
 // ── SKU 圖庫對應 ──
@@ -541,6 +676,100 @@ function saveImageLibrarySettings(){
   alert('圖庫設定已儲存');
 }
 
+function promotionEl(id){ return document.getElementById(id); }
+
+function loadPromotionSettingsToForm(){
+  var cfg = ensurePromotionsConfig();
+  var templates = getPromotionTemplates();
+  var sel = promotionEl('promotionTemplateSelect');
+  if(sel){
+    sel.innerHTML = templates.map(function(t){ return '<option value="'+t.key+'">'+t.name+'</option>'; }).join('');
+    sel.value = cfg.activeTemplate || (templates[0] && templates[0].key) || 'lunch';
+  }
+  if(promotionEl('promotionEnabled')) promotionEl('promotionEnabled').checked = cfg.enabled !== false;
+  if(promotionEl('promotionHeroTitle')) promotionEl('promotionHeroTitle').value = cfg.heroTitle || '';
+  if(promotionEl('promotionHeroSubtitle')) promotionEl('promotionHeroSubtitle').value = cfg.heroSubtitle || '';
+  if(promotionEl('promotionHeroBadge')) promotionEl('promotionHeroBadge').value = cfg.heroBadge || '';
+  if(promotionEl('promotionTheme')) promotionEl('promotionTheme').value = cfg.theme || 'orange';
+  var coupon = (cfg.coupons && cfg.coupons[0]) || {};
+  if(promotionEl('promotionCouponCode')) promotionEl('promotionCouponCode').value = coupon.code || '';
+  if(promotionEl('promotionCouponTitle')) promotionEl('promotionCouponTitle').value = coupon.title || '';
+  if(promotionEl('promotionCouponType')) promotionEl('promotionCouponType').value = coupon.type || 'amount';
+  if(promotionEl('promotionCouponValue')) promotionEl('promotionCouponValue').value = Number(coupon.value || 0);
+  if(promotionEl('promotionCouponMinSpend')) promotionEl('promotionCouponMinSpend').value = Number(coupon.minSpend || 0);
+  var status = promotionEl('promotionSettingsStatus');
+  if(status) status.textContent = cfg.updatedAt ? ('最後更新：' + cfg.updatedAt.replace('T',' ').slice(0,16)) : '尚未儲存';
+}
+
+function collectPromotionSettingsFromForm(){
+  var activeTemplate = promotionEl('promotionTemplateSelect') ? promotionEl('promotionTemplateSelect').value : 'custom';
+  var heroTitle = (promotionEl('promotionHeroTitle') && promotionEl('promotionHeroTitle').value || '').trim();
+  var heroSubtitle = (promotionEl('promotionHeroSubtitle') && promotionEl('promotionHeroSubtitle').value || '').trim();
+  var heroBadge = (promotionEl('promotionHeroBadge') && promotionEl('promotionHeroBadge').value || '').trim();
+  var theme = (promotionEl('promotionTheme') && promotionEl('promotionTheme').value || 'orange').trim();
+  var code = (promotionEl('promotionCouponCode') && promotionEl('promotionCouponCode').value || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '').slice(0, 24);
+  var couponTitle = (promotionEl('promotionCouponTitle') && promotionEl('promotionCouponTitle').value || '').trim();
+  var couponType = (promotionEl('promotionCouponType') && promotionEl('promotionCouponType').value || 'amount');
+  var couponValue = Math.max(0, Math.round(Number(promotionEl('promotionCouponValue') && promotionEl('promotionCouponValue').value || 0)));
+  var minSpend = Math.max(0, Math.round(Number(promotionEl('promotionCouponMinSpend') && promotionEl('promotionCouponMinSpend').value || 0)));
+  // 主標題 / 副標題允許刻意留白；留白時顧客頁不顯示該欄位。
+  if(!heroBadge) heroBadge = '店家活動';
+  var out = {
+    enabled: !!(promotionEl('promotionEnabled') && promotionEl('promotionEnabled').checked),
+    activeTemplate: activeTemplate,
+    heroTitle: heroTitle,
+    heroSubtitle: heroSubtitle,
+    heroBadge: heroBadge,
+    theme: theme,
+    banners: [{
+      id: 'banner_primary',
+      enabled: true,
+      title: heroTitle,
+      subtitle: heroSubtitle,
+      badge: heroBadge,
+      theme: theme,
+      campaignType: activeTemplate,
+      sortOrder: 1,
+      startsAt: '',
+      endsAt: ''
+    }],
+    coupons: []
+  };
+  if(code){
+    out.coupons.push({
+      id: 'coupon_' + code.toLowerCase(),
+      enabled: true,
+      code: code,
+      title: couponTitle || code,
+      type: couponType === 'percent' ? 'percent' : 'amount',
+      value: couponValue,
+      minSpend: minSpend,
+      startsAt: '',
+      endsAt: ''
+    });
+  }
+  return out;
+}
+
+async function savePromotionSettings(options){
+  var opts = options || {};
+  setPromotionsConfig(collectPromotionSettingsFromForm(), true);
+  loadPromotionSettingsToForm();
+  var status = promotionEl('promotionSettingsStatus');
+  if(status) status.textContent = '促銷設定已儲存，正在發布到線上點餐頁...';
+  try{
+    var code = await publishOnlineStorePromotionsNow();
+    if(status) status.textContent = '已發布到線上點餐頁（' + code + '）。手機顧客頁會自動更新，不需清快取。';
+    if(opts.silent !== true) alert('促銷設定已儲存並發布到線上點餐頁。');
+    return true;
+  }catch(err){
+    var msg = '促銷設定已儲存在本機，但尚未發布到線上點餐頁：' + (err && err.message ? err.message : err);
+    if(status) status.textContent = msg + '。請先 POS Google 登入並確認 Firebase rules 已發布，再按「儲存並發布廣告」。';
+    if(opts.silent !== true) alert(msg + '\n\n請先 POS Google 登入，確認 Firebase rules 已發布，或使用「儲存並上傳菜單」。');
+    return false;
+  }
+}
+
 // ── 主函式 ──
 
 export function initSettingsPage() {
@@ -578,6 +807,7 @@ export function initSettingsPage() {
   // 即時接單
   document.querySelector('[data-modal="modalRealtime"]')?.addEventListener('click', function() {
     loadRealtimeSettingsToForm();
+    firebaseImportStatus('可選擇 .txt/.json/.js，或貼上 Firebase SDK 設定內容後匯入。', false);
     openModal('modalRealtime');
   });
 
@@ -610,11 +840,31 @@ export function initSettingsPage() {
     loadImageLibraryToForm();
     openModal('modalImageLibrary');
   });
+
+  // 廣告促銷
+  document.querySelector('[data-modal="modalPromotions"]')?.addEventListener('click', function() {
+    loadPromotionSettingsToForm();
+    openModal('modalPromotions');
+  });
   document.getElementById('imageLibraryImportBtn')?.addEventListener('click', function(){ importImageLibraryFile(false); });
   document.getElementById('imageLibraryReplaceBtn')?.addEventListener('click', function(){ importImageLibraryFile(true); });
   document.getElementById('imageLibraryClearBtn')?.addEventListener('click', clearImageLibrary);
   document.getElementById('imageLibraryExportBtn')?.addEventListener('click', exportImageLibrary);
   document.getElementById('saveImageLibraryBtn')?.addEventListener('click', saveImageLibrarySettings);
+  document.getElementById('applyPromotionTemplateBtn')?.addEventListener('click', function(){
+    var key = promotionEl('promotionTemplateSelect') ? promotionEl('promotionTemplateSelect').value : 'lunch';
+    applyPromotionTemplate(key);
+    loadPromotionSettingsToForm();
+  });
+  document.getElementById('savePromotionSettingsBtn')?.addEventListener('click', function(){ savePromotionSettings(); });
+  document.getElementById('syncPromotionMenuBtn')?.addEventListener('click', async function(){
+    await savePromotionSettings({ silent: true });
+    if(typeof window.syncMenuToCloud === 'function'){
+      await window.syncMenuToCloud(this);
+    }else{
+      alert('同步模組未載入，請到即時接單設定手動上傳菜單');
+    }
+  });
 
 
   // ============================
@@ -1002,6 +1252,13 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
   // ============================
   // 即時接單 — 儲存
   // ============================
+    document.getElementById('importFirebaseConfigBtn')?.addEventListener('click', importFirebaseConfigFromUI);
+
+    document.getElementById('firebaseConfigFileInput')?.addEventListener('change', function(){
+      var name = this.files && this.files[0] ? this.files[0].name : '';
+      firebaseImportStatus(name ? ('已選擇：' + name + '，請按「匯入到下方欄位」。') : '尚未選擇檔案', false);
+    });
+
     document.getElementById('saveRealtimeOrderSettingsBtn')?.addEventListener('click', function() {
     if (!state.settings) state.settings = {};
     // 保留服務端寫入的狀態欄位

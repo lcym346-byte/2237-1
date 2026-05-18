@@ -257,8 +257,8 @@ function markLookupTime(){
  * 流程：
  *   1. 檢查 30 秒節流
  *   2. 算 hash
- *   3. 從 Firebase /onlineOrders 用 customerLookupKey 過濾
- *   4. 回傳該顧客所有訂單（含狀態）
+ *   3. 從 Firebase /customerOrderLookup/{storeCode}/{lookupKey} 讀取安全摘要
+ *   4. 回傳該顧客所有訂單（含狀態），不再下載整店 onlineOrders
  */
 export async function lookupOrdersByCustomer(fullPhone, name, storeCode){
   // 節流檢查
@@ -285,21 +285,17 @@ export async function lookupOrdersByCustomer(fullPhone, name, storeCode){
     const cfg = rt.getRealtimeConfig();
     if (!cfg.enabled) throw new Error('店家未啟用線上查單');
 
-    // 顧客需先匿名登入（onlineOrders 規則允許匿名讀自己的單）
+    // 顧客需先匿名登入，規則只允許讀取自己的 lookupKey 節點摘要。
     await rt.signInCustomerAnonymously();
 
-    // 查 /onlineOrders/{storeCode} 中 customerLookupKey 一致的訂單
-    const ref = await rt._getRef(`onlineOrders/${code}`);
+    // 只查 /customerOrderLookup/{storeCode}/{lookupKey}，避免下載整店訂單與顧客個資。
+    const ref = await rt._getRef(`customerOrderLookup/${code}/${lookupKey}`);
     const snapshot = await rt._dbApi().get(ref);
+    const rows = snapshot.val() || {};
 
-    const all = snapshot.val() || {};
-
-    const matched = Object.entries(all)
-      .map(([id, row]) => ({ id, ...row }))
-      .filter(o => o.customerLookupKey === lookupKey)
+    return Object.entries(rows)
+      .map(([id, row]) => Object.assign({ id: id }, row || {}))
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-    return matched;
   } catch (err) {
     if (err.code === 'PERMISSION_DENIED') {
       throw new Error('無權限查詢，請確認姓名與電話是否正確');

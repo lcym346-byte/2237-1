@@ -30,8 +30,13 @@
 .pay-btn{background:#eff6ff;color:#1d4ed8;padding:18px;font-weight:800}
 .pay-btn.pending{background:#fef3c7;color:#92400e}
 @media (max-width:768px){.discount-toggle,.payment-grid{grid-template-columns:1fr}}
-.product-card-image-wrap{width:100%;aspect-ratio:1/1;overflow:hidden;border-radius:14px;background:#f8fafc;border:1px solid var(--line)}
-.product-card-image{width:100%;height:100%;object-fit:cover;display:block}
+/* 商品圖片規格需與顧客線上點餐一致：正方形、完整顯示不裁切、舊 Android WebView fallback。 */
+.product-card-image-wrap{width:100%;aspect-ratio:var(--product-image-aspect);overflow:hidden;border-radius:14px;background:var(--product-image-bg);border:1px solid var(--line);position:relative}
+.product-card-image{width:100%;height:100%;object-fit:var(--product-image-fit);display:block}
+@supports not (aspect-ratio: 1 / 1){
+  .product-card-image-wrap::before{content:"";display:block;padding-top:100%}
+  .product-card-image-wrap > img{position:absolute;inset:0;width:100%;height:100%}
+}
 
 .product-card{overflow:hidden}
 .product-card h3{line-height:1.2}

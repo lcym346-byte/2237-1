@@ -7,8 +7,10 @@
  *   5. 菜單 (menu/...) 維持用 projectId，所有店共用
  */
 import { state, persistAll } from '../core/store.js';
+import { STORE_CONFIG } from '../core/store-config.js';
 import { getCurrentSession } from './report-session.js';
-import { fmtLocalDateTime } from '../core/utils.js';
+import { escapeHtml, fmtLocalDateTime } from '../core/utils.js';
+import { calculatePromotion, getPublicPromotionsConfig, importPromotionsFromCloud } from './promotion-service.js';
 
 
 const FIREBASE_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
@@ -33,6 +35,7 @@ let googleProvider = null;
 let initialized = false;
 let posListenerRef = null;
 let posListenerCallback = null;
+let posListenerEntries = [];
 
 // ============================================================
 // 設定
@@ -82,7 +85,12 @@ export function getRealtimeConfig(){
  * 未設定則拋錯，避免誤寫到根節點
  */
 export function getStoreCode(){
-  const code = String(state.settings?.dashboard?.storeId || '').trim();
+  const code = String(
+    (state.settings && state.settings.dashboard && state.settings.dashboard.storeId) ||
+    STORE_CONFIG.storeCode ||
+    STORE_CONFIG.storeId ||
+    ''
+  ).trim();
   if(!code){
     throw new Error('尚未設定店鋪代碼（storeId），請連點頁首 5 下開啟設定，輸入 TW001 等代碼');
   }
@@ -101,6 +109,54 @@ function validateStoreCode(code){
   if(!c) throw new Error('缺少店鋪代碼');
   if(/[.#$\/\[\]]/.test(c)) throw new Error(`店鋪代碼「${c}」含有非法字元`);
   return c;
+}
+
+function addStoreCodeAlias(list, code){
+  var c = String(code || '').trim();
+  if(!c || /[.#$\/\[\]]/.test(c)) return;
+  if(list.indexOf(c) < 0) list.push(c);
+}
+
+function getPublicStoreWriteAliases(primaryCode){
+  var out = [];
+  addStoreCodeAlias(out, primaryCode);
+  try{ addStoreCodeAlias(out, state.settings && state.settings.dashboard && state.settings.dashboard.storeId); }catch(e){}
+  try{ addStoreCodeAlias(out, state.settings && state.settings.store && state.settings.store.storeId); }catch(e){}
+  try{ addStoreCodeAlias(out, STORE_CONFIG && STORE_CONFIG.storeCode); }catch(e){}
+  try{ addStoreCodeAlias(out, STORE_CONFIG && STORE_CONFIG.storeId); }catch(e){}
+  return out;
+}
+
+function getPublicStoreReadAliases(primaryCode){
+  var out = [];
+  var c = validateStoreCode(primaryCode);
+  addStoreCodeAlias(out, c);
+  addStoreCodeAlias(out, c.toUpperCase());
+  addStoreCodeAlias(out, c.toLowerCase());
+  return out;
+}
+
+function detachPOSRealtimeListeners(){
+  if(posListenerEntries.length){
+    posListenerEntries.forEach(function(entry){
+      try{ dbApi.off(entry.ref, 'value', entry.callback); }catch(e){}
+    });
+    posListenerEntries = [];
+  }
+  if(posListenerRef && posListenerCallback){
+    try{ dbApi.off(posListenerRef, 'value', posListenerCallback); }catch(e){}
+  }
+  posListenerRef = null;
+  posListenerCallback = null;
+}
+
+function getOnlineOrderStoreCode(orderId){
+  var order = (state.onlineIncomingOrders || []).find(function(o){ return o && o.id === orderId; });
+  var code = order && (order._storeCode || order.storeCode);
+  if(code){
+    try{ return validateStoreCode(code); }catch(e){}
+  }
+  return getStoreCode();
 }
 
 // ============================================================
@@ -209,7 +265,7 @@ function showOnlineOrderOverlay(orderId){
   const itemsEl = document.getElementById('overlayItems');
   if(order && order.items){
     itemsEl.innerHTML = order.items.map(it =>
-      `<div style="padding:3px 0;">${it.name} x ${it.qty}</div>`
+      `<div style="padding:3px 0;">${escapeHtml(it.name || '')} x ${Number(it.qty || 0)}</div>`
     ).join('');
   } else {
     itemsEl.innerHTML = '';
@@ -293,10 +349,8 @@ function showOnlineOrderOverlay(orderId){
 
 
 function startAlarm(orderId){
-  if(activeAlarmInterval){
-    activeAlarmOrderId = orderId;
-    return;
-  }
+  if(activeAlarmInterval){ clearInterval(activeAlarmInterval); activeAlarmInterval = null; }
+  if(activeAlarmTimeout){ clearTimeout(activeAlarmTimeout); activeAlarmTimeout = null; }
   activeAlarmOrderId = orderId;
 
   showOnlineOrderOverlay(orderId);
@@ -363,6 +417,10 @@ function beep(){
 // ============================================================
 export async function signInPOSWithGoogle(){
   await loadFirebaseModules();
+  try{ await authApi.setPersistence(authInstance, authApi.browserLocalPersistence); }catch(e){}
+  if(authInstance.currentUser && authInstance.currentUser.isAnonymous){
+    try{ await authApi.signOut(authInstance); }catch(e){}
+  }
   const result = await authApi.signInWithPopup(authInstance, googleProvider);
   return result.user;
 }
@@ -376,6 +434,7 @@ export async function signOutPOSGoogle(){
 
 export async function signInCustomerAnonymously(){
   await loadFirebaseModules();
+  try{ await authApi.setPersistence(authInstance, authApi.inMemoryPersistence); }catch(e){}
   if(authInstance.currentUser) return authInstance.currentUser;
   const result = await authApi.signInAnonymously(authInstance);
   return result.user;
@@ -410,8 +469,15 @@ export async function verifyPOSAccess(){
   return {
     uid: user.uid,
     email: user.email || staffRow?.email || '',
-    role
+    role,
+    canPublishMenu: role === 'admin' || staffRow?.canPublishMenu === true
   };
+}
+
+function assertCanPublishSharedMenu(access){
+  if(!access || access.canPublishMenu !== true){
+    throw new Error('此帳號只能讀取共用雲端菜單，不能修改主要菜單資料。請使用 admin 帳號，或在 Firebase 設定 staff/你的UID/canPublishMenu = true。');
+  }
 }
 
 // ============================================================
@@ -421,6 +487,51 @@ export async function verifyPOSAccess(){
 /**
  * 顧客送單。storeCode 必填（由顧客端從 URL 取得）。
  */
+function buildCustomerLookupSnapshot(orderId, order, statusOverride){
+  const items = Array.isArray(order.items) ? order.items.slice(0, 80).map(function(it){
+    return {
+      productId: it.productId || '',
+      name: String(it.name || '').slice(0, 80),
+      qty: Math.max(1, Number(it.qty || 1)),
+      selections: Array.isArray(it.selections) ? it.selections.slice(0, 20).map(function(s){
+        return {
+          moduleName: String(s.moduleName || '').slice(0, 40),
+          optionName: String(s.optionName || '').slice(0, 40)
+        };
+      }) : []
+    };
+  }) : [];
+  return {
+    id: orderId,
+    orderNo: order.orderNo || orderId,
+    createdAt: order.createdAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: statusOverride || order.status || 'pending_confirm',
+    orderType: order.orderType || '線上點餐',
+    reservationAt: order.reservationAt || '',
+    prepTimeMinutes: order.prepTimeMinutes || null,
+    estimatedReadyAt: order.estimatedReadyAt || null,
+    replyMessage: order.replyMessage || '',
+    subtotal: Number(order.subtotal || 0),
+    discountAmount: Number(order.discountAmount || 0),
+    total: Number(order.total || order.subtotal || 0),
+    customerUid: order.customerUid || '',
+    items
+  };
+}
+
+async function setCustomerLookupSnapshot(storeCode, lookupKey, orderId, order, statusOverride){
+  if(!lookupKey || !orderId) return;
+  const ref = await getRef(`customerOrderLookup/${storeCode}/${lookupKey}/${orderId}`);
+  await dbApi.set(ref, buildCustomerLookupSnapshot(orderId, order, statusOverride));
+}
+
+async function updateCustomerLookupSnapshot(storeCode, lookupKey, orderId, patch){
+  if(!lookupKey || !orderId) return;
+  const ref = await getRef(`customerOrderLookup/${storeCode}/${lookupKey}/${orderId}`);
+  await dbApi.update(ref, Object.assign({}, patch || {}, { updatedAt: new Date().toISOString() }));
+}
+
 export async function pushOnlineOrder(order, storeCode){
   const cfg = ensureRealtimeConfig();
   if(!cfg.enabled) throw new Error('即時接單尚未啟用');
@@ -438,7 +549,7 @@ export async function pushOnlineOrder(order, storeCode){
     console.warn('buildLookupKeyForOrder failed:', e);
   }
 
-  await dbApi.set(newRef, Object.assign({}, order, {
+  const createdOrder = Object.assign({}, order, {
     storeCode: code,
     customerUid: user.uid,
     customerLookupKey,
@@ -448,10 +559,31 @@ export async function pushOnlineOrder(order, storeCode){
     prepTimeMinutes: null,
     estimatedReadyAt: null,
     replyMessage: ''
-  }));
+  });
+
+  try{
+    await dbApi.set(newRef, createdOrder);
+  }catch(err){
+    const msg = String((err && (err.code || err.message)) || err || '');
+    if(msg.indexOf('PERMISSION_DENIED') >= 0 || msg.indexOf('permission') >= 0){
+      throw new Error('Firebase 拒絕顧客送單。請確認已發布新版安全規則、已啟用 Anonymous 匿名登入，且網址 storeId 與規則路徑一致（目前：' + code + '）。');
+    }
+    throw err;
+  }
+
+  if(customerLookupKey){
+    try{
+      await setCustomerLookupSnapshot(code, customerLookupKey, newRef.key, createdOrder, 'pending_confirm');
+    }catch(err){
+      // 顧客查詢索引屬於輔助資料；主訂單已成功寫入 onlineOrders，不可因此讓客人誤以為送單失敗。
+      console.warn('customerOrderLookup write failed; main order already created:', err);
+      cfg.lastSyncStatus = '顧客訂單已送出，但查詢索引建立失敗（不影響 POS 接單）';
+    }
+  }
 
   cfg.lastOrderAt = new Date().toISOString();
-  cfg.lastSyncStatus = `顧客訂單已送出（${code}）`;
+  cfg.lastSyncStatus = cfg.lastSyncStatus || `顧客訂單已送出（${code}）`;
+  if(cfg.lastSyncStatus.indexOf('查詢索引') < 0) cfg.lastSyncStatus = `顧客訂單已送出（${code}）`;
   persistAll();
   return newRef.key;
 }
@@ -459,7 +591,7 @@ export async function pushOnlineOrder(order, storeCode){
 /**
  * 顧客監聽自己訂單狀態。storeCode 必填。
  */
-export async function watchCustomerOrder(orderId, onChange, storeCode){
+export async function watchCustomerOrder(orderId, onChange, storeCode, onError){
   await loadFirebaseModules();
   const code = validateStoreCode(storeCode);
   const ref = await getRef(`onlineOrders/${code}/${orderId}`);
@@ -467,7 +599,11 @@ export async function watchCustomerOrder(orderId, onChange, storeCode){
     const val = snapshot.val();
     if(val) onChange(val);
   };
-  dbApi.onValue(ref, callback);
+  const errorCallback = error => {
+    console.warn('watchCustomerOrder permission/read failed:', error);
+    if(typeof onError === 'function') onError(error);
+  };
+  dbApi.onValue(ref, callback, errorCallback);
   return ()=> dbApi.off(ref, 'value', callback);
 }
 
@@ -484,6 +620,11 @@ export async function startPOSRealtimeListener(onRefresh){
     updateSyncStatus('POS 尚未登入 Google');
     return;
   }
+  if(user.isAnonymous){
+    try{ await authApi.signOut(authInstance); }catch(e){}
+    updateSyncStatus('目前是顧客匿名登入狀態，請在 POS 重新按「Google 登入」後接單');
+    return;
+  }
 
   await verifyPOSAccess();
 
@@ -495,26 +636,31 @@ export async function startPOSRealtimeListener(onRefresh){
     return;
   }
 
-  const ref = await getRef(`onlineOrders/${code}`);
-  if(posListenerRef && posListenerCallback){
-    dbApi.off(posListenerRef, 'value', posListenerCallback);
-  }
+  detachPOSRealtimeListeners();
 
   let seen = new Set(JSON.parse(sessionStorage.getItem('pos_seen_online_orders') || '[]'));
+  const listenerCodes = getPublicStoreWriteAliases(code);
+  const listenerValues = {};
 
-  posListenerRef = ref;
-  posListenerCallback = snapshot => {
-    const value = snapshot.val() || {};
-    const incoming = Object.entries(value)
-      .map(([id, row]) => ({ id, ...row }))
-      .sort((a,b)=> new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  const rebuildIncoming = function(){
+    var merged = [];
+    listenerCodes.forEach(function(pathCode){
+      var value = listenerValues[pathCode] || {};
+      Object.entries(value).forEach(function(entry){
+        var id = entry[0];
+        var row = entry[1] || {};
+        merged.push(Object.assign({}, row, { id: id, _storeCode: pathCode }));
+      });
+    });
+    const incoming = merged.sort((a,b)=> new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     state.onlineIncomingOrders = incoming;
 
     let hasNewOrder = false;
     incoming.forEach(order => {
-      if(order.status === 'pending_confirm' && !seen.has(order.id)){
-        seen.add(order.id);
+      const seenKey = (order._storeCode || order.storeCode || code) + '/' + order.id;
+      if(order.status === 'pending_confirm' && !seen.has(seenKey)){
+        seen.add(seenKey);
         cfg.lastOrderAt = new Date().toISOString();
         cfg.lastSyncStatus = `收到新訂單：${order.customerName || order.orderNo || order.id}`;
         sessionStorage.setItem('pos_seen_online_orders', JSON.stringify([...seen]));
@@ -522,13 +668,15 @@ export async function startPOSRealtimeListener(onRefresh){
       }
     });
 
-    if(hasNewOrder && !activeAlarmInterval){
-      const latestPending = incoming.find(o => o.status === 'pending_confirm');
-      if(latestPending) startAlarm(latestPending.id);
+    const latestPending = incoming.find(o => o.status === 'pending_confirm');
+    if(latestPending && (!activeAlarmOrderId || activeAlarmOrderId !== latestPending.id)){
+      if(hasNewOrder || !activeAlarmInterval){
+        startAlarm(latestPending.id);
+      }
     }
 
     if(!incoming.some(order => order.status === 'pending_confirm')){
-      cfg.lastSyncStatus = `即時接單監聽中（${code}）`;
+      cfg.lastSyncStatus = `即時接單監聽中（${listenerCodes.join(',')}）`;
       stopAlarm();
     }
 
@@ -537,17 +685,30 @@ export async function startPOSRealtimeListener(onRefresh){
     if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
   };
 
-  dbApi.onValue(ref, posListenerCallback, (error)=>{
-    state.onlineIncomingOrders = [];
-    cfg.lastSyncStatus = error?.code === 'PERMISSION_DENIED'
-      ? '沒有 Firebase staff 權限，請建立 staff/你的uid/role'
-      : `即時接單監聽失敗：${error?.message || '未知錯誤'}`;
-    persistAll();
-    if(typeof onRefresh === 'function') onRefresh();
-    if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
-  });
+  for(var i = 0; i < listenerCodes.length; i++){
+    let pathCode = listenerCodes[i];
+    const ref = await getRef(`onlineOrders/${pathCode}`);
+    const callback = snapshot => {
+      listenerValues[pathCode] = snapshot.val() || {};
+      rebuildIncoming();
+    };
+    dbApi.onValue(ref, callback, (error)=>{
+      console.warn('onlineOrders listener failed:', pathCode, error);
+      if(pathCode === code){
+        state.onlineIncomingOrders = [];
+        cfg.lastSyncStatus = error?.code === 'PERMISSION_DENIED'
+          ? '沒有 Firebase staff 權限，請建立 staff/你的uid/role 與 stores/' + code + '=true'
+          : `即時接單監聽失敗：${error?.message || '未知錯誤'}`;
+        persistAll();
+        if(typeof onRefresh === 'function') onRefresh();
+        if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
+      }
+    });
+    posListenerEntries.push({ ref: ref, callback: callback });
+    if(i === 0){ posListenerRef = ref; posListenerCallback = callback; }
+  }
 
-  cfg.lastSyncStatus = `即時接單監聽中（${code}）`;
+  cfg.lastSyncStatus = `即時接單監聽中（${listenerCodes.join(',')}）`;
   persistAll();
   if(typeof onRefresh === 'function') onRefresh();
   if(typeof window.refreshRealtimeOrderPanel === 'function') window.refreshRealtimeOrderPanel();
@@ -557,7 +718,7 @@ export async function startPOSRealtimeListener(onRefresh){
  * POS 確認訂單。storeCode 由本機 state 取得。
  */
 export async function confirmOnlineOrder(orderId, prepTimeMinutes = 0, replyMessage = ''){
-  const code = getStoreCode();
+  const code = getOnlineOrderStoreCode(orderId);
   const ref = await getRef(`onlineOrders/${code}/${orderId}`);
   const snapshot = await dbApi.get(ref);
   const order = snapshot.val();
@@ -576,6 +737,14 @@ export async function confirmOnlineOrder(orderId, prepTimeMinutes = 0, replyMess
     replyMessage: safeReplyMessage || null,
     updatedAt: new Date().toISOString()
   });
+  if(order.customerLookupKey){
+    await updateCustomerLookupSnapshot(code, order.customerLookupKey, orderId, {
+      status: 'confirmed',
+      prepTimeMinutes: safePrepMinutes || null,
+      estimatedReadyAt: estimatedReadyAt || null,
+      replyMessage: safeReplyMessage || null
+    });
+  }
 
   const cfg = ensureRealtimeConfig();
   cfg.lastConfirmedAt = new Date().toISOString();
@@ -595,22 +764,94 @@ export async function confirmOnlineOrder(orderId, prepTimeMinutes = 0, replyMess
  * POS 拒絕訂單。
  */
 export async function rejectOnlineOrder(orderId, replyMessage = ''){
-  const code = getStoreCode();
+  const code = getOnlineOrderStoreCode(orderId);
   const ref = await getRef(`onlineOrders/${code}/${orderId}`);
+  const snapshot = await dbApi.get(ref);
+  const order = snapshot.val() || {};
   const safeReplyMessage = String(replyMessage || '').trim().slice(0, 120);
   await dbApi.update(ref, {
     status: 'rejected',
     replyMessage: safeReplyMessage || '店家目前無法接單，請稍後再試。',
     updatedAt: new Date().toISOString()
   });
+  if(order.customerLookupKey){
+    await updateCustomerLookupSnapshot(code, order.customerLookupKey, orderId, {
+      status: 'rejected',
+      replyMessage: safeReplyMessage || '店家目前無法接單，請稍後再試。'
+    });
+  }
   const cfg = ensureRealtimeConfig();
   cfg.lastSyncStatus = `已拒絕訂單：${orderId}`;
   persistAll();
 }
 
+function rebuildTrustedOnlineItems(remoteItems){
+  const products = Array.isArray(state.products) ? state.products : [];
+  const modules = Array.isArray(state.modules) ? state.modules : [];
+  let warning = '';
+  const trusted = [];
+  (Array.isArray(remoteItems) ? remoteItems : []).slice(0, 80).forEach(function(raw){
+    if(!raw) return;
+    const product = products.find(function(p){ return p && p.id === raw.productId; });
+    const qty = Math.max(1, Math.min(99, Number(raw.qty || 1)));
+    if(!product || product.enabled === false || product.soldOut === true){
+      warning = warning || '部分商品不存在、停售或售完，已由 POS 重新標記為待人工確認';
+      trusted.push({
+        rowId: raw.rowId || ('remote_' + Date.now()),
+        productId: raw.productId || '',
+        name: String(raw.name || '未知商品').slice(0, 80) + '（需確認）',
+        basePrice: 0,
+        extraPrice: 0,
+        qty,
+        note: String(raw.note || '').slice(0, 120),
+        selections: []
+      });
+      return;
+    }
+
+    const selections = [];
+    let extraPrice = 0;
+    const remoteSelections = Array.isArray(raw.selections) ? raw.selections : [];
+    remoteSelections.forEach(function(sel){
+      const mod = modules.find(function(m){ return m && m.id === sel.moduleId; });
+      if(!mod || !Array.isArray(mod.options)) return;
+      const opt = mod.options.find(function(o){ return o && o.id === sel.optionId && o.enabled !== false; });
+      if(!opt) return;
+      const price = Number(opt.price || 0);
+      extraPrice += price;
+      selections.push({
+        moduleId: mod.id,
+        moduleName: mod.name || '',
+        optionId: opt.id,
+        optionName: opt.name || '',
+        price
+      });
+    });
+
+    const basePrice = Number(product.price || 0);
+    if(Number(raw.basePrice || 0) !== basePrice || Number(raw.extraPrice || 0) !== extraPrice){
+      warning = warning || '線上訂單價格已依 POS 菜單重新計算';
+    }
+    trusted.push({
+      rowId: raw.rowId || ('remote_' + Date.now()),
+      productId: product.id,
+      name: product.name || raw.name || '',
+      basePrice,
+      extraPrice,
+      qty,
+      note: String(raw.note || '').slice(0, 120),
+      selections
+    });
+  });
+  return { items: trusted, warning };
+}
+
 export function buildRealtimeOrderForPOS(remote){
-  const items = Array.isArray(remote.items) ? remote.items : [];
+  const rebuilt = rebuildTrustedOnlineItems(remote.items);
+  const items = rebuilt.items;
   const subtotal = items.reduce((s, x) => s + ((Number(x.basePrice || 0) + Number(x.extraPrice || 0)) * Number(x.qty || 0)), 0);
+  const promo = remote.promotionCode ? calculatePromotion(items, remote.promotionCode) : null;
+  const discountAmount = promo && promo.ok ? Number(promo.discount || 0) : 0;
   return {
     id: 'online_' + remote.id,
     orderNo: remote.orderNo || ('ON' + Date.now()),
@@ -628,12 +869,15 @@ export function buildRealtimeOrderForPOS(remote){
     prepTimeMinutes: Number(remote.prepTimeMinutes || 0),
     estimatedReadyAt: remote.estimatedReadyAt || '',
     merchantReplyMessage: remote.replyMessage || '',
+    pricingWarning: rebuilt.warning || '',
+    promotionCode: remote.promotionCode || '',
+    promotionTitle: promo && promo.ok ? promo.title : '',
     discountType: 'amount',
-    discountValue: 0,
-    discountAmount: 0,
+    discountValue: discountAmount,
+    discountAmount: discountAmount,
     sessionId: getCurrentSession()?.id || null,
     subtotal,
-    total: subtotal,
+    total: Math.max(0, subtotal - discountAmount),
     items
   };
 }
@@ -651,7 +895,8 @@ export async function syncMenuToFirebase(){
 
   const user = authInstance.currentUser || await waitForAuthReady();
   if(!user) throw new Error('請先使用 POS Google 登入');
-  await verifyPOSAccess();
+  const access = await verifyPOSAccess();
+  assertCanPublishSharedMenu(access);
 
   const menuKey = cfg.projectId || 'default';
   const menuData = {
@@ -673,18 +918,133 @@ export async function syncMenuToFirebase(){
 }),
 
     modules: state.modules || [],
+    promotions: getPublicPromotionsConfig(),
     updatedAt: new Date().toISOString()
   };
 
   const menuRef = await getRef('menu/' + menuKey);
   await dbApi.set(menuRef, menuData);
+
+  try{
+    const publicStoreCode = getStoreCode();
+    await publishPublicOnlineStore(publicStoreCode, menuData.promotions);
+  }catch(err){
+    console.warn('public online store promotion sync skipped:', err);
+  }
+
   cfg.lastSyncStatus = '菜單同步成功';
   cfg.lastSyncTime = new Date().toISOString();
   persistAll();
 }
 
+function buildPublicProductAvailability(){
+  const availability = {};
+  (state.products || []).forEach(function(p){
+    if(!p || !p.id) return;
+    availability[p.id] = {
+      enabled: p.enabled !== false,
+      soldOut: p.soldOut === true,
+      updatedAt: new Date().toISOString()
+    };
+  });
+  return availability;
+}
 
-export async function fetchMenuFromFirebase(){
+async function publishPublicOnlineStore(storeCode, promotions){
+  const primaryCode = validateStoreCode(storeCode);
+  const aliases = getPublicStoreWriteAliases(primaryCode);
+  const promoPayload = promotions || getPublicPromotionsConfig();
+  const availabilityPayload = buildPublicProductAvailability();
+  const updatedAt = new Date().toISOString();
+  const success = [];
+  const errors = [];
+
+  for(var i = 0; i < aliases.length; i++){
+    var code = aliases[i];
+    try{
+      const publicRef = await getRef('publicOnlineStores/' + code);
+      await dbApi.update(publicRef, {
+        storeId: code,
+        promotions: promoPayload,
+        productAvailability: availabilityPayload,
+        updatedAt: updatedAt
+      });
+      success.push(code);
+    }catch(err){
+      errors.push(code + ': ' + (err && err.message ? err.message : err));
+    }
+  }
+  if(!success.length){
+    throw new Error('publicOnlineStores 發布失敗：' + errors.join('；'));
+  }
+  if(errors.length){
+    console.warn('部分 publicOnlineStores alias 發布失敗：', errors.join('；'));
+  }
+  return success.join(',');
+}
+
+export async function publishOnlineStoreAvailabilityNow(storeCode){
+  await loadFirebaseModules();
+  const user = authInstance.currentUser || await waitForAuthReady();
+  if(!user) throw new Error('請先使用 POS Google 登入');
+  await verifyPOSAccess();
+  const code = await publishPublicOnlineStore(storeCode || getStoreCode(), getPublicPromotionsConfig());
+  const cfg = ensureRealtimeConfig();
+  cfg.lastSyncStatus = '線上點餐商品狀態已發布（' + code + '）';
+  cfg.lastSyncTime = new Date().toISOString();
+  persistAll();
+  return code;
+}
+
+export async function publishOnlineStorePromotionsNow(storeCode){
+  await loadFirebaseModules();
+  const user = authInstance.currentUser || await waitForAuthReady();
+  if(!user) throw new Error('請先使用 POS Google 登入');
+  await verifyPOSAccess();
+  const code = await publishPublicOnlineStore(storeCode || getStoreCode(), getPublicPromotionsConfig());
+  const cfg = ensureRealtimeConfig();
+  cfg.lastSyncStatus = '線上點餐廣告已發布（' + code + '）';
+  cfg.lastSyncTime = new Date().toISOString();
+  persistAll();
+  return code;
+}
+
+async function fetchPublicOnlineStorePromotions(storeCode){
+  if(!storeCode) return null;
+  try{
+    const aliases = getPublicStoreReadAliases(storeCode);
+    for(var i = 0; i < aliases.length; i++){
+      var code = aliases[i];
+      const publicRef = await getRef('publicOnlineStores/' + code);
+      const publicSnap = await dbApi.get(publicRef);
+      const publicData = publicSnap.val();
+      if(publicData){
+        lastPublicOnlineStoreData = publicData;
+        applyPublicOnlineStore(publicData);
+        return publicData.promotions || null;
+      }
+    }
+  }catch(err){
+    console.warn('fetch public online promotions failed:', err);
+  }
+  return null;
+}
+
+function clearOnlinePromotionsForPublicStore(){
+  importPromotionsFromCloud({
+    enabled: false,
+    heroTitle: '',
+    heroSubtitle: '',
+    heroBadge: '',
+    theme: 'orange',
+    banners: [],
+    coupons: [],
+    updatedAt: new Date().toISOString()
+  });
+}
+
+
+export async function fetchMenuFromFirebase(storeCode){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
   const menuKey = cfg.projectId || 'default';
@@ -700,6 +1060,18 @@ export async function fetchMenuFromFirebase(){
   }
   if(data.categories && Array.isArray(data.categories)){
     state.categories = data.categories;
+  }
+  if(data.promotions && typeof data.promotions === 'object'){
+    // 先套用共用菜單廣告當保底，避免 publicOnlineStores 尚未建立時手機整塊廣告消失。
+    importPromotionsFromCloud(data.promotions);
+  }
+  lastPublicOnlineStoreData = null;
+  const storePromotions = await fetchPublicOnlineStorePromotions(storeCode);
+  if(storePromotions){
+    data.promotions = storePromotions;
+  }else if(storeCode && lastPublicOnlineStoreData){
+    // 只有確定 publicOnlineStores/{storeCode} 存在、但該店刻意沒有 promotions 時，才清空廣告。
+    clearOnlinePromotionsForPublicStore();
   }
   return data;
 }
@@ -764,6 +1136,10 @@ export async function fetchAndMergeMenuFromFirebase(){
     state.products = merged;
   }
 
+  if(data.promotions && typeof data.promotions === 'object'){
+    importPromotionsFromCloud(data.promotions);
+  }
+
   cfg.lastSyncStatus = `讀取成功：雲端 ${cloudCount} / 本地獨有保留 ${localKeptCount}`;
   cfg.lastSyncTime = new Date().toISOString();
   persistAll();
@@ -771,80 +1147,169 @@ export async function fetchAndMergeMenuFromFirebase(){
 }
 
 let menuWatchUnsub = null;
+let publicOnlineStoreWatchUnsub = null;
 let menuPollTimer = null;
-export async function startMenuAutoWatch(onUpdate){
+let lastPublicOnlineStoreData = null;
+export async function startMenuAutoWatch(onUpdate, storeCode){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
   const menuKey = cfg.projectId || 'default';
   const menuRef = await getRef('menu/' + menuKey);
+  const publicCode = storeCode ? validateStoreCode(storeCode) : '';
+  lastPublicOnlineStoreData = null;
+  const publicCodes = publicCode ? getPublicStoreReadAliases(publicCode) : [];
+  const publicRefs = [];
+  for(var prIdx = 0; prIdx < publicCodes.length; prIdx++){
+    publicRefs.push({ code: publicCodes[prIdx], ref: await getRef('publicOnlineStores/' + publicCodes[prIdx]) });
+  }
 
   if(menuWatchUnsub){ try{ menuWatchUnsub(); }catch(e){} menuWatchUnsub = null; }
+  if(publicOnlineStoreWatchUnsub){ try{ publicOnlineStoreWatchUnsub(); }catch(e){} publicOnlineStoreWatchUnsub = null; }
   if(menuPollTimer){ clearInterval(menuPollTimer); menuPollTimer = null; }
 
   const handler = (snapshot) => {
     const data = snapshot.val();
     if(!data) return;
     try {
-      applyCloudMenu(data);
+      applyCloudMenu(data, { skipPromotions: !!publicCode, forceCloudProducts: true });
+      if(lastPublicOnlineStoreData) applyPublicOnlineStore(lastPublicOnlineStoreData);
       if(typeof onUpdate === 'function') onUpdate();
     } catch(e){ console.warn('menu watch handler failed:', e); }
   };
   dbApi.onValue(menuRef, handler);
   menuWatchUnsub = ()=> dbApi.off(menuRef, 'value', handler);
 
+  if(publicRefs.length){
+    const publicWatchEntries = [];
+    publicRefs.forEach(function(entry){
+      const publicHandler = (snapshot) => {
+        const data = snapshot.val();
+        if(!data) return;
+        try{
+          lastPublicOnlineStoreData = data;
+          if(applyPublicOnlineStore(data) && typeof onUpdate === 'function') onUpdate();
+        }catch(e){ console.warn('public online store watch failed:', entry.code, e); }
+      };
+      dbApi.onValue(entry.ref, publicHandler, function(err){ console.warn('public online store watch permission failed:', entry.code, err); });
+      publicWatchEntries.push({ ref: entry.ref, handler: publicHandler });
+    });
+    publicOnlineStoreWatchUnsub = function(){
+      publicWatchEntries.forEach(function(entry){
+        try{ dbApi.off(entry.ref, 'value', entry.handler); }catch(e){}
+      });
+    };
+  }
+
   menuPollTimer = setInterval(async ()=>{
     try{
       const snap = await dbApi.get(menuRef);
       const data = snap.val();
-      if(data){ applyCloudMenu(data); if(typeof onUpdate === 'function') onUpdate(); }
+      if(data){ applyCloudMenu(data, { skipPromotions: !!publicCode, forceCloudProducts: true }); if(lastPublicOnlineStoreData) applyPublicOnlineStore(lastPublicOnlineStoreData); if(typeof onUpdate === 'function') onUpdate(); }
+      if(publicCode){
+        await fetchPublicOnlineStorePromotions(publicCode);
+        if(lastPublicOnlineStoreData) applyPublicOnlineStore(lastPublicOnlineStoreData);
+        if(typeof onUpdate === 'function') onUpdate();
+      }
     }catch(e){ /* 靜默 */ }
   }, 30000);
 }
 
-function applyCloudMenu(data){
+function applyProductAvailability(availability){
+  if(!availability || typeof availability !== 'object' || !Array.isArray(state.products)) return false;
+  var changed = false;
+  state.products.forEach(function(p){
+    if(!p || !p.id || !availability[p.id]) return;
+    var row = availability[p.id];
+    var enabled = row.enabled !== false;
+    var soldOut = row.soldOut === true;
+    if(p.enabled !== enabled){ p.enabled = enabled; changed = true; }
+    if(p.soldOut !== soldOut){ p.soldOut = soldOut; changed = true; }
+  });
+  return changed;
+}
+
+function applyPublicOnlineStore(data){
+  var changed = false;
+  if(data && data.promotions && typeof data.promotions === 'object' && Array.isArray(data.promotions.banners)){
+    importPromotionsFromCloud(data.promotions);
+    changed = true;
+  }
+  if(data && applyProductAvailability(data.productAvailability)){
+    changed = true;
+  }
+  if(changed) persistAll();
+  return changed;
+}
+
+function applyCloudMenu(data, options){
+  const opts = options || {};
+  if(!opts.skipPromotions && data.promotions && typeof data.promotions === 'object'){
+    importPromotionsFromCloud(data.promotions);
+  }
   if(Array.isArray(data.categories)){
-    const localCats = state.categories || [];
-    const merged = [...data.categories];
-    localCats.forEach(c => { if(!merged.includes(c)) merged.push(c); });
-    if(!merged.includes('未分類')) merged.unshift('未分類');
-    state.categories = merged;
+    if(opts.forceCloudProducts){
+      state.categories = data.categories.slice();
+    }else{
+      const localCats = state.categories || [];
+      const merged = [...data.categories];
+      localCats.forEach(c => { if(!merged.includes(c)) merged.push(c); });
+      if(!merged.includes('未分類')) merged.unshift('未分類');
+      state.categories = merged;
+    }
   }
   if(Array.isArray(data.modules)){
-    const localMods = state.modules || [];
-    const merged = [];
-    const usedIds = new Set();
-    data.modules.forEach(m => { if(m && m.id){ merged.push(m); usedIds.add(m.id); }});
-    localMods.forEach(m => { if(m && m.id && !usedIds.has(m.id)) merged.push(m); });
-    state.modules = merged;
+    if(opts.forceCloudProducts){
+      state.modules = data.modules;
+    }else{
+      const localMods = state.modules || [];
+      const merged = [];
+      const usedIds = new Set();
+      data.modules.forEach(m => { if(m && m.id){ merged.push(m); usedIds.add(m.id); }});
+      localMods.forEach(m => { if(m && m.id && !usedIds.has(m.id)) merged.push(m); });
+      state.modules = merged;
+    }
   }
   if(Array.isArray(data.products)){
-    const localProds = state.products || [];
-    const localMap = {};
-    localProds.forEach(p => { if(p && p.id) localMap[p.id] = p; });
-    const merged = [];
-    const usedIds = new Set();
-    data.products.forEach(cp => {
-      if(!cp || !cp.id) return;
-      const lp = localMap[cp.id];
-      const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
-      const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
-      merged.push({
+    if(opts.forceCloudProducts){
+      state.products = data.products.map(cp => ({
         id: cp.id, sku: cp.sku || '', name: cp.name || '', price: Number(cp.price || 0),
         category: cp.category || '未分類', image: cp.image || '',
         description: cp.description || '',
         modules: Array.isArray(cp.modules) ? cp.modules : [],
-        sortOrder: Number(cp.sortOrder || 0), enabled, soldOut
+        sortOrder: Number(cp.sortOrder || 0),
+        enabled: cp.enabled !== false,
+        soldOut: cp.soldOut === true
+      })).filter(p => !!p.id);
+    }else{
+      const localProds = state.products || [];
+      const localMap = {};
+      localProds.forEach(p => { if(p && p.id) localMap[p.id] = p; });
+      const merged = [];
+      const usedIds = new Set();
+      data.products.forEach(cp => {
+        if(!cp || !cp.id) return;
+        const lp = localMap[cp.id];
+        const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
+        const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
+        merged.push({
+          id: cp.id, sku: cp.sku || '', name: cp.name || '', price: Number(cp.price || 0),
+          category: cp.category || '未分類', image: cp.image || '',
+          description: cp.description || '',
+          modules: Array.isArray(cp.modules) ? cp.modules : [],
+          sortOrder: Number(cp.sortOrder || 0), enabled, soldOut
+        });
+        usedIds.add(cp.id);
       });
-      usedIds.add(cp.id);
-    });
-    localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
-    state.products = merged;
+      localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
+      state.products = merged;
+    }
   }
   persistAll();
 }
 
 export function stopMenuAutoWatch(){
   if(menuWatchUnsub){ try{ menuWatchUnsub(); }catch(e){} menuWatchUnsub = null; }
+  if(publicOnlineStoreWatchUnsub){ try{ publicOnlineStoreWatchUnsub(); }catch(e){} publicOnlineStoreWatchUnsub = null; }
   if(menuPollTimer){ clearInterval(menuPollTimer); menuPollTimer = null; }
 }
 
@@ -859,6 +1324,7 @@ export async function watchMenuFromFirebase(callback){
     if(Array.isArray(data.products)) state.products = data.products;
     if(Array.isArray(data.modules))  state.modules  = data.modules;
     if(Array.isArray(data.categories)) state.categories = data.categories;
+    if(data.promotions && typeof data.promotions === 'object') importPromotionsFromCloud(data.promotions);
     if(callback) callback(data);
   });
 }
@@ -882,7 +1348,7 @@ function showReservationReminderOverlay(order){
   const itemsEl = document.getElementById('reminderItems');
   if(Array.isArray(order.items)){
     itemsEl.innerHTML = order.items.map(it =>
-      `<div style="padding:3px 0;">${it.name} x ${it.qty}</div>`
+      `<div style="padding:3px 0;">${escapeHtml(it.name || '')} x ${Number(it.qty || 0)}</div>`
     ).join('');
   } else {
     itemsEl.innerHTML = '';
