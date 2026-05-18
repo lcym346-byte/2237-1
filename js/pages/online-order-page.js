@@ -8,6 +8,7 @@ import { state } from '../core/store.js';
 import { escapeHtml, id, money, fmtLocalDateTime} from '../core/utils.js';
 import { getRealtimeConfig, pushOnlineOrder, watchCustomerOrder, fetchMenuFromFirebase, startMenuAutoWatch } from '../modules/realtime-order-service.js';
 import { lookupOrdersByCustomer } from '../modules/customer-service.js';
+import { mountPromotionOnlineUI, refreshPromotionDisplay, getCurrentPromotionResult } from '../modules/promotion-ui.js';
 
 const onlineState = {
   selectedCategory: '全部',
@@ -306,6 +307,7 @@ function renderCart(){
   document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
   updateFloatingCartBadge();
 }
+  if(typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
 
 function openCartDrawer(){ document.getElementById('onlineCartDrawer').classList.remove('hidden'); }
 function closeCartDrawer(){ document.getElementById('onlineCartDrawer').classList.add('hidden'); }
@@ -824,3 +826,24 @@ function renderMyOrdersList(list){
 }
 
 init();
+
+// === 促銷 UI 自動掛載（線上點餐頁）===
+(function mountPromoOnline(){
+  function tryMount(){
+    try {
+      mountPromotionOnlineUI({
+        getCart: function(){ return (typeof onlineState !== 'undefined' && Array.isArray(onlineState.cart)) ? onlineState.cart : []; }
+      });
+      // 提供全域 hook 給購物車變動時呼叫
+      window.__refreshOnlinePromotion = refreshPromotionDisplay;
+      window.__getOnlinePromotionResult = getCurrentPromotionResult;
+    } catch(e){
+      console.warn('線上促銷 UI 掛載失敗', e);
+    }
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(tryMount, 200);
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(tryMount, 200); });
+  }
+})();
