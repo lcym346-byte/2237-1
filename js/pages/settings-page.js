@@ -1276,15 +1276,3 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
   console.log('settings-page.js initialized (modal mode)');
 }
 
-// === 促銷 UI 自動掛載 ===
-(function mountPromoOnReady(){
-  function tryMount(){
-    try { mountPromotionSettingsUI(); }
-    catch(e){ console.warn('促銷 UI 掛載失敗', e); }
-  }
-  if(document.readyState === 'complete' || document.readyState === 'interactive'){
-    setTimeout(tryMount, 100);
-  } else {
-    document.addEventListener('DOMContentLoaded', function(){ setTimeout(tryMount, 100); });
-  }
-})();
