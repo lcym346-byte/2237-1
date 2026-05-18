@@ -306,8 +306,10 @@ function renderCart(){
   document.getElementById('onlineTotalQtyText').textContent = String(totalQty);
   document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
   updateFloatingCartBadge();
+
+    if(typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
+
 }
-  if(typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
 
 function openCartDrawer(){ document.getElementById('onlineCartDrawer').classList.remove('hidden'); }
 function closeCartDrawer(){ document.getElementById('onlineCartDrawer').classList.add('hidden'); }
