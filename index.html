@@ -8,13 +8,13 @@
   <meta name="theme-color" content="#0f172a" />
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="assets/icon-192.png" />
-  <link rel="stylesheet" href="styles/base.css" />
-  <link rel="stylesheet" href="styles/layout.css" />
-  <link rel="stylesheet" href="styles/pos.css" />
-  <link rel="stylesheet" href="styles/orders.css" />
-  <link rel="stylesheet" href="styles/reports.css" />
-  <link rel="stylesheet" href="styles/products.css" />
-  <link rel="stylesheet" href="styles/settings.css" />
+  <link rel="stylesheet" href="styles/base.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/layout.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/pos.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/orders.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/reports.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/products.css?v=20260618-image-cache" />
+  <link rel="stylesheet" href="styles/settings.css?v=20260618-image-cache" />
 </head>
 <body>
 <div id="app">
@@ -26,6 +26,7 @@
     <button class="nav-btn" data-view="reportsView">報表</button>
     <button class="nav-btn" data-view="productsView">商品管理</button>
     <button class="nav-btn" data-view="settingsView">設定</button>
+    <a class="nav-btn" href="dashboard.html" style="text-decoration:none;background:#0f766e;color:#fff">多店看板</a>
     <button id="openCashDrawerBtn" class="nav-btn" 
       style="background:#fef3c7;color:#92400e">💰 開啟錢箱</button>
     <button id="installBtn" class="secondary-btn hidden">安裝到桌面</button>
@@ -375,6 +376,11 @@
       <span class="tile-label">SKU 圖庫對應</span>
       <span class="tile-desc">匯入 gallery.html 下載的 SKU 對應表</span>
     </div>
+    <div class="setting-tile" data-modal="modalPromotions">
+      <span class="tile-icon">AD</span>
+      <span class="tile-label">廣告促銷</span>
+      <span class="tile-desc">線上點餐橫幅、優惠碼模板</span>
+    </div>
 
   </div>
 </section>
@@ -522,6 +528,63 @@
   </div>
 </div>
 
+<!-- ===== 廣告促銷 Modal ===== -->
+<div id="modalPromotions" class="settings-modal-backdrop">
+  <div class="settings-modal" style="max-width:720px">
+    <div class="settings-modal-header">
+      <h3>廣告促銷設定</h3>
+      <button class="close-modal-btn" data-close-modal="modalPromotions">✕</button>
+    </div>
+    <div class="settings-modal-body">
+      <div class="sm-info-box" style="font-size:13px;color:#475569;margin-bottom:12px">
+        按「儲存並發布廣告」會立即更新顧客線上點餐頁；不需客人清除手機快取。主標題與副標題可留白，留白就不顯示。模板已加入新品、集點、贈品、預購、社群互動等非價格型活動；POS 接單時仍會重新計算優惠，避免顧客端竄改金額。
+      </div>
+      <div class="sm-check-row"><input id="promotionEnabled" type="checkbox"><span>啟用線上點餐廣告與優惠碼</span></div>
+
+      <div class="sm-section-title">快速模板</div>
+      <div class="sm-btn-row">
+        <select id="promotionTemplateSelect" style="flex:1"></select>
+        <button id="applyPromotionTemplateBtn" class="sm-btn" type="button">套用模板</button>
+      </div>
+
+      <div class="sm-section-title">橫幅文案</div>
+      <div class="sm-form-group"><label>主標題（可空白，空白就不顯示）</label><input id="promotionHeroTitle" maxlength="80"></div>
+      <div class="sm-form-group"><label>副標題（可空白，空白就不顯示）</label><textarea id="promotionHeroSubtitle" rows="3" maxlength="160"></textarea></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="sm-form-group"><label>標籤文字</label><input id="promotionHeroBadge" maxlength="24"></div>
+        <div class="sm-form-group"><label>主題色</label>
+          <select id="promotionTheme">
+            <option value="orange">橘色</option>
+            <option value="red">紅色</option>
+            <option value="green">綠色</option>
+            <option value="blue">藍色</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="sm-section-title">優惠碼（可不填；不填時只發布活動廣告，不做價格折扣）</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div class="sm-form-group"><label>優惠碼</label><input id="promotionCouponCode" maxlength="24" placeholder="LUNCH20"></div>
+        <div class="sm-form-group"><label>優惠名稱</label><input id="promotionCouponTitle" maxlength="80" placeholder="滿 150 折 20"></div>
+        <div class="sm-form-group"><label>折扣類型</label>
+          <select id="promotionCouponType">
+            <option value="amount">固定金額</option>
+            <option value="percent">百分比</option>
+          </select>
+        </div>
+        <div class="sm-form-group"><label>折扣值</label><input id="promotionCouponValue" type="number" min="0" step="1"></div>
+        <div class="sm-form-group"><label>最低消費</label><input id="promotionCouponMinSpend" type="number" min="0" step="1"></div>
+      </div>
+      <div id="promotionSettingsStatus" class="sm-info-box" style="font-size:13px;color:#475569;margin-top:10px">尚未儲存</div>
+    </div>
+    <div class="settings-modal-footer">
+      <button id="savePromotionSettingsBtn" class="sm-btn primary">儲存並發布廣告</button>
+      <button id="syncPromotionMenuBtn" class="sm-btn">儲存廣告並上傳菜單</button>
+      <button class="sm-btn" data-close-modal="modalPromotions">關閉</button>
+    </div>
+  </div>
+</div>
+
 
 <!-- ===== Sunmi 印表機 Modal ===== -->
 
@@ -633,6 +696,21 @@
       </div>
 
       <div class="sm-section-title">Firebase 設定</div>
+      <div class="sm-info-box" style="font-size:13px;color:#475569;margin-bottom:10px">
+        可手動填寫，或匯入 Firebase Console 複製的 SDK 設定文字檔（.txt / .json / .js）。匯入只會填入欄位，不會把金鑰寫死在程式碼內。
+      </div>
+      <div class="sm-form-group">
+        <label>匯入 Firebase SDK 設定檔</label>
+        <input id="firebaseConfigFileInput" type="file" accept=".txt,.json,.js,application/json,text/plain">
+      </div>
+      <div class="sm-form-group">
+        <label>或貼上 Firebase SDK 設定內容</label>
+        <textarea id="firebaseConfigImportText" rows="5" placeholder="可貼上 const firebaseConfig = { apiKey: '...', authDomain: '...', ... };" style="width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:8px;padding:8px;font-family:monospace;font-size:12px"></textarea>
+      </div>
+      <div class="sm-btn-row" style="margin-bottom:10px">
+        <button id="importFirebaseConfigBtn" type="button" class="sm-btn">匯入到下方欄位</button>
+      </div>
+      <div id="firebaseConfigImportStatus" class="sm-info-box" style="display:none;margin-bottom:10px"></div>
       <div class="sm-form-group"><label>API Key</label><input id="firebaseApiKey"></div>
       <div class="sm-form-group"><label>Auth Domain</label><input id="firebaseAuthDomain"></div>
       <div class="sm-form-group"><label>Realtime Database URL</label><input id="firebaseDatabaseUrl" placeholder="https://xxx-default-rtdb.firebaseio.com"></div>
@@ -1079,8 +1157,8 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://apis.google.com/js/api.js"></script>
-<script type="module" src="js/app.js"></script>
-<script type="module" src="js/modules/sheets-sync.js"></script>
+<script type="module" src="js/app.js?v=20260621-mobile-order-hotfix"></script>
+<script type="module" src="js/modules/sheets-sync.js?v=20260621-mobile-order-hotfix"></script>
   
 <!-- 線上訂單全螢幕通知 -->
 <div id="onlineOrderOverlay" onclick="if(event.target===this){this.style.display='none';}"

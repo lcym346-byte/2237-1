@@ -3,6 +3,10 @@
   --bg:#f3f5f9; --card:#fff; --nav:#0f172a; --text:#111827; --muted:#64748b;
   --line:#dbe2f0; --primary:#2563eb; --danger:#ef4444; --ok:#10b981; --warning:#f59e0b;
   --disabled-bg:#f1f5f9; --disabled-text:#94a3b8;
+  /* POS 與顧客線上點餐共用商品圖片規格：統一正方形、滿版裁切，避免上下留白。 */
+  --product-image-aspect:1/1;
+  --product-image-fit:cover;
+  --product-image-bg:#f8fafc;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC",sans-serif}

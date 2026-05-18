@@ -6,8 +6,56 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>線上點餐</title>
   <meta name="theme-color" content="#0f172a" />
-  <link rel="stylesheet" href="styles/base.css" />
-  <link rel="stylesheet" href="styles/online-order.css" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <script>
+    // 顧客頁自動更新：不要求客人手動清快取。若偵測到舊 Service Worker / 舊 Cache，會自動清除並只重載一次。
+    (function(){
+      var VERSION = '20260621-mobile-order-hotfix';
+      var STORE_KEY = 'onlineOrderAssetVersion';
+      var RELOAD_KEY = 'onlineOrderReloaded_' + VERSION;
+      function getStoredVersion(){ try { return localStorage.getItem(STORE_KEY) || ''; } catch(e){ return ''; } }
+      function setStoredVersion(){ try { localStorage.setItem(STORE_KEY, VERSION); } catch(e){} }
+      function addVersionParam(){
+        try {
+          var url = new URL(window.location.href);
+          url.searchParams.set('_ov', VERSION);
+          return url.toString();
+        } catch(e) {
+          return window.location.href;
+        }
+      }
+      function shouldRefresh(){
+        return getStoredVersion() !== VERSION || !!(navigator.serviceWorker && navigator.serviceWorker.controller);
+      }
+      if(!shouldRefresh()) return;
+      var tasks = [];
+      if('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations){
+        tasks.push(navigator.serviceWorker.getRegistrations().then(function(regs){
+          return Promise.all(regs.map(function(reg){ return reg.unregister(); }));
+        }).catch(function(){}));
+      }
+      if(window.caches && caches.keys){
+        tasks.push(caches.keys().then(function(keys){
+          return Promise.all(keys.filter(function(k){ return /^pos-|^restaurant|^workbox/.test(k); }).map(function(k){ return caches.delete(k); }));
+        }).catch(function(){}));
+      }
+      Promise.all(tasks).then(function(){
+        setStoredVersion();
+        try {
+          if(!sessionStorage.getItem(RELOAD_KEY)){
+            sessionStorage.setItem(RELOAD_KEY, '1');
+            window.location.replace(addVersionParam());
+          }
+        } catch(e) {
+          window.location.replace(addVersionParam());
+        }
+      });
+    })();
+  </script>
+  <link rel="stylesheet" href="styles/base.css?v=20260621-mobile-order-hotfix" />
+  <link rel="stylesheet" href="styles/online-order.css?v=20260621-mobile-order-hotfix" />
 </head>
 <body>
   <header class="online-hero">
@@ -22,6 +70,8 @@
   </div>
 </header>
 
+  <section id="onlinePromotionArea" style="display:none;margin:12px 16px 0"></section>
+
     <main class="online-layout">
       <aside class="online-left stack">
         <section class="card stack">
@@ -31,34 +81,6 @@
           <div id="onlineCategoryTabs" class="online-category-tabs"></div>
         </section>
 
-        <section class="card stack">
-          <h2>顧客資訊</h2>
-                    <label>訂單類型
-            <select id="onlineOrderType">
-              <option value="外帶">外帶</option>
-              <option value="內用">內用</option>
-              <option value="預約">預約</option>
-            </select>
-          </label>
-          <div id="onlineReservationBlock" style="display:none">
-            <label>選擇預約取餐時間</label>
-            <select id="onlineReservationSlot" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">
-              <option value="">請選擇時段</option>
-            </select>
-            <div id="onlineReservationHint" class="muted" style="font-size:12px;margin-top:4px">起始時間為 1 小時後，每 15 分鐘一個區間，可預約至 2 天內。</div>
-          </div>
-
-          <div style="display:flex;gap:8px;">
-            <label style="flex:1;">姓名
-              <input id="onlineCustomerName" placeholder="請輸入姓名"></label>
-            <label style="flex:1;">電話
-              <input id="onlineCustomerPhone" placeholder="請輸入電話">
-            </label>
-          </div>
-          <label>顧客備註
-            <textarea id="onlineCustomerNote" rows="3" placeholder="例如：晚點取餐、餐具需求、桌號"></textarea>
-          </label>
-        </section>
       </aside>
 
       <section class="online-right">
@@ -74,9 +96,50 @@
         <h2>購物車</h2>
         <button id="closeCartBtn" class="ghost-btn">✕</button>
       </div>
+
       <div id="onlineCartList" class="stack"></div>
+      <section class="card stack online-customer-info" style="margin-top:12px">
+        <h2 style="margin:0">顧客資訊</h2>
+        <div class="muted" style="font-size:12px">請在送出訂單前填寫；店家確認後才算完成訂購。</div>
+        <label>訂單類型
+          <select id="onlineOrderType">
+            <option value="外帶">外帶</option>
+            <option value="內用">內用</option>
+            <option value="預約">預約</option>
+          </select>
+        </label>
+        <div id="onlineReservationBlock" style="display:none">
+          <label>選擇預約取餐時間</label>
+          <select id="onlineReservationSlot" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">
+            <option value="">請選擇時段</option>
+          </select>
+          <div id="onlineReservationHint" class="muted" style="font-size:12px;margin-top:4px">起始時間為 1 小時後，每 15 分鐘一個區間，可預約至 2 天內。</div>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <label style="flex:1;">姓名
+            <input id="onlineCustomerName" placeholder="請輸入姓名">
+          </label>
+          <label style="flex:1;">電話
+            <input id="onlineCustomerPhone" placeholder="請輸入電話" inputmode="tel">
+          </label>
+        </div>
+        <label>顧客備註
+          <textarea id="onlineCustomerNote" rows="3" placeholder="例如：晚點取餐、餐具需求、桌號"></textarea>
+        </label>
+      </section>
       <div class="online-summary">
         <div class="row between"><span>小計</span><strong id="onlineSubtotalText">$0</strong></div>
+        <div id="onlineDiscountRow" class="row between" style="display:none"><span>優惠折抵</span><strong id="onlineDiscountText">-$0</strong></div>
+        <div class="row between"><span>應付金額</span><strong id="onlineGrandTotalText">$0</strong></div>
+        <div class="stack" style="gap:6px;margin-top:8px">
+          <label>優惠碼</label>
+          <div class="row gap wrap">
+            <input id="onlineCouponInput" placeholder="輸入店家優惠碼" style="flex:1;min-width:150px">
+            <button id="applyOnlineCouponBtn" class="secondary-btn small-btn" type="button">套用</button>
+            <button id="clearOnlineCouponBtn" class="ghost-btn small-btn" type="button">清除</button>
+          </div>
+          <div id="onlineCouponMessage" class="muted" style="font-size:12px"></div>
+        </div>
         <div class="row between"><span>總數量</span><strong id="onlineTotalQtyText">0</strong></div>
         <button id="submitOnlineOrderBtn" class="primary-btn full">送出訂單</button>
       </div>
@@ -112,7 +175,7 @@
     </div>
   </div>
 
-  <script type="module" src="js/pages/online-order-page.js"></script>
+  <script type="module" src="js/pages/online-order-page.js?v=20260621-mobile-order-hotfix"></script>
   <div id="onlineOrderStatusOverlay" class="online-status-overlay hidden">
     <div class="online-status-card">
       <div class="online-badge">訂單處理中</div>

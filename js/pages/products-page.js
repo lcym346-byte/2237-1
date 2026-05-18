@@ -4,7 +4,7 @@ import { state, persistAll } from '../core/store.js';
 import { escapeHtml, escapeAttr, money, id, deepCopy } from '../core/utils.js';
 import { openCategoryManage, closeCategoryManage, renderCategoryManage, saveCategoryManage } from '../modules/product-category-manager.js';
 import { openModuleManage, closeModuleManage, renderModuleManage, saveModuleManage } from '../modules/product-module-manager.js';
-import { syncMenuToFirebase, getRealtimeConfig } from '../modules/realtime-order-service.js';
+import { syncMenuToFirebase, getRealtimeConfig, publishOnlineStoreAvailabilityNow } from '../modules/realtime-order-service.js';
 
 // 主機自動推送雲端：從機呼叫不會丟錯，只 console
 function autoPushIfMaster(){
@@ -12,7 +12,12 @@ function autoPushIfMaster(){
     const cfg = getRealtimeConfig();
     if(cfg.deviceRole !== 'master') return;
     if(!cfg.enabled) return;
-    syncMenuToFirebase().catch(err => console.warn('autoPush 失敗：', err.message));
+    syncMenuToFirebase().catch(function(err){
+      console.warn('autoPush 菜單失敗，改發布本店商品上下架狀態：', err.message);
+      publishOnlineStoreAvailabilityNow().catch(function(pubErr){
+        console.warn('autoPush 商品狀態失敗：', pubErr.message);
+      });
+    });
   }catch(e){ console.warn('autoPush exception:', e); }
 }
 

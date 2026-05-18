@@ -1,0 +1,136 @@
+<!doctype html>
+<!-- 中文備註：2237-1 內建多店看板，參考原 pos-dashboard 版面與功能，但 Firebase config 維持本機匯入不硬寫。 -->
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>多店即時看板｜餐廳 POS</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles/base.css?v=20260620-dashboard-parity" />
+  <link rel="stylesheet" href="styles/dashboard.css?v=20260620-dashboard-parity" />
+</head>
+<body class="dashboard-body">
+  <div id="loginScreen" class="auth-screen">
+    <div class="auth-card">
+      <div class="brand-mark">POS</div>
+      <h1>多店即時看板</h1>
+      <p class="auth-subtitle">2237-1 內建版：使用 Firebase <code>dashboards/{storeId}</code> 與 <code>sessionHistory</code>，提供即時營業、週/月累計與歷史報表。</p>
+
+      <section class="config-panel">
+        <div class="panel-title">Firebase 連線設定</div>
+        <p class="help-text">可貼上或匯入 Firebase Web SDK config。設定只存本機瀏覽器，不寫死在 GitHub 程式碼內。</p>
+        <label for="dashConfigFile">匯入設定檔 .txt / .json / .js</label>
+        <input id="dashConfigFile" type="file" accept=".txt,.json,.js,application/json,text/plain">
+        <label for="dashConfigText">或貼上 Firebase SDK 設定</label>
+        <textarea id="dashConfigText" rows="7" placeholder="const firebaseConfig = { apiKey: '...', authDomain: '...', databaseURL: '...', projectId: '...', appId: '...' };"></textarea>
+        <div class="auth-actions">
+          <button id="dashImportConfigBtn" class="btn secondary">匯入設定</button>
+          <button id="googleSignInBtn" class="btn primary"><span id="googleSignInLabel">使用 Google 登入</span></button>
+        </div>
+        <div id="authError" class="auth-error" style="display:none"></div>
+        <div id="dashStatus" class="dash-status">請先匯入 Firebase 設定，再用 staff/admin Google 帳號登入。</div>
+      </section>
+    </div>
+  </div>
+
+  <div id="dashboardScreen" class="dashboard-screen" style="display:none">
+    <header class="topbar">
+      <div>
+        <h1>多店即時看板</h1>
+        <div class="subline"><span id="storeCount">店鋪數：0</span><span>更新：<b id="updateTime">--</b></span><span id="currentUserEmail">尚未登入</span></div>
+      </div>
+      <div class="top-actions">
+        <a class="btn ghost" href="index.html">回 POS</a>
+        <button id="openReportBtn" class="btn">歷史報表</button>
+        <button id="dashRefreshBtn" class="btn">重新整理</button>
+        <button id="logoutBtn" class="logout-btn">登出</button>
+      </div>
+    </header>
+
+    <section class="summary-row">
+      <div class="summary-cell"><div>今日總營業額</div><strong id="sumSales">0 元</strong></div>
+      <div class="summary-cell"><div>今日訂單數</div><strong id="sumOrders">0</strong></div>
+      <div class="summary-cell"><div>線上店數</div><strong id="sumOnline">0 / 0</strong></div>
+      <div class="summary-cell danger"><div>異常單金額</div><strong id="sumVoided">0 元</strong></div>
+    </section>
+
+    <section class="toolbar">
+      <input id="dashStoreSearch" placeholder="搜尋店名 / 店號">
+      <select id="dashStatusFilter">
+        <option value="all">全部狀態</option>
+        <option value="online">只看線上</option>
+        <option value="offline">只看離線</option>
+      </select>
+      <span class="toolbar-note">離線判定：最後更新超過 90 秒；警示：離線超過 5 分鐘或班次超過 14 小時。</span>
+    </section>
+
+    <main id="grid" class="grid"></main>
+    <div id="empty" class="empty" style="display:none">
+      <h2>尚未載入店鋪資料</h2>
+      <p>請確認 POS 已登入並成功寫入 Firebase dashboards 節點。</p>
+    </div>
+  </div>
+
+  <div id="reportModal" class="modal-mask">
+    <div class="modal-card report-card">
+      <div class="modal-head">
+        <h2>歷史報表</h2>
+        <button id="closeReportBtn" class="icon-btn">×</button>
+      </div>
+      <div class="form-grid">
+        <label>起始日期<input type="date" id="dateFrom"></label>
+        <label>結束日期<input type="date" id="dateTo"></label>
+      </div>
+      <div class="preset-row">
+        <button class="preset-btn" data-preset="today">今天</button>
+        <button class="preset-btn" data-preset="yesterday">昨天</button>
+        <button class="preset-btn active" data-preset="7d">近 7 天</button>
+        <button class="preset-btn" data-preset="30d">近 30 天</button>
+        <button class="preset-btn" data-preset="60d">近 60 天</button>
+      </div>
+      <div class="store-picker">
+        <label class="all-row"><input type="checkbox" id="storeAllChk" checked> 全選 / 取消全選</label>
+        <div id="storeChkBody" class="store-chk-body"></div>
+      </div>
+      <div class="form-grid">
+        <label>報表類型
+          <select id="reportType">
+            <option value="summary">營業彙總</option>
+            <option value="session">班次明細</option>
+            <option value="order">訂單明細</option>
+            <option value="anomaly">異常訂單</option>
+          </select>
+        </label>
+        <label>紙寬
+          <select id="paperWidth">
+            <option value="58">58mm</option>
+            <option value="80">80mm</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelReportBtn" class="btn ghost">取消</button>
+        <button id="generateReportBtn" class="btn primary">產生報表 →</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="reportPreviewModal" class="modal-mask">
+    <div class="modal-card preview-card">
+      <div class="modal-head">
+        <h2 id="reportPreviewTitle">報表預覽</h2>
+        <button id="closePreviewBtn" class="icon-btn">×</button>
+      </div>
+      <iframe id="reportPreviewFrame" class="preview-frame" title="報表預覽"></iframe>
+      <div class="modal-actions">
+        <button id="backToConditionBtn" class="btn ghost">返回條件</button>
+        <button id="exportCsvBtn" class="btn">匯出 CSV</button>
+        <button id="printReportBtn" class="btn primary">列印</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="js/pages/dashboard-page.js?v=20260620-dashboard-parity"></script>
+</body>
+</html>

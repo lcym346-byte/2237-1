@@ -1,7 +1,9 @@
-const CACHE_NAME = 'pos-v20260615-swfix-cache';
+const CACHE_NAME = 'pos-v20260621-mobile-order-hotfix';
 const ASSETS = [
   './',
   './index.html',
+  './dashboard.html',
+  './online-order.html',
   './manifest.webmanifest',
   './service-worker.js',
   './styles/base.css',
@@ -12,6 +14,8 @@ const ASSETS = [
   './styles/import.css',
   './styles/products.css',
   './styles/settings.css',
+  './styles/dashboard.css',
+  './styles/online-order.css',
   './js/app.js',
   './js/core/store.js',
   './js/core/storage.js',
@@ -23,6 +27,9 @@ const ASSETS = [
   './js/pages/products-page.js',
   './js/pages/settings-page.js',
   './js/pages/online-order-page.js',
+  './js/pages/dashboard-page.js',
+  './js/print-service-dashboard.js',
+  './js/history-loader.js',
   './js/modules/cart-service.js',
   './js/modules/order-service.js',
   './js/modules/report-session.js',
@@ -32,6 +39,7 @@ const ASSETS = [
   './js/modules/print-service.js',
   './js/modules/print-bridge.js',
   './js/modules/realtime-order-service.js',
+  './js/modules/promotion-service.js',
   './js/modules/google-backup-service.js',
   './assets/icon-192.png',
   './assets/icon-512.png'
@@ -54,10 +62,20 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   if (url.origin !== location.origin) return;
   if (url.hostname === '127.0.0.1' || url.hostname === 'localhost') return;
+
+  const isFreshAsset = event.request.mode === 'navigate' ||
+    ['document', 'style', 'script'].includes(event.request.destination) ||
+    /\.(html|css|js)$/i.test(url.pathname);
+
+  const requestForNetwork = isFreshAsset
+    ? new Request(event.request, { cache: 'no-store' })
+    : event.request;
+
   event.respondWith(
-    fetch(event.request).then((response) => {
-      // 只快取完整、同源、200 的回應，避免 206 partial / opaque 讓 cache.put 拋錯
-      if (response && response.status === 200 && response.type === 'basic') {
+    fetch(requestForNetwork).then((response) => {
+      // HTML/CSS/JS 優先保持最新，避免手機舊 Service Worker / HTTP cache 一直吃舊版。
+      // 其他同源 GET 才動態快取，保留離線能力。
+      if (!isFreshAsset && response && response.status === 200 && response.type === 'basic') {
         const clone = response.clone();
         caches.open(CACHE_NAME).then(cache => {
           cache.put(event.request, clone).catch(() => {});

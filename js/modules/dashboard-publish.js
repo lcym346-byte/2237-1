@@ -15,6 +15,7 @@ import { state, persistAll } from '../core/store.js';
 import { getCurrentSession, calcSessionStats } from './report-session.js';
 import { _getRef, _dbApi } from './realtime-order-service.js';
 import { getBusinessDay, getCurrentBusinessDay } from '../core/biz-day.js';
+import { buildPromotionSummaryForDashboard, getPublicPromotionsConfig } from './promotion-service.js';
 
 const UPDATE_INTERVAL_MS = 30 * 1000;  // 30 秒更新一次
 let updateTimer = null;
@@ -199,6 +200,23 @@ async function writeNode(subPath, data){
   }
 }
 
+async function writePublicOnlineStore(promotions){
+  const cfg = ensureDashboardConfig();
+  if(!cfg.enabled || !cfg.storeId) return;
+  try{
+    const ref = await _getRef(`publicOnlineStores/${cfg.storeId}`);
+    const api = _dbApi();
+    if(!ref || !api) return;
+    await api.set(ref, {
+      storeId: cfg.storeId,
+      promotions: promotions || getPublicPromotionsConfig(),
+      updatedAt: new Date().toISOString()
+    });
+  }catch(err){
+    console.warn('[dashboard-publish] writePublicOnlineStore failed', err);
+  }
+}
+
 export async function publishDashboardNow(){
   const cfg = ensureDashboardConfig();
   if(!cfg.enabled || !cfg.storeId) return;
@@ -211,13 +229,17 @@ export async function publishDashboardNow(){
   const session = calcSessionSummary();
   const debugInfo = collectDebugInfo();
   const businessHours = getBH();
+  const promotions = buildPromotionSummaryForDashboard();
+  const publicPromotions = getPublicPromotionsConfig();
 
   await Promise.all([
     writeNode('heartbeat', heartbeat),
     writeNode('today', today),
     writeNode('session', session),
     writeNode('businessHours', businessHours),
-    writeNode('_debug', debugInfo)
+    writeNode('promotions', promotions),
+    writeNode('_debug', debugInfo),
+    writePublicOnlineStore(publicPromotions)
   ]);
 }
 
