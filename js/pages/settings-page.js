@@ -581,6 +581,18 @@ export function initSettingsPage() {
     loadRealtimeSettingsToForm();
     openModal('modalRealtime');
   });
+  // 廣告促銷管理
+  document.querySelector('[data-modal="modalPromotion"]')?.addEventListener('click', function() {
+    import('../modules/promotion-ui.js').then(function(m){
+      if(typeof m.mountPromotionInline === 'function'){
+        m.mountPromotionInline(document.getElementById('promotionSettingsHost'));
+      } else if(typeof m.mountPromotionSettingsUI === 'function'){
+        // 後備：使用既有掛載函式
+        m.mountPromotionSettingsUI();
+      }
+    });
+    openModal('modalPromotion');
+  });
 
   // Google 備份
   document.querySelector('[data-modal="modalGoogle"]')?.addEventListener('click', function() {
