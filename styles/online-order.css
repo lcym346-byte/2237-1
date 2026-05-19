@@ -1,4 +1,4 @@
-我/* 中文備註：線上點餐頁樣式，採用圖片菜單、分類切換、單頁購物車抽屜。 */
+/* 中文備註：線上點餐頁樣式，採用圖片菜單、分類切換、單頁購物車抽屜。 */
 body{background:#f6f8fb}
 .online-shell{max-width:1440px;margin:0 auto;padding:20px}
 .online-hero{display:flex;justify-content:space-between;align-items:center;gap:16px;padding:16px 0 20px}
