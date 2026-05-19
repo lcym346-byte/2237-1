@@ -12,7 +12,7 @@ let tokenClient = null;
 let accessToken = '';
 let profileEmail = '';
 
-const DEFAULT_CLIENT_ID = '203764995518-sct9k1tpf9fl6nrjh0h7kt8phsr47uas.apps.googleusercontent.com';
+const DEFAULT_CLIENT_ID = '203764995518-sct9k1tpf9fi6nrjh0h7kt8phsr47uas.apps.googleusercontent.com';
 
 function ensureGoogleDriveConfig(){
   if(!state.settings) state.settings = {};
