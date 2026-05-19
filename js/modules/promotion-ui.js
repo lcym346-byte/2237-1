@@ -326,11 +326,11 @@ function buildCouponBoxHtml(){
 '  <div id="onlineCouponMessage" style="margin-top:6px;font-size:12px;color:#64748b">若有店家提供的優惠碼，可在此輸入。</div>' +
 '  <div id="onlineDiscountRow" style="display:none;margin-top:8px;display:flex;justify-content:space-between;font-size:14px">' +
 '    <span style="color:#475569">折扣</span>' +
-'    <strong id="onlineDiscountText" style="color:#16a34a">-$0</strong>' +
+'    <strong id="onlineDiscountText" style="color:#16a34a">-0</strong>' +
 '  </div>' +
 '  <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:15px;font-weight:700;border-top:1px dashed #cbd5e1;padding-top:8px">' +
 '    <span>應付合計</span>' +
-'    <span id="onlineGrandTotalText" style="color:#dc2626">$0</span>' +
+'    <span id="onlineGrandTotalText" style="color:#dc2626">0</span>' +
 '  </div>' +
 '</div>';
 }
