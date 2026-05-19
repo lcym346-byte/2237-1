@@ -112,9 +112,10 @@ async function requestAccessToken(promptMode = 'consent'){
       await fetchGoogleProfile();
       resolve(accessToken);
     };
-    client.requestAccessToken({ prompt: promptMode });
+        client.requestAccessToken({ prompt: 'select_account consent' });
   });
 }
+
 
 // ============================================================
 // 對外 API（原始名稱）
