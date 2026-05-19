@@ -1,7 +1,7 @@
 /* 中文備註：js/core/utils.js，此檔已加入中文說明，方便後續維護。 */
 export function id(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36).slice(-4); }
 export function deepCopy(v){ return JSON.parse(JSON.stringify(v)); }
-export function money(v){ return '$' + Number(v || 0).toLocaleString('zh-TW'); }
+export function money(v){ return Number(v || 0).toLocaleString('zh-TW'); }
 export function todayStr(){
   // 06.16/dbg-1：用本地時區算「今天」字串，避免 toISOString 拿到 UTC 跨日
   const d = new Date();
