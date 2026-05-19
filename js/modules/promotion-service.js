@@ -351,3 +351,128 @@ export function buildPromotionSummaryForDashboard(){
     updatedAt: cfg.updatedAt || ''
   };
 }
+
+// ====================================================================
+// 雲端同步（給多裝置共用）
+// 寫到 publicOnlineStores/{storeCode}/promotions，線上點餐頁可不登入讀取
+// ====================================================================
+
+const FIREBASE_BASE_PROMO = 'https://www.gstatic.com/firebasejs/10.12.2';
+let _promoCloudApp = null;
+let _promoCloudDb = null;
+let _promoCloudInit = false;
+
+async function _initPromoCloud(){
+  if(_promoCloudInit) return _promoCloudDb;
+  try{
+    const cfg = (state.settings && state.settings.realtimeOrder) || {};
+    if(!cfg.apiKey || !cfg.databaseURL || !cfg.projectId || !cfg.appId){
+      console.warn('[promotion-cloud] Firebase 設定不完整，略過雲端同步');
+      return null;
+    }
+    const appMod = await import(`${FIREBASE_BASE_PROMO}/firebase-app.js`);
+    const dbMod = await import(`${FIREBASE_BASE_PROMO}/firebase-database.js`);
+    // 共用既有 app（避免重複 init）
+    let app;
+    try{
+      app = appMod.getApp();
+    }catch(e){
+      app = appMod.initializeApp({
+        apiKey: cfg.apiKey,
+        authDomain: cfg.authDomain || undefined,
+        databaseURL: cfg.databaseURL,
+        projectId: cfg.projectId,
+        storageBucket: cfg.storageBucket || undefined,
+        messagingSenderId: cfg.messagingSenderId || undefined,
+        appId: cfg.appId
+      });
+    }
+    _promoCloudApp = app;
+    _promoCloudDb = dbMod.getDatabase(app);
+    _promoCloudDb.__api = dbMod;
+    _promoCloudInit = true;
+    return _promoCloudDb;
+  }catch(err){
+    console.warn('[promotion-cloud] 初始化失敗：', err);
+    return null;
+  }
+}
+
+function _resolveStoreCode(){
+  // 優先用 dashboard.storeId（POS 端），再 fallback URL ?storeId=（顧客端）
+  var code = String(state.settings && state.settings.dashboard && state.settings.dashboard.storeId || '').trim();
+  if(!code){
+    try{
+      const params = new URLSearchParams(window.location.search);
+      code = String(params.get('storeId') || params.get('storeCode') || '').trim();
+    }catch(e){}
+  }
+  if(/[.#$\/\[\]]/.test(code)) return '';
+  return code;
+}
+
+/**
+ * POS 端：把目前促銷設定推到 publicOnlineStores/{storeCode}/promotions
+ * 設定頁按「儲存」時呼叫。
+ */
+export async function pushPromotionsToCloud(){
+  const code = _resolveStoreCode();
+  if(!code){
+    console.warn('[promotion-cloud] 無 storeCode，略過 push');
+    return { ok: false, reason: 'no-store-code' };
+  }
+  const db = await _initPromoCloud();
+  if(!db) return { ok: false, reason: 'no-firebase' };
+  try{
+    const cfg = getPublicPromotionsConfig();
+    const payload = {
+      enabled: !!cfg.enabled,
+      heroTitle: cfg.heroTitle || '',
+      heroSubtitle: cfg.heroSubtitle || '',
+      heroBadge: cfg.heroBadge || '',
+      theme: cfg.theme || 'orange',
+      campaignType: cfg.campaignType || '',
+      banners: Array.isArray(cfg.banners) ? cfg.banners : [],
+      coupons: Array.isArray(cfg.coupons) ? cfg.coupons : [],
+      updatedAt: new Date().toISOString()
+    };
+    const api = db.__api;
+    const refPath = `publicOnlineStores/${code}/promotions`;
+    await api.set(api.ref(db, refPath), payload);
+    console.log('[promotion-cloud] ✅ 已推送至', refPath);
+    return { ok: true, path: refPath };
+  }catch(err){
+    console.warn('[promotion-cloud] push 失敗：', err);
+    return { ok: false, reason: String(err && err.message || err) };
+  }
+}
+
+/**
+ * 顧客端：從雲端讀取本店促銷設定並寫入 state.settings.promotions
+ * 不會 persistAll（避免污染顧客本機 IndexedDB）
+ */
+export async function pullPromotionsFromCloud(storeCode){
+  const code = String(storeCode || _resolveStoreCode() || '').trim();
+  if(!code) return { ok: false, reason: 'no-store-code' };
+  const db = await _initPromoCloud();
+  if(!db) return { ok: false, reason: 'no-firebase' };
+  try{
+    const api = db.__api;
+    const snap = await api.get(api.ref(db, `publicOnlineStores/${code}/promotions`));
+    if(!snap.exists()) return { ok: false, reason: 'no-data' };
+    const data = snap.val();
+    if(!state.settings) state.settings = {};
+    state.settings.promotions = normalizePromotionsConfig(data);
+    console.log('[promotion-cloud] ✅ 已從雲端載入促銷設定');
+    return { ok: true, data: data };
+  }catch(err){
+    console.warn('[promotion-cloud] pull 失敗：', err);
+    return { ok: false, reason: String(err && err.message || err) };
+  }
+}
+
+// 暴露給瀏覽器 console 方便手動測試
+if(typeof window !== 'undefined'){
+  window.__pushPromotions = pushPromotionsToCloud;
+  window.__pullPromotions = pullPromotionsFromCloud;
+}
