@@ -9,8 +9,11 @@ import {
   applyPromotionTemplate,
   getPromotionTemplates,
   getPublicPromotionsConfig,
-  calculatePromotion
+  calculatePromotion,
+  pushPromotionsToCloud,
+  pullPromotionsFromCloud
 } from './promotion-service.js';
+
 
 // ====================================================================
 // 共用工具
@@ -210,12 +213,20 @@ function openSettingsModal(){
       }
     });
 
-    document.getElementById('promoSaveBtn').onclick = function(){
+           document.getElementById('promoSaveBtn').onclick = async function(){
       try{
         var payload = collectFormToConfig();
         setPromotionsConfig(payload, true);
-        toast('促銷設定已儲存');
+        toast('促銷設定已儲存，雲端同步中...');
         loadFormFromConfig();
+        // 推送到 publicOnlineStores/{storeCode}/promotions
+        var result = await pushPromotionsToCloud();
+        if(result.ok){
+          toast('✅ 已同步至雲端，所有裝置共用');
+        } else {
+          toast('⚠️ 已存本機，雲端同步失敗（' + (result.reason || '') + '）');
+          console.warn('[promo] cloud push failed:', result);
+        }
       }catch(err){
         alert('儲存失敗：' + (err && err.message ? err.message : err));
       }
