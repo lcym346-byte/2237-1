@@ -419,19 +419,26 @@ export function mountPromotionOnlineUI(opts){
   }
   renderBannerArea();
 
-  // 2. 優惠碼輸入區（掛在購物車區）
+    // 2. 優惠碼輸入區（插在送出訂單按鈕「之前」）
   if(!document.getElementById('onlineCouponBox')){
-    var couponHost =
-      document.getElementById('onlineCartList') ||
-      document.querySelector('.online-cart') ||
-      document.getElementById('onlineCart') ||
-      document.querySelector('.cart-summary') ||
-      document.querySelector('#onlineProductGrid');
-    if(couponHost){
-      couponHost.insertAdjacentHTML('afterend', buildCouponBoxHtml());
+    var submitBtn = document.getElementById('submitOnlineOrderBtn');
+    if(submitBtn && submitBtn.parentNode){
+      // 插在「送出訂單」按鈕之前，確保按鈕仍是最後一個
+      submitBtn.insertAdjacentHTML('beforebegin', buildCouponBoxHtml());
     } else {
-      document.body.insertAdjacentHTML('beforeend', buildCouponBoxHtml());
+      var couponHost =
+        document.querySelector('.online-summary') ||
+        document.getElementById('onlineCartList') ||
+        document.body;
+      couponHost.insertAdjacentHTML('beforeend', buildCouponBoxHtml());
     }
+    document.getElementById('onlineCouponApplyBtn').onclick = applyCoupon;
+    document.getElementById('onlineCouponClearBtn').onclick = clearCoupon;
+    document.getElementById('onlineCouponInput').addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); applyCoupon(); }
+    });
+  }
+
     document.getElementById('onlineCouponApplyBtn').onclick = applyCoupon;
     document.getElementById('onlineCouponClearBtn').onclick = clearCoupon;
     document.getElementById('onlineCouponInput').addEventListener('keydown', function(e){
