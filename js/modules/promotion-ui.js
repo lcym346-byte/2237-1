@@ -240,37 +240,7 @@ function closeSettingsModal(){
   var modal = document.getElementById('promoSettingsModal');
   if(modal) modal.style.display = 'none';
 }
-/**
- * 將促銷設定表單渲染到指定容器（搭配 index.html 的 #modalPromotion 使用）
- * @param {HTMLElement} host 容器元素（#promotionSettingsHost）
- */
-export function mountPromotionInline(host){
-  if(!host) return;
-  // 找出原本 modal 內部的表單 HTML 來源：直接複用 openPromotionSettingsModal 的內容
-  // 這裡將原本浮動 modal 的內容 render 一次到 host
-  host.innerHTML = buildPromotionFormHtml();   // ← 若你檔案內已有 buildPromotionFormHtml/相關函式請沿用；若名稱不同請改成對應函式名
-  loadPromotionConfigToForm();                  // 載入既有設定
-  bindPromotionFormEvents(host);                // 綁定 banner/coupon 列表操作
 
-  // 綁定外部儲存按鈕
-  var saveBtn = document.getElementById('promoSaveBtn');
-  if(saveBtn){
-    saveBtn.onclick = async function(){
-      try{
-        var cfg = collectPromotionFormData();
-        setPromotionsConfig(cfg, true);
-        // 若先前已加入雲端同步，也順便推送
-        if(typeof pushPromotionsToCloud === 'function'){
-          try { await pushPromotionsToCloud(); } catch(e){ console.warn(e); }
-        }
-        toast('促銷設定已儲存');
-      }catch(err){
-        console.error(err);
-        toast('儲存失敗：' + (err && err.message ? err.message : err));
-      }
-    };
-  }
-}
 
 /**
  * 在設定頁掛載「廣告促銷」按鈕（會自動找一個合適的容器；找不到就掛在 body 角落）
