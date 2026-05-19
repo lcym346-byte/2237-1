@@ -581,18 +581,28 @@ export function initSettingsPage() {
     loadRealtimeSettingsToForm();
     openModal('modalRealtime');
   });
-  // 廣告促銷管理
-  document.querySelector('[data-modal="modalPromotion"]')?.addEventListener('click', function() {
+    // 廣告促銷管理（呼叫 promotion-ui 既有的 openSettingsModal）
+  document.querySelector('[data-promo-open="1"]')?.addEventListener('click', function() {
     import('../modules/promotion-ui.js').then(function(m){
-      if(typeof m.mountPromotionInline === 'function'){
-        m.mountPromotionInline(document.getElementById('promotionSettingsHost'));
-      } else if(typeof m.mountPromotionSettingsUI === 'function'){
-        // 後備：使用既有掛載函式
-        m.mountPromotionSettingsUI();
+      if(typeof m.mountPromotionSettingsUI !== 'function'){
+        alert('promotion-ui 模組載入異常');
+        return;
       }
+      // 先確保模組內部 modal 已建立並綁定事件
+      m.mountPromotionSettingsUI();
+      // 隱藏 mountPromotionSettingsUI 建立的浮動按鈕，避免畫面上多餘
+      var floatBtn = document.getElementById('promoOpenSettingsBtn');
+      if(floatBtn){
+        floatBtn.style.display = 'none';
+        // 模擬點擊以開啟促銷設定 modal
+        floatBtn.click();
+      }
+    }).catch(function(err){
+      console.error('[settings] 載入促銷模組失敗', err);
+      alert('載入促銷模組失敗：' + err.message);
     });
-    openModal('modalPromotion');
   });
+
 
   // Google 備份
   document.querySelector('[data-modal="modalGoogle"]')?.addEventListener('click', function() {
