@@ -9,6 +9,7 @@ import { escapeHtml, id, money, fmtLocalDateTime} from '../core/utils.js';
 import { getRealtimeConfig, pushOnlineOrder, watchCustomerOrder, fetchMenuFromFirebase, startMenuAutoWatch } from '../modules/realtime-order-service.js';
 import { lookupOrdersByCustomer } from '../modules/customer-service.js';
 import { mountPromotionOnlineUI, refreshPromotionDisplay, getCurrentPromotionResult } from '../modules/promotion-ui.js';
+import { pullPromotionsFromCloud } from '../modules/promotion-service.js';
 
 const onlineState = {
   selectedCategory: '全部',
@@ -828,6 +829,52 @@ function renderMyOrdersList(list){
 }
 
 init();
+
+// === 載入時從雲端拉取本店促銷設定 ===
+(function pullPromoOnReady(){
+  function doPull(){
+    var code = onlineState.storeCode || '';
+    if(!code){
+      try{
+        const params = new URLSearchParams(window.location.search);
+        code = String(params.get('storeId') || '').trim();
+      }catch(e){}
+    }
+    if(!code) return;
+    pullPromotionsFromCloud(code).then(function(r){
+      if(r && r.ok){
+        console.log('[online-order] 雲端促銷已套用');
+        if(typeof window.__refreshOnlinePromotion === 'function'){
+          window.__refreshOnlinePromotion();
+        }
+        // 強制重繪 banner
+        setTimeout(function(){
+          try{
+            const ui = window.__getPromoUI;
+            if(typeof refreshPromotionDisplay === 'function') refreshPromotionDisplay();
+            // 重新觸發 banner 渲染
+            var area = document.getElementById('onlinePromotionArea');
+            if(area){
+              area.remove();  // 移除舊的
+              import('../modules/promotion-ui.js').then(function(m){
+                m.mountPromotionOnlineUI({
+                  getCart: function(){ return onlineState.cart; }
+                });
+              });
+            }
+          }catch(e){ console.warn(e); }
+        }, 200);
+      } else {
+        console.log('[online-order] 雲端無促銷或讀取失敗：', r && r.reason);
+      }
+    }).catch(function(e){ console.warn('[online-order] pull 例外：', e); });
+  }
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    setTimeout(doPull, 800);  // 等 Firebase 模組載入
+  } else {
+    document.addEventListener('DOMContentLoaded', function(){ setTimeout(doPull, 800); });
+  }
+})();
 
 // === 促銷 UI 自動掛載（線上點餐頁）===
 (function mountPromoOnline(){
