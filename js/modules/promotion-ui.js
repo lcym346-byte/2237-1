@@ -20,7 +20,7 @@ function esc(v){
     return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c];
   });
 }
-function money(v){ return '$' + Number(v || 0).toLocaleString('zh-TW'); }
+function money(v){ return Number(v || 0).toLocaleString('zh-TW'); }
 function toast(msg){
   var t = document.getElementById('__promoToast');
   if(!t){
