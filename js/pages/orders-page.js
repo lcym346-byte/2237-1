@@ -210,9 +210,18 @@ function renderOrdersSection(wrap, orders, mode){
           ${replyMeta}
           ${voidMeta}
         </div>
-        <div><strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong></div>
+               <div style="text-align:right">
+          ${Number(o.discountAmount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money(Number(o.subtotal||0))}</div>` : ''}
+          <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong>
+        </div>
       </div>
+      ${Number(o.discountAmount||0) > 0 ? `
+      <div class="row between" style="margin-top:6px;padding:6px 10px;background:#ecfdf5;border:1px dashed #10b981;border-radius:6px;font-size:13px">
+        <span style="color:#047857">🎁 優惠折扣${o.couponCode ? '（' + escapeHtml(o.couponCode) + '）' : ''}${o.couponMessage ? ' <span class="muted">' + escapeHtml(o.couponMessage) + '</span>' : ''}</span>
+        <strong style="color:#16a34a">-${money(Number(o.discountAmount||0))}</strong>
+      </div>` : ''}
       <div class="stack small" style="margin-top:12px">
+
         ${o.items.map(i=>{
           const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
           return `<div>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</div>`;
