@@ -8,8 +8,12 @@
 
 ## 📌 版本速查
 
+## 📌 版本速查
+
 | 版本 | 日期 | 重點 |
 |---|---|---|
+| v20260616 | 2026-05-20 | SKU 圖庫工具按鈕 + 2234 storeId 部署疏失修正 + 線上點餐標題來源確認 + Google OAuth 環境排查 |
+| v20260615 | 2026-05-20 | 促銷整合 + 優惠碼帶入訂單 + 訂單卡折扣明細 + 預約 30 分鐘提醒 + SKU 圖庫反推 + 三個舊 bug |
 | v20260613 | 2026-05-13 | 營業日 BD + 外送統計 + 修改改加單 |
 | v20260608 | 2026-05-11 | 雲端三層架構（IndexedDB + Firebase posBackup + Google Sheets）+ store-config.js 寫死店家綁定 |
 | v20260607 | 2026-05-xx | fields 勾選矩陣 + 標籤一品項一張 + 數量 +/- 按鈕 |
@@ -22,7 +26,57 @@
 ---
 ---
 
+## v20260616（2026-05-20）— 圖庫工具按鈕 + 多店部署疏失修正 + 線上點餐標題確認
+
+### SKU 圖庫對應 Modal 新增「開啟圖庫對應工具」按鈕
+- 需求：使用者希望在「圖庫網址（GitHub Pages）」輸入框後面，加一顆按鈕直接開啟外部圖庫工具 `gallery.html`。
+- 修法：在 `index.html` 的「SKU 圖庫對應」Modal 內，於 `<input id="imageLibraryBaseUrl">` 之後新增一行 `.sm-btn-row`，內含 `<button class="sm-btn" onclick="window.open('https://jess0937588151-hue.github.io/2234/images/products/gallery.html','_blank','noopener')">🛠 開啟圖庫對應工具</button>`。
+- 影響檔案：`index.html`
+- 設計考量：不改動既有 `imageLibrary` 邏輯，純 UI 增加；用 `window.open` + `noopener` 在新分頁開啟避免主頁被遠端控制。
+
+### 2234 範本 store-config.js 部署疏失修正（多店促銷隔離）
+- 症狀：開兩台 POS（2234 jess0937588151-hue / 2237-1 lcym346-byte）時，雙方促銷資料互相覆蓋；2234 設定的促銷在線上點餐讀不到，反而讀到 2237-1 設的。
+- 根因：**不是程式 bug**。2234 repo 是早期把整份 2237-1 程式碼覆蓋過去時，`js/core/store-config.js` 忘了同步調整為新 storeId，兩台 POS 的 `STORE_CONFIG.storeId` 同為 `store001` 且 `lockFromUrl:true`，導致都寫入 `publicOnlineStores/store001/promotions`。
+- 修法：使用者在 2234 repo 手動編輯 `js/core/store-config.js`，將 `storeId` / `storeName` / `storeCode` 改為對應的新值（例：`store002` / 「桃園民族店」），commit 後 Ctrl+F5 重新整理 POS，雙店資料節點從此分離。
+- 影響檔案（僅 2234 repo）：`js/core/store-config.js`
+- 踩雷紀錄：複製整份 repo 到新店時，**`js/core/store-config.js` 是唯一一定要改的檔案**，但複製腳本/手動覆蓋很容易忘掉。已寫進規範第 18 條。
+- 驗證：兩台 POS 在 Console 跑 `state.settings.store.storeId` / `state.settings.dashboard.storeId` 各自為不同值；Firebase Console 看到 `publicOnlineStores/` 下出現兩個獨立節點。
+
+### 線上點餐標題來源確認（非程式修改）
+- 症狀：線上點餐頁 (`online-order.html`) 標題顯示「我的店」，使用者以為無法修改。
+- 根因：`js/pages/online-order-page.js` 的 `getStoreName()` 讀取優先順序為 `state.settings.realtimeOrder.onlineStoreTitle` → `state.settings.printConfig.storeName` → `'立即點餐'`。前者未設定（undefined），所以顯示後者「我的店」（出單店名預設值）。
+- 修法：使用者於 POS 設定頁修改「列印設定 → 店名」即可同時改線上點餐標題與發票店名。若想兩者分開，可在「看板 / 即時接單」設定頁填寫 `onlineStoreTitle`。
+- 影響檔案：無（純設定操作）
+- 留存設計決策：未來若要做「線上點餐標題」獨立 UI，應綁到 `state.settings.realtimeOrder.onlineStoreTitle`，避免動到 `printConfig.storeName`。
+
+### Google OAuth `invalid_client` 環境排查（已解決，無程式修改）
+- 症狀：2234 POS（jess0937588151 帳號）點 Google Drive 登入跳 `401 invalid_client / The OAuth client was not found`；2237-1 POS（lcym346 帳號）正常。
+- 排查過程：
+  1. 雙方 `googleBackup.clientId` 在 state 內皆為 `undefined`，因為 `google-backup-service.js` 採 `DEFAULT_CLIENT_ID` 硬編碼，不寫進 state（state 路徑應是 `googleDriveBackup` 而非 `googleBackup`）。
+  2. Client ID 屬於 Firebase 自動建立的 OAuth client（Web client auto created by Google Service），Project `webpos-1f626`、Project number `203764995518`。
+  3. 確認 Authorized JavaScript origins 已包含 `https://jess0937588151-hue.github.io` 和 `https://lcym346-byte.github.io`，但 2234 仍 invalid_client。
+- 真正解法：使用者改用 T2 主機（Sunmi POS）登入即正常，桌機 Chrome 帳號狀態 / Cookie 因素導致暫時無法登入，**並非程式或 OAuth 設定問題**。
+- 留存 SOP：未來若再遇 `invalid_client`：(a) 先換裝置或無痕視窗排除 Cookie；(b) 確認 Authorized JavaScript origins 包含當前網址；(c) 確認 OAuth consent screen 已發佈或測試使用者名單包含當前帳號；(d) 確認 Firebase Authorized domains 包含當前網域。
+- 影響檔案：無
+
+### 廚房單字級設定確認（無程式修改）
+- 症狀：使用者反映 POS 設定頁「列印設定」內調整字級對廚房單沒效果。
+- 根因：`js/modules/print-service.js` 的 `getPrintSettings()` 只有 `receiptFontSize` / `labelFontSize`，沒有 `kitchenFontSize` 獨立欄位；廚房單實際共用 `receiptFontSize`。但實際列印走的是 Sunmi APK 端的 HTTP 路徑，APK 內部可能對廚房單字級有自己的邏輯，POS 端的 `fontSize` 不一定會被讀取。
+- 暫時解法：使用者於 Sunmi APK 設定頁直接調整字級，已解決。
+- 未來優化方向（未做）：在 `getPrintSettings()` 加 `kitchenFontSize` 欄位、設定頁加對應 UI、`buildBridgePayload` 把字級放進 payload、Sunmi APK 端讀取 `payload.fontSize` 套用。三端都要動才完整。
+- 影響檔案：無（純 APK 端調整）
+
+### 踩雷紀錄
+- **「找不到設定」可能不是 UI bug 而是讀取優先順序**：線上點餐標題的 fallback chain 是 `onlineStoreTitle` → `printConfig.storeName` → 預設值；使用者去設定頁找「線上點餐標題」找不到時，要先講清楚實際讀的是哪個欄位，避免使用者瞎找。
+- **複製 repo 必改清單要明文寫**：`store-config.js` 漏改造成多店資料覆蓋，影響範圍極大（促銷、雲端備份、線上訂單、看板四條路徑全混在一起）。已寫入規範第 18 條。
+- **OAuth `invalid_client` 不一定是 OAuth 設定問題**：可能只是瀏覽器 Cookie / 帳號狀態問題，先換裝置/無痕視窗測試比直接動 Google Cloud Console 安全。
+- **POS 字級設定不一定全程貫穿**：POS 前端 `print-service.js` 的字級欄位只影響瀏覽器列印與舊 WebView 列印；走 HTTP → Sunmi APK 那條路徑時，字級實際是 APK 端控制。改字級要先確認用哪條列印路徑。
+
+---
+---
+
 ## v20260615（2026-05-20）— 促銷整合 + 預約提醒 + 圖庫匯出
+
 
 ### 廣告促銷管理整合至設定頁 tile
 - 需求：原本 POS 主畫面有浮動按鈕 `#promoOpenSettingsBtn` 觸發促銷管理 Modal，使用者希望統一從「設定」頁進入。
