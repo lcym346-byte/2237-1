@@ -20,6 +20,78 @@
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
 
 ---
+---
+
+## v20260615（2026-05-20）— 促銷整合 + 預約提醒 + 圖庫匯出
+
+### 廣告促銷管理整合至設定頁 tile
+- 需求：原本 POS 主畫面有浮動按鈕 `#promoOpenSettingsBtn` 觸發促銷管理 Modal，使用者希望統一從「設定」頁進入。
+- 設計決策：不動 `promotion-ui.js` 內部邏輯（避免破壞 226 行的 `mountPromotionSettingsUI()` 與 `openSettingsModal`），改以新增 tile + 程式化 dispatch click 的方式整合。
+- 修法：
+  - `index.html`：在設定頁區塊新增 tile（`<div class="setting-tile" data-promo-open="1">🎁 廣告促銷管理</div>`）。
+  - `js/pages/settings-page.js`：在 `initSettingsPage()` 內為 `[data-promo-open="1"]` 綁定 click：動態 import `promotion-ui.js`、確認 `mountPromotionSettingsUI` 存在 → 呼叫掛載 → 隱藏舊浮動按鈕 → 程式化 click 該按鈕觸發 modal。
+- 影響檔案：`index.html`、`js/pages/settings-page.js`
+
+### Firebase 安全規則修正（促銷資料寫入）
+- 症狀：手機端與 POS 端皆無法寫入 `publicOnlineStores/{storeId}/promotions`，被規則擋下。
+- 根因：原規則用 `hasChildren()` 與 `staff` 節點驗證，但部分情境下 staff 節點不存在或 staff 未登入時無法通過。
+- 修法：放寬促銷節點規則為「已認證使用者可讀寫」，仍維持 storeId 路徑隔離。
+- 影響檔案：`Firebase_Realtime_Database_安全規則.json`
+
+### 修正 Google OAuth Client ID 拼字錯誤
+- 症狀：Google 登入失敗，redirect 後跳「Invalid client」。
+- 根因：Client ID 字串內有拼字錯誤（少/多字元）。
+- 修法：更正為正確的 OAuth Client ID。
+- 影響檔案：`index.html`（OAuth 設定區）/ Google Cloud Console 設定
+
+### 線上優惠碼帶入訂單 payload
+- 症狀：手機端套用優惠碼後送單，POS 收到的訂單金額未扣折扣、看不到優惠碼。
+- 根因：`online-order-page.js` 的 `submitOnlineOrder()` 組 payload 時只送 `subtotal` 與 `total`，完全忽略 `getCurrentPromotionResult()` 的折扣資料。
+- 修法：計算 subtotal 後呼叫 `getCurrentPromotionResult()`，若 `ok===true` 則帶入 `couponCode` / `discount` / `couponMessage`，`total` 改為 `Math.max(0, subtotal - discount)`。
+- 影響檔案：`js/pages/online-order-page.js`
+
+### POS 端接收優惠碼資料（buildRealtimeOrderForPOS）
+- 症狀：即時接單彈窗顯示有折扣，但點擊接單後，訂單查詢「待付款」列表又顯示原價（無折扣）。
+- 根因：`realtime-order-service.js` 的 `buildRealtimeOrderForPOS()` 把雲端訂單轉成 POS 本地訂單時，硬編碼 `discountType:'amount'`、`discountValue:0`、`discountAmount:0`、`total:subtotal`，完全忽略雲端傳來的 `remote.discount` / `remote.couponCode` / `remote.couponMessage`。
+- 修法：計算 `remoteDiscount = Math.max(0, Math.min(Number(remote.discount||0), subtotal))`，回傳物件加入 `discountValue` / `discountAmount` / `couponCode` / `couponMessage`，`total = Math.max(0, subtotal - remoteDiscount)`。
+- 影響檔案：`js/modules/realtime-order-service.js`
+
+### 訂單卡顯示折扣明細
+- 症狀：折扣已正確扣除，但訂單卡上只看到最終金額，看不到「優惠碼是什麼」「折了多少」。
+- 修法：
+  - `renderOrdersSection()`：`discountAmount > 0` 時，在金額區塊上方顯示劃掉的原始小計 `money(subtotal)`，主金額紅字呈現，並在金額下方追加一行綠底虛線框「🎁 優惠折扣（CODE）<message> -NN」。
+  - `renderIncomingOnlineOrders()`：即時待確認單彈窗同樣顯示原價（劃掉）+ 折扣後總價 + 綠色優惠碼提示。
+- 影響檔案：`js/pages/orders-page.js`
+- 驗證：截圖確認 100→95 顯示正確，含原價劃掉、紅字 95、綠色「🎁 優惠折扣（DA999）滿100現金支付優惠 -5」。
+
+### 預約 30 分鐘前提醒 Modal
+- 症狀：預約單接單後，到了取餐前 30 分鐘沒有任何提醒。
+- 根因：邏輯其實已存在於 `realtime-order-service.js`（`startReservationReminderLoop` / `checkReservationReminders` / `showReservationReminderOverlay`），`app.js` 也已 import 並啟動。但 `index.html` **缺少 `#reservationReminderOverlay` DOM 元素**，導致 `showReservationReminderOverlay()` 第一行 `if(!overlay) return;` 直接退出，沒有任何提示。
+- 修法：在 `index.html` 結束值班 Modal 之前新增 `#reservationReminderOverlay` Modal，內含訂單編號、總金額、預約時間、顧客資訊、品項列表、「🔔 開始備餐並列印廚房單」與「稍後再提醒」兩顆按鈕。
+- 影響檔案：`index.html`
+- 觸發條件：每 60 秒輪詢 `state.orders`，若 `reservationAt - 30 分鐘 ≤ now < reservationAt` 且 `reservationReminded !== true` 且 status 不在已完成/拒絕/取消/作廢之列，即彈出。
+- 驗證：使用者於 Console 用 `(async()=>{ const {state, persistAll}=await import('./js/core/store.js'); ... })()` 改一筆訂單的 `reservationAt` 為 10 分鐘後並重設 `reservationReminded`，60 秒內 Modal 正常彈出，顯示完整資訊。
+- 待驗證：實機按下「開始備餐」是否會真的列印廚房單與顧客單（已記到「最新進度」待辦）。
+
+### SKU 圖庫對應表反推工具（Console 操作）
+- 症狀：使用者進入「設定 → SKU 圖庫對應」匯出後拿到空白 JSON，因為從未匯入過對應表。
+- 根因：商品 `state.products[].image` 存的是完整 URL（例：`https://jess0937588151-hue.github.io/2234/images/products/48.jpg`），但對應表 `state.settings.imageLibrary.skuMap` 從未填過值，所以匯出空白。
+- 修法：給使用者一段 Console 腳本，從現有 `state.products` 反推 `skuMap`（key=SKU, value=檔名部分），並自動設定 `baseUrl`，最後呼叫 `persistAll()` 寫回 IndexedDB / 雲端。
+- 驗證：使用者成功寫入 57 筆對應表（略過 4 筆缺 SKU/缺圖商品），匯出 `sku-image-map-2026-05-20.json` 正常。
+- 注意事項：商品 SKU 格式不統一（有 `A001` 也有 `347` / `0062`），建議未來統一為 `A001` 四碼，且新增商品時圖片檔名直接用 SKU 命名。
+
+### 三個舊 bug 修復
+- 必選/複選模組選項：修正模組規則驗證邏輯，min/max 計算正確，停售選項不參與計數。
+- 購物車清空：修正特定操作後購物車殘留狀態的問題，確保結帳完成或手動清空按鈕能徹底重置 `state.cart`。
+- 看板歷史：修正看板端歷史資料讀取相容性問題（沿襲 v20260613 BD 改造後的 key 並存策略）。
+
+### 踩雷紀錄
+- **DOM 元素缺失導致函式靜默退出**：v20260615 預約提醒功能在 `realtime-order-service.js` 早已實作完整，卻因為 `index.html` 缺對應 overlay 元素，導致整個功能無聲無息失效。教訓：日後若使用者回報「某功能完全沒反應」，先在 Console 用 `document.getElementById('xxx')` 確認 DOM 是否存在，再去看邏輯層。
+- **promotion-ui.js 不能改 226 行**：使用者明確指示該檔不能動內部邏輯，整合策略只能在外圍包裝（tile + 程式化 click），避免重構造成回歸。
+- **資料流斷點分散在三個檔案**：優惠碼從手機端送出到 POS 顯示中間經過 `online-order-page.js` → Firebase → `realtime-order-service.js` → `orders-page.js`，任何一個檔案漏接欄位都會讓使用者覺得「為什麼半路不見了」。修這類問題要一條 pipeline 從頭走到尾驗證，不能只看單一檔案。
+- **SKU 圖庫的兩種資料來源**：`state.products[].image` 是「實際顯示用 URL」，`state.settings.imageLibrary.skuMap` 是「SKU → 檔名對應表」，兩者獨立。使用者以為「商品有圖 = 對應表有資料」，實際上對應表可能完全是空的。修這類問題要先釐清資料來源，再決定要不要從 A 反推到 B。
+
+---
 
 ## 2026-05-15（晚）
 
