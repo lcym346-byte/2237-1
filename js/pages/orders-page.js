@@ -37,9 +37,18 @@ function renderIncomingOnlineOrders(){
           <div class="muted">${escapeHtml(o.customerName || '')}${o.customerPhone ? ' / ' + escapeHtml(o.customerPhone) : ''}</div>
           ${o.customerNote ? `<div class="muted">顧客備註：${escapeHtml(o.customerNote)}</div>` : ''}
         </div>
-        <div><strong>${money((o.items || []).reduce((s,x)=>s + ((Number(x.basePrice||0)+Number(x.extraPrice||0))*Number(x.qty||0)), 0))}</strong></div>
+                <div style="text-align:right">
+          ${Number(o.discount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money((o.items || []).reduce((s,x)=>s + ((Number(x.basePrice||0)+Number(x.extraPrice||0))*Number(x.qty||0)), 0))}</div>` : ''}
+          <strong>${money(Number(o.total) || (o.items || []).reduce((s,x)=>s + ((Number(x.basePrice||0)+Number(x.extraPrice||0))*Number(x.qty||0)), 0))}</strong>
+        </div>
       </div>
+      ${Number(o.discount||0) > 0 ? `
+      <div class="row between" style="margin-top:6px;padding:6px 10px;background:#ecfdf5;border:1px dashed #10b981;border-radius:6px;font-size:13px">
+        <span style="color:#047857">🎁 顧客已套用優惠碼${o.couponCode ? '（' + escapeHtml(o.couponCode) + '）' : ''}${o.couponMessage ? ' <span class="muted">' + escapeHtml(o.couponMessage) + '</span>' : ''}</span>
+        <strong style="color:#16a34a">-${money(Number(o.discount||0))}</strong>
+      </div>` : ''}
       <div class="stack small" style="margin-top:12px">
+
         ${(o.items || []).map(i=>{
           const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
           return `<div>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</div>`;
