@@ -510,7 +510,25 @@ async function submitOnlineOrder(){
   const realtimeCfg = getRealtimeConfig();
   if(!realtimeCfg.enabled) return alert('店家尚未啟用即時接單');
 
-  const subtotal = onlineState.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
+    const subtotal = onlineState.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
+
+  // ===== 套用優惠碼／促銷 =====
+  // 從 promotion-ui 取得目前套用結果；若沒有或無效就視為無折扣
+  let promoCode = '';
+  let promoDiscount = 0;
+  let promoMessage = '';
+  try{
+    const promo = getCurrentPromotionResult();
+    if(promo && promo.ok && Number(promo.discount) > 0){
+      promoCode = String(promo.code || '').toUpperCase();
+      promoDiscount = Math.min(Number(promo.discount) || 0, subtotal); // 折扣不超過小計
+      promoMessage = String(promo.message || '');
+    }
+  }catch(e){
+    console.warn('[online-order] 取得促銷結果失敗', e);
+  }
+  const grandTotal = Math.max(0, subtotal - promoDiscount);
+
   const payload = {
     orderNo: 'ON' + Date.now(),
     customerName: name,
@@ -521,8 +539,12 @@ async function submitOnlineOrder(){
     reservationReminded: false,
     items: JSON.parse(JSON.stringify(onlineState.cart)),
     subtotal,
-    total: subtotal
+    discount: promoDiscount,
+    couponCode: promoCode,
+    couponMessage: promoMessage,
+    total: grandTotal
   };
+
 
   try{
     openStatusOverlay('等待店家確認訂單', '送出後請稍候，店家確認後才算完成訂購。');
