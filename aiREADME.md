@@ -166,8 +166,10 @@ POS 與看板統一使用「營業日」概念，跨日營業時段歸屬同一�
 15. 跨店時所有 Firebase 路徑、Google Sheet 分頁名稱、Drive 備份檔名都必須以 `state.settings.store.storeId` 為前綴，禁止把任何一店寫死。
 16. **跨日相關計算（今日營業額、週、月、歷史 60 天）一律使用 `js/core/biz-day.js` 的 BD 函式**，禁止用自然日 00:00–23:59 計算。
 17. **訂單修改 = 加到購物車 + 結帳建新單 + 作廢原單**（v20260613 確立），禁止再寫入「就地修改原訂單」邏輯。`createOrUpdateOrder` 雖保留舊名，但內部永遠建新單。
+18. **範本複製到新門市必檢清單**（v20260616 踩雷確立）：從 2237-1 / 2234 複製整個 repo 到新店時，**至少必須改 `js/core/store-config.js` 的 `storeId` / `storeName` / `storeCode` 三個欄位**，否則新店會與原店共用同一條 Firebase 路徑（`publicOnlineStores/{storeId}/promotions`、`posBackup/{storeId}/state`、`onlineOrders/{storeId}/…`），互相覆蓋資料。檢查方式：複製完成後在 Console 執行 `(async()=>{const{state}=await import('./js/core/store.js');console.log('store.storeId:',state.settings?.store?.storeId);console.log('dashboard.storeId:',state.settings?.dashboard?.storeId);})();` 確認與原店不同。若 storeId 衝突已造成資料混亂，需手動到 Firebase Console 清掉錯誤節點。**注意**：複製 repo 後若仍想暫用相同 storeId 測試，必須先在 `STORE_CONFIG` 設 `lockFromUrl:false` 並用 `?storeId=新代碼` 重新啟動才能改綁定。
 
 ---
+
 
 ## 八、關鍵檔案地圖
 
