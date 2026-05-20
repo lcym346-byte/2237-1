@@ -1,4 +1,4 @@
-# 📋 最新進度（v20260615）
+# 📋 最新進度（v20260616）
 
 > 本檔記錄**當前版本進行中的項目、待處理事項、已知問題**。
 > 已完成項目請見 `aiREADME已完成紀錄.md`。
@@ -21,21 +21,22 @@
 - 尚未實機驗證「按下『開始備餐並列印廚房單』後，會真的列印廚房單與顧客單，且該訂單 `reservationReminded = true` 不會再次提醒」。
 - 待使用者在下次有預約單時實機按下按鈕驗證。
 
-### 把本次修改複製到公開版 repo（JESS0937588151）
-- 本次 session 在 `lcym346-byte/2237-1` 完成的所有修改，需複製到公開版分店 repo。
-- 複製檢查清單（每店只需調整三處）：
-  1. Firebase 設定（若共用同一個 Firebase 專案則不需改）
-  2. `storeId`（每店唯一，例如 `JESS001`）— 在「設定 → 看板 / 即時接單」頁設定
+### 廚房單字級獨立設定（低優先，已用 APK 調整解決）
+- 目前 `print-service.js` 廚房單與顧客單共用 `receiptFontSize`，沒有 `kitchenFontSize` 獨立欄位。
+- 使用者已於 Sunmi APK 設定頁直接調整字級，暫不需處理。
+- 若未來要做：需同時動 POS 前端（`getPrintSettings` 加欄位、設定頁 UI、`buildBridgePayload` 加 `fontSize` 欄位）+ Sunmi APK 端（讀取 `payload.fontSize`）。
+
+### 把本次修改複製到 2234 公開版 repo（使用者自行處理）
+- 本次 v20260615 + v20260616 在 `lcym346-byte/2237-1` 完成的所有修改，需複製到 `jess0937588151-hue/2234`。
+- 複製檢查清單（每店只需調整三處，務必遵守規範第 18 條）：
+  1. Firebase 設定（共用同一個 Firebase 專案不需改）
+  2. `js/core/store-config.js` 的 `storeId` / `storeName` / `storeCode`（每店唯一，**絕對不可遺漏，否則資料會互相覆蓋**）
   3. QR Code URL 的 `?storeId=` 參數需與店家 storeId 一致
-- 唯一 `storeId` 確保 `publicOnlineStores/{storeId}/promotions`、`onlineOrders/{storeId}/…` 雲端路徑彼此隔離。
 
 ### POS 折扣機制清理（低優先，不影響使用）
 - `js/modules/cart-service.js` 內的 `getDiscountResult` / `handleDiscountInput` / `getDiscountType` / `setDiscountType` 是舊版折扣機制殘留，依賴 `#discountValue` input，但該欄位已從 index.html 移除。
 - 目前折扣已改為「負金額品項」存進 cart（`discountAmountBtn` / `discountPercentBtn` 直接 push 到 `state.cart`），實測折扣 $10、折扣 5% 都正常運作。
 - 待辦：把 cart-service.js 內這四個 function 直接移除，避免未來誤用。pos-page.js、orders-page.js 若仍有 import 也一併清掉。
-
-### 2234 同步（使用者自行處理）
-- 本次 v20260615 的修改（促銷管理 tile、優惠碼帶入訂單、訂單卡折扣明細、預約 30 分鐘提醒 Modal、SKU 圖庫反推工具）需由使用者自行手動複製到 2234 公開範本。
 
 ---
 
@@ -50,10 +51,19 @@
 
 ## ❌ 本次明確不做（使用者已說明）
 
-- Firebase Storage 圖片遷移方案：**整個作廢**，原因是 Firebase Storage 要收費。改用既有的 GitHub Pages 圖庫 + SKU 對應表機制（index.html 內已有「SKU 圖庫對應」Modal、`imageLibraryBaseUrl`、`imageLibraryImportBtn`；store.js 已有 `state.settings.imageLibrary.skuMap`）。
+- Firebase Storage 圖片遷移方案：**整個作廢**，原因是 Firebase Storage 要收費。改用既有的 GitHub Pages 圖庫 + SKU 對應表機制。
 - 列印單據顯示折扣明細：使用者表示目前訂單卡顯示折扣明細已足夠，列印單據暫不修改 `print-service.js`。
 - 設定頁營業時間 24 小時制（使用者已在系統設定處理）
 - 預設營業時間改為 14:00–03:00（不改 `DEFAULT_BUSINESS_HOURS`，避免影響既有店）
+- 廚房單獨立字級欄位：使用者已用 Sunmi APK 解決，不再動 POS 前端。
+
+---
+
+## 📐 v20260616 關鍵設計決策（給未來 AI 參考）
+
+- **圖庫工具按鈕**：放在「SKU 圖庫對應」Modal 內、`#imageLibraryBaseUrl` 輸入框正下方，使用 `.sm-btn-row` 包裹，按下 `window.open('.../gallery.html','_blank','noopener')` 在新分頁開啟外部工具。**不**改 `imageLibrary` 內部邏輯。
+- **多店部署疏失防護**：複製範本到新店時，`js/core/store-config.js` 的 `storeId` / `storeName` / `storeCode` 是**唯一必改檔案**，已寫入規範第 18 條。任何 AI 接手「複製到新店」任務時，第一動作就是檢查這三個欄位。
+- **線上點餐標題 fallback chain**：`state.settings.realtimeOrder.onlineStoreTitle`（線上點餐專屬）→ `state.settings.printConfig.storeName`（出單店名）→ `'立即點餐'`。若使用者反映「改不到」，先確認當前實際讀的是哪一層。
 
 ---
 
