@@ -839,6 +839,31 @@
   </div>
 </div>
 
+<!-- ===== 預約 30 分鐘前提醒 Modal ===== -->
+<div id="reservationReminderOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.75);z-index:99998;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;max-width:480px;width:100%;padding:24px;border:3px solid #f59e0b;box-shadow:0 20px 60px rgba(0,0,0,0.35);max-height:92vh;overflow-y:auto">
+    <div style="font-size:22px;font-weight:700;color:#b45309;margin-bottom:6px">⏰ 預約取餐 30 分鐘內</div>
+    <div style="font-size:13px;color:#64748b;margin-bottom:14px">該開始備餐囉！按下方按鈕會自動列印廚房單與顧客單。</div>
+
+    <div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <strong id="reminderOrderNo" style="font-size:18px;color:#78350f">-</strong>
+        <strong id="reminderTotal" style="font-size:18px;color:#dc2626">$0</strong>
+      </div>
+      <div id="reminderMeta" style="font-size:13px;color:#92400e;margin-bottom:4px">-</div>
+      <div id="reminderCustomer" style="font-size:13px;color:#475569">-</div>
+    </div>
+
+    <div style="font-size:13px;font-weight:600;color:#334155;margin-bottom:4px">訂單明細</div>
+    <div id="reminderItems" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;font-size:13px;max-height:160px;overflow-y:auto"></div>
+
+    <div style="display:flex;gap:8px;margin-top:18px">
+      <button id="reminderStartBtn" style="flex:2;padding:12px;background:#f59e0b;color:#fff;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer">🔔 開始備餐並列印廚房單</button>
+      <button id="reminderLaterBtn" style="flex:1;padding:12px;background:#e2e8f0;color:#334155;border:none;border-radius:8px;font-size:14px;cursor:pointer">稍後再提醒</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== 結束值班 Modal ===== -->
 <div id="endSessionModal" class="modal hidden">
   <div class="modal-backdrop"></div>
