@@ -611,6 +611,14 @@ export async function rejectOnlineOrder(orderId, replyMessage = ''){
 export function buildRealtimeOrderForPOS(remote){
   const items = Array.isArray(remote.items) ? remote.items : [];
   const subtotal = items.reduce((s, x) => s + ((Number(x.basePrice || 0) + Number(x.extraPrice || 0)) * Number(x.qty || 0)), 0);
+    // ===== 套用線上訂單帶來的優惠碼／折扣 =====
+  // 顧客送單時 payload 已寫入 discount / couponCode / couponMessage
+  // 折扣不可超過小計、不可為負
+  const remoteDiscount = Math.max(0, Math.min(Number(remote.discount || 0), subtotal));
+  const remoteCouponCode = String(remote.couponCode || '').toUpperCase();
+  const remoteCouponMessage = String(remote.couponMessage || '');
+  const grandTotal = Math.max(0, subtotal - remoteDiscount);
+
   return {
     id: 'online_' + remote.id,
     orderNo: remote.orderNo || ('ON' + Date.now()),
@@ -628,15 +636,19 @@ export function buildRealtimeOrderForPOS(remote){
     prepTimeMinutes: Number(remote.prepTimeMinutes || 0),
     estimatedReadyAt: remote.estimatedReadyAt || '',
     merchantReplyMessage: remote.replyMessage || '',
+    // 折扣欄位：用顧客端套用的優惠碼結果，而不是寫死 0
     discountType: 'amount',
-    discountValue: 0,
-    discountAmount: 0,
+    discountValue: remoteDiscount,
+    discountAmount: remoteDiscount,
+    couponCode: remoteCouponCode,
+    couponMessage: remoteCouponMessage,
     sessionId: getCurrentSession()?.id || null,
     subtotal,
-    total: subtotal,
+    total: grandTotal,
     items
   };
 }
+
 
 // ============================================================
 // 菜單同步（維持用 projectId，所有店共用）
