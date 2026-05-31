@@ -625,6 +625,7 @@ function initCustomerDisplaySettings() {
     });
   }
 }
+  initCustomerDisplaySettings();
 
   // 列印設定
   document.querySelector('[data-modal="modalPrint"]')?.addEventListener('click', function() {
