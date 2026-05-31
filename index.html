@@ -381,6 +381,12 @@
       <span class="tile-desc">Banner、優惠碼、線上點餐促銷</span>
     </div>
   </div>
+      <div class="setting-tile" data-customer-display-open="1">
+      <span class="tile-icon">🖥️</span>
+      <span class="tile-label">客顯設定</span>
+      <span class="tile-desc">顧客螢幕顯示購物車與付款資訊</span>
+    </div>
+
 </section>
 
 
@@ -673,6 +679,46 @@
     <div class="settings-modal-footer">
       <button id="saveRealtimeOrderSettingsBtn" class="sm-btn primary">儲存即時接單設定</button>
       <button class="sm-btn" data-close-modal="modalRealtime">關閉</button>
+    </div>
+  </div>
+</div>
+<!-- ===== 客顯設定 Modal（v20260525 新增） ===== -->
+<div id="customerDisplayModal" class="settings-modal-backdrop">
+  <div class="settings-modal" style="max-width:480px">
+    <div class="settings-modal-header">
+      <h3>🖥️ 客顯設定</h3>
+      <button class="close-modal-btn" data-close-modal="customerDisplayModal">✕</button>
+    </div>
+    <div class="settings-modal-body">
+      <div class="sm-info-box" style="font-size:13px;color:#475569;margin-bottom:14px">
+        客顯功能需搭配已更新的 Sunmi APK（v20260525+）。APK 會在 127.0.0.1:8081 啟動客顯 Server，購物車變動與付款完成時會自動推送畫面。
+      </div>
+
+      <div class="sm-check-row">
+        <input id="cdEnabled" type="checkbox">
+        <span>啟用客顯推送</span>
+      </div>
+
+      <div class="sm-section-title">連線設定</div>
+      <div class="sm-form-group">
+        <label>Port（預設 8081）</label>
+        <input id="cdPort" type="number" min="1024" max="65535" value="8081">
+      </div>
+
+      <div class="sm-section-title">待機畫面</div>
+      <div class="sm-form-group">
+        <label>待機訊息</label>
+        <input id="cdIdleMessage" type="text" maxlength="30" placeholder="歡迎光臨">
+      </div>
+
+      <div class="sm-section-title">連線測試</div>
+      <div class="sm-btn-row">
+        <button id="cdPingBtn" class="sm-btn">🔍 偵測連線</button>
+      </div>
+    </div>
+    <div class="settings-modal-footer">
+      <button id="cdSaveBtn" class="sm-btn primary">儲存客顯設定</button>
+      <button class="sm-btn" data-close-modal="customerDisplayModal">關閉</button>
     </div>
   </div>
 </div>
