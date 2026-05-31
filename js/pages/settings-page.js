@@ -200,7 +200,12 @@ function loadPrintSettingsToForm() {
   if (el('printKitchenCopies')) el('printKitchenCopies').value = Number(cfg.kitchenCopies || 1);
   if (el('printAutoCheckout')) el('printAutoCheckout').checked = !!cfg.autoPrintCheckout;
   if (el('printAutoKitchen')) el('printAutoKitchen').checked = !!cfg.autoPrintKitchen;
-      // 回顯欄位勾選（顧客單 / 廚房單 / 標籤 各自勾選）
+    // v20260620 每單別印表機路由
+   const routes = cfg.routes || { receipt:'auto', kitchen:'auto', label:'auto' };
+   if (el('printRouteReceipt')) el('printRouteReceipt').value = routes.receipt || 'auto';
+   if (el('printRouteKitchen')) el('printRouteKitchen').value = routes.kitchen || 'auto';
+   if (el('printRouteLabel'))   el('printRouteLabel').value   = routes.label   || 'auto';
+   // 回顯欄位勾選（顧客單 / 廚房單 / 標籤 各自勾選）
   renderPrintFieldsMatrix();
   loadPrintFieldsMatrix(cfg);
 
@@ -737,7 +742,17 @@ function initCustomerDisplaySettings() {
     cfg.kitchenCopies = Math.max(1, Number(document.getElementById('printKitchenCopies')?.value) || 1);
     cfg.autoPrintCheckout = !!document.getElementById('printAutoCheckout')?.checked;
     cfg.autoPrintKitchen = !!document.getElementById('printAutoKitchen')?.checked;
-                // 儲存欄位勾選（顧客單 / 廚房單 / 標籤 各自獨立）
+         // v20260620 每單別印表機路由（限定四個合法值，否則退回 auto）
+    const _validRoute = function(v){
+      return (v === 'sunmi' || v === 'bluetooth' || v === 'network') ? v : 'auto';
+    };
+    cfg.routes = {
+      receipt: _validRoute(el('printRouteReceipt')?.value),
+      kitchen: _validRoute(el('printRouteKitchen')?.value),
+      label:   _validRoute(el('printRouteLabel')?.value)
+    };
+
+     // 儲存欄位勾選（顧客單 / 廚房單 / 標籤 各自獨立）
     cfg.fields = collectPrintFieldsMatrix();
 
      persistAll();
