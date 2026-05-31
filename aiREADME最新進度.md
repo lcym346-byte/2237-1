@@ -37,6 +37,12 @@
 - `js/modules/cart-service.js` 內的 `getDiscountResult` / `handleDiscountInput` / `getDiscountType` / `setDiscountType` 是舊版折扣機制殘留，依賴 `#discountValue` input，但該欄位已從 index.html 移除。
 - 目前折扣已改為「負金額品項」存進 cart（`discountAmountBtn` / `discountPercentBtn` 直接 push 到 `state.cart`），實測折扣 $10、折扣 5% 都正常運作。
 - 待辦：把 cart-service.js 內這四個 function 直接移除，避免未來誤用。pos-page.js、orders-page.js 若仍有 import 也一併清掉。
+## 待處理
+- store002 開站：待 store001 營業時間機制穩定運作後進行。
+  複製 2237-1 整個 repo 到 store002 的新帳號新 repo，只改 js/core/store-config.js
+  的 storeId/storeName/storeCode 為 store002；開 GitHub Pages；
+  在 Firebase staff/{該帳號uid}/stores/store002 設 true（或 admin）；
+  store002 POS 設定一次自己的營業時間並上傳，確認 Firebase 出現 storeHours/store002。
 
 ---
 
