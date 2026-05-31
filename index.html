@@ -433,9 +433,38 @@
       <div class="sm-section-title">自動列印</div>
       <div class="sm-form-group"><label>廚房單列印份數</label><input id="printKitchenCopies" type="number" min="1" max="5"></div>
       <div class="sm-check-row"><input id="printAutoCheckout" type="checkbox"><span>結帳後自動列印顧客單</span></div>
-      <div class="sm-check-row"><input id="printAutoKitchen" type="checkbox"><span>點餐結帳或待付款時自動列印廚房單</span></div>
+            <div class="sm-check-row"><input id="printAutoKitchen" type="checkbox"><span>點餐結帳或待付款時自動列印廚房單</span></div>
 
-                  <div class="sm-section-title">列印欄位（顧客單 / 廚房單 / 標籤 各自勾選）</div>
+      <div class="sm-section-title">指定印表機（每種單別各自選擇）</div>
+      <div class="sm-info-box" style="font-size:12px;color:#64748b;margin-bottom:8px">
+        預設「自動」＝依序嘗試內建→藍牙→網路（目前 T2 行為不變）。日後不用 T2，可把廚房單改成「藍牙」。
+      </div>
+      <div class="sm-form-group"><label>顧客單印表機</label>
+        <select id="printRouteReceipt">
+          <option value="auto">自動（內建→藍牙→網路）</option>
+          <option value="sunmi">內建 Sunmi</option>
+          <option value="bluetooth">藍牙</option>
+          <option value="network">網路</option>
+        </select>
+      </div>
+      <div class="sm-form-group"><label>廚房單印表機</label>
+        <select id="printRouteKitchen">
+          <option value="auto">自動（內建→藍牙→網路）</option>
+          <option value="sunmi">內建 Sunmi</option>
+          <option value="bluetooth">藍牙</option>
+          <option value="network">網路</option>
+        </select>
+      </div>
+      <div class="sm-form-group"><label>標籤印表機</label>
+        <select id="printRouteLabel">
+          <option value="auto">自動（內建→藍牙→網路）</option>
+          <option value="sunmi">內建 Sunmi</option>
+          <option value="bluetooth">藍牙</option>
+          <option value="network">網路</option>
+        </select>
+      </div>
+
+      <div class="sm-section-title">列印欄位（顧客單 / 廚房單 / 標籤 各自勾選）</div>
       <div class="sm-info-box" style="font-size:12px;color:#64748b;margin-bottom:8px">
         每個欄位有三個勾：左 = 顧客單，中 = 廚房單，右 = 標籤。儲存後套用到全系統列印（訂單查詢、結帳、線上接單）。
       </div>
