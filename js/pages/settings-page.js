@@ -562,6 +562,69 @@ export function initSettingsPage() {
   // ============================
   // Tile 開啟事件（每個 tile 開啟前先載入最新資料）
   // ============================
+// ==================== 客顯設定（v20260525 新增） ====================
+
+/** 將 state.settings.customerDisplay 載入表單 */
+function loadCustomerDisplayToForm() {
+  var cd = (state.settings && state.settings.customerDisplay) || {};
+  var el = function(id) { return document.getElementById(id); };
+  if (el('cdEnabled'))     el('cdEnabled').checked       = cd.enabled !== false;
+  if (el('cdPort'))        el('cdPort').value             = cd.port    || 8081;
+  if (el('cdIdleMessage')) el('cdIdleMessage').value      = cd.idleMessage || '歡迎光臨';
+}
+
+/** 從表單收集客顯設定並儲存到 state */
+function saveCustomerDisplayFromForm() {
+  if (!state.settings) state.settings = {};
+  if (!state.settings.customerDisplay) state.settings.customerDisplay = {};
+  var el = function(id) { return document.getElementById(id); };
+  if (el('cdEnabled'))     state.settings.customerDisplay.enabled     = el('cdEnabled').checked;
+  if (el('cdPort'))        state.settings.customerDisplay.port        = parseInt(el('cdPort').value, 10) || 8081;
+  if (el('cdIdleMessage')) state.settings.customerDisplay.idleMessage = el('cdIdleMessage').value.trim() || '歡迎光臨';
+  persistAll();
+}
+
+/** 掛接客顯設定 tile 點擊與 Modal 儲存按鈕 */
+function initCustomerDisplaySettings() {
+  // Tile 點擊事件（data-customer-display-open="1"）
+  var tile = document.querySelector('[data-customer-display-open="1"]');
+  if (tile) {
+    tile.addEventListener('click', function() {
+      loadCustomerDisplayToForm();
+      openModal('customerDisplayModal');
+    });
+  }
+
+  // 儲存按鈕
+  var saveBtn = document.getElementById('cdSaveBtn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function() {
+      saveCustomerDisplayFromForm();
+      closeModal('customerDisplayModal');
+      alert('✅ 客顯設定已儲存');
+    });
+  }
+
+  // 偵測按鈕：ping 客顯 Server
+  var pingBtn = document.getElementById('cdPingBtn');
+  if (pingBtn) {
+    pingBtn.addEventListener('click', async function() {
+      pingBtn.disabled = true;
+      pingBtn.textContent = '偵測中…';
+      try {
+        var { pingDisplayServer } = await import('../modules/customer-display-service.js');
+        var ok = await pingDisplayServer();
+        alert(ok ? '✅ 客顯 Server 已連線 (port ' + (document.getElementById('cdPort').value || 8081) + ')'
+                 : '❌ 無法連線，請確認 APK 已更新並啟動');
+      } catch (e) {
+        alert('偵測失敗：' + (e && e.message));
+      } finally {
+        pingBtn.disabled = false;
+        pingBtn.textContent = '🔍 偵測連線';
+      }
+    });
+  }
+}
 
   // 列印設定
   document.querySelector('[data-modal="modalPrint"]')?.addEventListener('click', function() {
