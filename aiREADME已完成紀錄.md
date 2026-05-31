@@ -1,13 +1,10 @@
-# ✅ 已完成紀錄
+<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0e76d1d2-7a37-4c82-9159-3b43f4e4af90" /># ✅ 已完成紀錄
 
 > 本檔記錄所有版本已完成項目的詳細紀錄（由新到舊）。
 > 規範與架構說明請見 `aiREADME.md`。
 > 當前進行中與待處理請見 `aiREADME最新進度.md`。
 
 ---
-
-## 📌 版本速查
-
 ## 📌 版本速查
 
 | 版本 | 日期 | 重點 |
@@ -25,7 +22,43 @@
 
 ---
 ---
+## v20260617 線上點餐營業時間改為各店獨立（storeHours/{storeCode}）
 
+問題：營業時間原本寫在共用菜單 menu/{projectId} 內，但規則是「只有 store001 能上傳菜單，其他店唯讀」，
+導致 store002/003 永遠讀到 store001 的營業時間，各店無法各自設定營業時間。
+
+解法：將 businessHours 從共用菜單抽離，改用各店獨立路徑 storeHours/{storeCode}，與菜單完全分開。
+
+異動檔案（4 commit + service-worker 升版）：
+1. js/modules/realtime-order-service.js
+   - 新增 syncStoreHoursToFirebase()：每台 POS 都能上傳自己店的營業時間到 storeHours/{storeCode}，
+     不受「只有主機能傳菜單」限制（內部 getStoreCode() + verifyPOSAccess()）。
+   - 新增 fetchStoreHoursFromFirebase(storeCode)：顧客端傳 URL 的 storeCode、POS 端不傳則用本機，
+     讀回寫入 state.settings.businessHours。
+   - 移除 syncMenuToFirebase menuData 內的 businessHours（菜單回到只含 categories/products/modules/updatedAt，
+     對齊 menu 規則的 .validate）。
+   - 移除 fetchMenuFromFirebase / applyCloudMenu / watchMenuFromFirebase 三處讀取 businessHours 的程式碼，
+     避免 store001 的菜單同步覆蓋各店營業時間。
+2. js/pages/settings-page.js
+   - saveBusinessHours() 改為 async，存本機後自動 import 並呼叫 syncStoreHoursToFirebase() 上傳本店，
+     成功跳「營業時間已儲存並上傳雲端」、失敗提示需 Google 登入且已設定 storeId。
+3. js/pages/online-order-page.js
+   - init() 菜單載入後新增讀取本店營業時間：import fetchStoreHoursFromFirebase(onlineState.storeCode)，
+     讓顧客端讀到「該店自己」的營業時間，預約時段才正確。
+4. Firebase_Realtime_Database_安全規則.json
+   - 新增 storeHours 節點規則：.read=true（顧客預約時段要讀），
+     .write 為 admin 或 staff/{uid}/stores/{storeCode}===true，
+     .validate 要求 hasChildren(['businessHours','updatedAt'])。
+   - 已於 Firebase Console 發布。
+5. service-worker.js
+   - CACHE_NAME 升版至 pos-v20260617-swfix-cache。
+
+實機驗證：store001 POS 設定營業時間→儲存→跳「已上傳雲端」；
+Firebase Console 出現 storeHours/store001/businessHours（含 fri 15:00–23:30 等）；確認位置正確。
+
+注意事項（供 store002 複製時參考）：
+- 各店 POS 帳號要能上傳營業時間，需在 staff/{uid}/stores/{storeCode}=true（或 role=admin），否則 PERMISSION_DENIED。
+- 預約時段維持「今天＋明天」兩天（buildReservationSlots dayOffset < 2，本次未改）。
 ## v20260616（2026-05-20）— 圖庫工具按鈕 + 多店部署疏失修正 + 線上點餐標題確認
 
 ### SKU 圖庫對應 Modal 新增「開啟圖庫對應工具」按鈕
