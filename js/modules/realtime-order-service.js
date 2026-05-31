@@ -684,11 +684,13 @@ export async function syncMenuToFirebase(){
   };
 }),
 
-    modules: state.modules || [],
+        modules: state.modules || [],
+    businessHours: (state.settings && state.settings.businessHours) || {},
     updatedAt: new Date().toISOString()
   };
 
   const menuRef = await getRef('menu/' + menuKey);
+
   await dbApi.set(menuRef, menuData);
   cfg.lastSyncStatus = '菜單同步成功';
   cfg.lastSyncTime = new Date().toISOString();
@@ -710,13 +712,22 @@ export async function fetchMenuFromFirebase(){
   if(data.modules && Array.isArray(data.modules)){
     state.modules = data.modules;
   }
-  if(data.categories && Array.isArray(data.categories)){
+    if(data.categories && Array.isArray(data.categories)){
     state.categories = data.categories;
+  }
+  if(data.businessHours && typeof data.businessHours === 'object'){
+    const hasAnySlot = Object.values(data.businessHours)
+      .some(v => Array.isArray(v) && v.length > 0);
+    if(hasAnySlot){
+      if(!state.settings) state.settings = {};
+      state.settings.businessHours = data.businessHours;
+    }
   }
   return data;
 }
 
 export async function fetchAndMergeMenuFromFirebase(){
+
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
   const menuKey = cfg.projectId || 'default';
@@ -849,8 +860,16 @@ function applyCloudMenu(data){
       });
       usedIds.add(cp.id);
     });
-    localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
+        localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
     state.products = merged;
+  }
+  if(data.businessHours && typeof data.businessHours === 'object'){
+    const hasAnySlot = Object.values(data.businessHours)
+      .some(v => Array.isArray(v) && v.length > 0);
+    if(hasAnySlot){
+      if(!state.settings) state.settings = {};
+      state.settings.businessHours = data.businessHours;
+    }
   }
   persistAll();
 }
@@ -868,9 +887,17 @@ export async function watchMenuFromFirebase(callback){
   dbApi.onValue(menuRef, (snapshot) => {
     const data = snapshot.val();
     if(!data) return;
-    if(Array.isArray(data.products)) state.products = data.products;
+        if(Array.isArray(data.products)) state.products = data.products;
     if(Array.isArray(data.modules))  state.modules  = data.modules;
     if(Array.isArray(data.categories)) state.categories = data.categories;
+    if(data.businessHours && typeof data.businessHours === 'object'){
+      const hasAnySlot = Object.values(data.businessHours)
+        .some(v => Array.isArray(v) && v.length > 0);
+      if(hasAnySlot){
+        if(!state.settings) state.settings = {};
+        state.settings.businessHours = data.businessHours;
+      }
+    }
     if(callback) callback(data);
   });
 }
