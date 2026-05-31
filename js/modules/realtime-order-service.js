@@ -648,6 +648,50 @@ export function buildRealtimeOrderForPOS(remote){
     items
   };
 }
+// ============================================================
+// 各店獨立營業時間（路徑 storeHours/{storeCode}，與共用菜單分開）
+// ============================================================
+/**
+ * 上傳「本店」營業時間到 storeHours/{storeCode}。
+ * 不受「只有主機能傳菜單」限制，每台 POS 都能傳自己店的營業時間。
+ */
+export async function syncStoreHoursToFirebase(){
+  await loadFirebaseModules();
+  const user = authInstance.currentUser || await waitForAuthReady();
+  if(!user) throw new Error('請先使用 POS Google 登入');
+  await verifyPOSAccess();
+
+  const code = getStoreCode();
+  const hours = (state.settings && state.settings.businessHours) || {};
+  const ref = await getRef('storeHours/' + code);
+  await dbApi.set(ref, {
+    businessHours: hours,
+    updatedAt: new Date().toISOString()
+  });
+
+  const cfg = ensureRealtimeConfig();
+  cfg.lastSyncStatus = `營業時間已上傳（${code}）`;
+  persistAll();
+}
+
+/**
+ * 讀取指定店的營業時間。
+ * 顧客端傳入 URL 的 storeCode；POS 端不傳則用本機 getStoreCode()。
+ */
+export async function fetchStoreHoursFromFirebase(storeCode){
+  await loadFirebaseModules();
+  const code = storeCode ? validateStoreCode(storeCode) : getStoreCode();
+  const ref = await getRef('storeHours/' + code);
+  const snapshot = await dbApi.get(ref);
+  const data = snapshot.val();
+  if(data && data.businessHours && typeof data.businessHours === 'object'){
+    if(!state.settings) state.settings = {};
+    state.settings.businessHours = data.businessHours;
+    persistAll();
+  }
+  return data;
+}
+
 
 
 // ============================================================
@@ -683,9 +727,7 @@ export async function syncMenuToFirebase(){
     soldOut: p.soldOut === true
   };
 }),
-
-        modules: state.modules || [],
-    businessHours: (state.settings && state.settings.businessHours) || {},
+    modules: state.modules || [],
     updatedAt: new Date().toISOString()
   };
 
@@ -712,19 +754,12 @@ export async function fetchMenuFromFirebase(){
   if(data.modules && Array.isArray(data.modules)){
     state.modules = data.modules;
   }
-    if(data.categories && Array.isArray(data.categories)){
+  if(data.categories && Array.isArray(data.categories)){
     state.categories = data.categories;
-  }
-  if(data.businessHours && typeof data.businessHours === 'object'){
-    const hasAnySlot = Object.values(data.businessHours)
-      .some(v => Array.isArray(v) && v.length > 0);
-    if(hasAnySlot){
-      if(!state.settings) state.settings = {};
-      state.settings.businessHours = data.businessHours;
-    }
   }
   return data;
 }
+
 
 export async function fetchAndMergeMenuFromFirebase(){
 
@@ -860,16 +895,8 @@ function applyCloudMenu(data){
       });
       usedIds.add(cp.id);
     });
-        localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
+    localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)) merged.push(p); });
     state.products = merged;
-  }
-  if(data.businessHours && typeof data.businessHours === 'object'){
-    const hasAnySlot = Object.values(data.businessHours)
-      .some(v => Array.isArray(v) && v.length > 0);
-    if(hasAnySlot){
-      if(!state.settings) state.settings = {};
-      state.settings.businessHours = data.businessHours;
-    }
   }
   persistAll();
 }
@@ -887,20 +914,13 @@ export async function watchMenuFromFirebase(callback){
   dbApi.onValue(menuRef, (snapshot) => {
     const data = snapshot.val();
     if(!data) return;
-        if(Array.isArray(data.products)) state.products = data.products;
+    if(Array.isArray(data.products)) state.products = data.products;
     if(Array.isArray(data.modules))  state.modules  = data.modules;
     if(Array.isArray(data.categories)) state.categories = data.categories;
-    if(data.businessHours && typeof data.businessHours === 'object'){
-      const hasAnySlot = Object.values(data.businessHours)
-        .some(v => Array.isArray(v) && v.length > 0);
-      if(hasAnySlot){
-        if(!state.settings) state.settings = {};
-        state.settings.businessHours = data.businessHours;
-      }
-    }
     if(callback) callback(data);
   });
 }
+
 
 // ============================================================
 // 預約 30 分鐘前提醒
