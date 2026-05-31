@@ -1,0 +1,8 @@
+js/core/store-config.js，把三行改成
+
+export const STORE_CONFIG = {
+  storeId:   'store002',     // 改這行
+  storeName: '測試店2',       // 改這行（顯示名稱，可自訂門市名）
+  storeCode: 'store002',     // 改這行
+  lockFromUrl: true
+};
