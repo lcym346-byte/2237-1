@@ -8,6 +8,8 @@ import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-serv
 import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
 import { hasOpenSession } from '../modules/report-session.js';
 import { getRealtimeAuthUser, signInPOSWithGoogle, waitForAuthReady } from '../modules/realtime-order-service.js';
+// v20260525 新增：客顯同步（購物車更新時推送）
+import { displayCart, displayIdle } from '../modules/customer-display-service.js';
 
 // ── 預約功能（POS 端） ──
 const POS_WEEKDAY_MAP = ['sun','mon','tue','wed','thu','fri','sat'];
@@ -336,6 +338,13 @@ export function renderCart(){
       row.innerHTML = `<span>${escapeHtml(item.name)} x${item.qty}</span><strong>${money((item.basePrice + item.extraPrice) * item.qty)}</strong>`;
       list.appendChild(row);
     });
+      // v20260525：購物車渲染後同步推送客顯
+  if (state.cart && state.cart.length > 0) {
+    displayCart();
+  } else {
+    displayIdle();
+  }
+
   }
 
   // 浮動視窗：完整功能
