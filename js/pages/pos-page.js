@@ -324,7 +324,7 @@ window.refreshPublicProducts = renderProducts;
 export function renderCart(){
   const list = document.getElementById('cartList');
   const listModal = document.getElementById('cartListModal');
-   list.innerHTML = '';
+  list.innerHTML = '';
 
   // 右側面板：只顯示品項、數量、金額
   if(!state.cart.length){
@@ -338,13 +338,13 @@ export function renderCart(){
       row.innerHTML = `<span>${escapeHtml(item.name)} x${item.qty}</span><strong>${money((item.basePrice + item.extraPrice) * item.qty)}</strong>`;
       list.appendChild(row);
     });
-      // v20260525：購物車渲染後同步推送客顯
+  }
+
+  // v20260525：購物車渲染後同步推送客顯（移到 if/else 外，兩種狀態都能正確觸發）
   if (state.cart && state.cart.length > 0) {
     displayCart();
   } else {
     displayIdle();
-  }
-
   }
 
   // 浮動視窗：完整功能
