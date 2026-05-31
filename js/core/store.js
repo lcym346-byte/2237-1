@@ -95,8 +95,13 @@ const DEFAULT_PRINT_CONFIG = {
   autoPrintCheckout: false,
   autoPrintKitchen: false,
   openDrawer: true,
+  // v20260620 新增：每種單別各自指定走哪台印表機
+  // 'auto' = 維持自動偵測順序（sunmi→bluetooth→network），這是預設，確保現有 T2 不改設定照舊運作
+  // 'sunmi' / 'bluetooth' / 'network' = 指定該台優先；若指定的那台未連線，仍會退回 auto 順序當備援
+  routes: { receipt: 'auto', kitchen: 'auto', label: 'auto' },
   fields: DEFAULT_PRINT_FIELDS
 };
+
 
 const DEFAULT_STORE_BINDING = {
   storeId: 'store001',
@@ -385,9 +390,21 @@ function applyHydrate(saved){
           }
         });
       }
-      if (typeof state.settings.printConfig.openDrawer === 'undefined') {
+            if (typeof state.settings.printConfig.openDrawer === 'undefined') {
         state.settings.printConfig.openDrawer = true;
       }
+      // v20260620 新增：補 printConfig.routes 預設（舊資料沒有此欄位時補上）
+      if (!state.settings.printConfig.routes || typeof state.settings.printConfig.routes !== 'object') {
+        state.settings.printConfig.routes = { receipt: 'auto', kitchen: 'auto', label: 'auto' };
+      } else {
+        ['receipt','kitchen','label'].forEach(function(kind){
+          var v = state.settings.printConfig.routes[kind];
+          if (v !== 'sunmi' && v !== 'bluetooth' && v !== 'network') {
+            state.settings.printConfig.routes[kind] = 'auto';
+          }
+        });
+      }
+
       if (!state.settings.businessHours || typeof state.settings.businessHours !== 'object') {
         state.settings.businessHours = JSON.parse(JSON.stringify(DEFAULT_BUSINESS_HOURS));
       } else {
