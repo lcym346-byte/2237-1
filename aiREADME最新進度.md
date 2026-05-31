@@ -10,8 +10,13 @@
 
 ## 🚨 已知問題（優先處理）
 
-（目前無）
 
+ 架構重點提醒
+列印橋接（不可破壞）： Web POS → print-bridge.js → POST 127.0.0.1:8080 → APK PrintHttpServer。客顯走 8081，兩者完全獨立互不干擾。
+
+Token 驗證： APK 的 ApiToken（UUID）由 print-bridge.js 的 detectPrinters() 從 /ping 取得後存入 state。客顯 GET /display/state 與 GET /display/ 無需 Token（讓 iPad 直接存取），只有 POST /display/update 需要 Token。
+
+狀態三層持久化： IndexedDB（主）+ localStorage（快取）+ Firebase（10 秒節流雲端備份）。persistAll() 同時寫三層。
 ---
 
 ## ⏳ 進行中／待處理
