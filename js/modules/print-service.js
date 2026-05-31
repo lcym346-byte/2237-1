@@ -78,6 +78,16 @@ export function getPrintSettings(){
   cfg.kitchenCopies = Math.max(1, Number(cfg.kitchenCopies || 1));
   if (typeof cfg.openDrawer === 'undefined') cfg.openDrawer = false;
   if (!cfg.fields) cfg.fields = JSON.parse(JSON.stringify(DEFAULT_FIELDS));
+    // v20260620 新增：確保 routes 存在（避免舊資料或單獨呼叫時為 undefined）
+  if (!cfg.routes || typeof cfg.routes !== 'object') {
+    cfg.routes = { receipt: 'auto', kitchen: 'auto', label: 'auto' };
+  } else {
+    ['receipt','kitchen','label'].forEach(function(k){
+      var v = cfg.routes[k];
+      if (v !== 'sunmi' && v !== 'bluetooth' && v !== 'network') cfg.routes[k] = 'auto';
+    });
+  }
+
   ['receipt','kitchen','label'].forEach(kind => {
     if(!cfg.fields[kind]) cfg.fields[kind] = JSON.parse(JSON.stringify(DEFAULT_FIELDS[kind]));
     Object.keys(DEFAULT_FIELDS[kind]).forEach(f => {
@@ -529,6 +539,44 @@ function isNetReady(){
   const d = getDetect();
   return !!(d && d.network);
 }
+// ============================================================
+// v20260620 新增：依 printConfig.routes 決定列印目標順序
+// kind: 'receipt' | 'kitchen' | 'label'
+// ============================================================
+function getRouteOrder(kind, d){
+  const cfg = getPrintSettings();
+  const want = (cfg.routes && cfg.routes[kind]) || 'auto';
+  const autoOrder = ['sunmi', 'bluetooth', 'network'];
+  if (want === 'auto') return autoOrder.slice();
+  const order = [want];
+  autoOrder.forEach(t => { if (t !== want) order.push(t); });
+  return order;
+}
+
+// 依路由順序嘗試 http 列印，回傳 { ok, route, error }
+async function routedHttpPrint(kind, payload, d){
+  const order = getRouteOrder(kind, d);
+  pslog('routedHttpPrint kind=' + kind + ' 指定=' + ((getPrintSettings().routes||{})[kind] || 'auto')
+    + ' 嘗試順序=' + order.join('>'));
+
+  let lastErr = '';
+  for (const target of order) {
+    const connected = (target === 'sunmi') ? d.sunmi
+                    : (target === 'bluetooth') ? d.bluetooth
+                    : (target === 'network') ? d.network : false;
+    if (!connected) {
+      pslog('  跳過 ' + target + '（未連線）');
+      continue;
+    }
+    pslog('  → 送 http-' + target);
+    const r = await httpPrint(target, payload);
+    pslog('  http-' + target + ' ok=' + r.ok + ' err=' + r.error);
+    if (r.ok) return { ok: true, route: 'http-' + target, error: '' };
+    lastErr = r.error || ('http-' + target + ' failed');
+  }
+  return { ok: false, route: '', error: lastErr || '無可用印表機' };
+}
+
 
 function buildBridgePayload(order, mode){
   const cfg = getPrintSettings();
@@ -630,27 +678,12 @@ export async function printOrderReceipt(order, mode){
   pslog('printOrderReceipt detect mode=' + (d && d.mode) + ' sunmi=' + (d && d.sunmi)
     + ' bt=' + (d && d.bluetooth) + ' net=' + (d && d.network));
 
-  if (d && d.mode === 'http') {
-    if (d.sunmi) {
-      pslog('printOrderReceipt → http-sunmi');
-      const r = await httpPrint('sunmi', payload);
-      pslog('printOrderReceipt http-sunmi result ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-sunmi', ok:true };
-    }
-    if (d.bluetooth) {
-      pslog('printOrderReceipt → http-bluetooth');
-      const r = await httpPrint('bluetooth', payload);
-      pslog('printOrderReceipt http-bluetooth result ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-bluetooth', ok:true };
-    }
-    if (d.network) {
-      pslog('printOrderReceipt → http-network');
-      const r = await httpPrint('network', payload);
-      pslog('printOrderReceipt http-network result ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-network', ok:true };
-    }
-    pslog('printOrderReceipt http all failed, fallback browser');
+   if (d && d.mode === 'http') {
+    const rr = await routedHttpPrint(realMode === 'kitchen' ? 'kitchen' : 'receipt', payload, d);
+    if (rr.ok) return { route: rr.route, ok: true };
+    pslog('printOrderReceipt http all failed (' + rr.error + '), fallback browser');
   }
+
 
   if (d && d.mode === 'webview') {
     pslog('printOrderReceipt → webview');
@@ -687,20 +720,12 @@ export async function printKitchenCopies(order){
     let printed = false;
     pslog('printKitchenCopies copy ' + (i+1) + '/' + copies);
 
-    if (d && d.mode === 'http') {
-      if (d.sunmi) {
-        const r = await httpPrint('sunmi', payload); if (r.ok) printed = true;
-        pslog('  http-sunmi ok=' + r.ok + ' err=' + r.error);
-      }
-      if (!printed && d.bluetooth) {
-        const r = await httpPrint('bluetooth', payload); if (r.ok) printed = true;
-        pslog('  http-bluetooth ok=' + r.ok + ' err=' + r.error);
-      }
-      if (!printed && d.network) {
-        const r = await httpPrint('network', payload); if (r.ok) printed = true;
-        pslog('  http-network ok=' + r.ok + ' err=' + r.error);
-      }
+        if (d && d.mode === 'http') {
+      const rr = await routedHttpPrint('kitchen', payload, d);
+      if (rr.ok) printed = true;
+      pslog('  kitchen ' + rr.route + ' ok=' + rr.ok + ' err=' + rr.error);
     } else if (d && d.mode === 'webview') {
+
       const jsonStr = JSON.stringify(payload);
       if (sunmiPrintReceiptByFont(order, 'kitchen')) printed = true;
       if (!printed && window.SunmiPrinter?.isBtPrinterConnected?.() && window.SunmiPrinter.btPrintKitchen) {
@@ -731,23 +756,12 @@ export async function printOrderLabels(order){
   const d = getDetect();
   pslog('printOrderLabels detect mode=' + (d && d.mode));
 
-  if (d && d.mode === 'http') {
-    if (d.sunmi) {
-      const r = await httpPrint('sunmi', payload);
-      pslog('printOrderLabels http-sunmi ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-sunmi', ok:true };
-    }
-    if (d.bluetooth) {
-      const r = await httpPrint('bluetooth', payload);
-      pslog('printOrderLabels http-bluetooth ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-bluetooth', ok:true };
-    }
-    if (d.network) {
-      const r = await httpPrint('network', payload);
-      pslog('printOrderLabels http-network ok=' + r.ok + ' err=' + r.error);
-      if (r.ok) return { route:'http-network', ok:true };
-    }
+    if (d && d.mode === 'http') {
+    const rr = await routedHttpPrint('label', payload, d);
+    if (rr.ok) return { route: rr.route, ok: true };
+    pslog('printOrderLabels http all failed (' + rr.error + ')');
   } else if (d && d.mode === 'webview') {
+
     const jsonStr = JSON.stringify(payload);
     if (sunmiPrintReceiptByFont(order, 'label')) return { route:'sunmi-font', ok:true };
     if (window.SunmiPrinter?.isBtPrinterConnected?.() && window.SunmiPrinter.btPrintReceipt) {
