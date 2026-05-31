@@ -1,4 +1,4 @@
-<img width="1366" height="768" alt="image" src="https://github.com/user-attachments/assets/0e76d1d2-7a37-4c82-9159-3b43f4e4af90" /># ✅ 已完成紀錄
+已完成紀錄
 
 > 本檔記錄所有版本已完成項目的詳細紀錄（由新到舊）。
 > 規範與架構說明請見 `aiREADME.md`。
