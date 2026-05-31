@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v20260617-swfix-cache';
+const CACHE_NAME = 'pos-v20260618-display-cache';  // ← 比現有 v20260617 新一版
 const ASSETS = [
   './',
   './index.html',
@@ -33,9 +33,12 @@ const ASSETS = [
   './js/modules/print-bridge.js',
   './js/modules/realtime-order-service.js',
   './js/modules/google-backup-service.js',
+  './js/modules/customer-display-service.js',  // ← 新增
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];
+
+
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
