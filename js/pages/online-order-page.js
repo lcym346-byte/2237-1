@@ -657,15 +657,20 @@ async function init(){
         renderReservationSlots();
       }
     });
-  }catch(err){
+    }catch(err){
     console.warn('啟動菜單監聽失敗（不影響顯示）：', err);
   }
 
-
+  // 讀取本店營業時間（與共用菜單分開，走 storeHours/{storeCode}）
+  try{
+    const { fetchStoreHoursFromFirebase } = await import('../modules/realtime-order-service.js');
+    await fetchStoreHoursFromFirebase(onlineState.storeCode);
+  }catch(e){
+    console.warn('讀取店家營業時間失敗：', e);
+  }
   renderCategoryTabs();
   renderProducts();
   renderCart();
-
 
   const _savedName = localStorage.getItem('online_customer_name') || '';
   const _savedPhone = localStorage.getItem('online_customer_phone') || '';
