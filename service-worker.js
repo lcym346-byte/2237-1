@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pos-v20260618-display-cache';  // ← 比現有 v20260617 新一版
+const CACHE_NAME = 'pos-v20260619-display-cache';  // ← 比現有 v20260617 新一版
 const ASSETS = [
   './',
   './index.html',
