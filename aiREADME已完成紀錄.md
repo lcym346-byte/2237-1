@@ -22,6 +22,32 @@
 
 ---
 ---
+v20260525 客顯功能）
+Web POS（lcym346-byte/2237-1）
+檔案	變更內容
+js/modules/customer-display-service.js	新增。POST /display/update 推送客顯，5 秒節流，提供 displayCart() / displayPaid() / displayIdle() / pingDisplayServer()
+js/core/store.js	新增 DEFAULT_CUSTOMER_DISPLAY，buildDefaultState() 與 applyHydrate() 均已加入
+js/pages/pos-page.js	renderCart() 末尾加入 displayCart() / displayIdle() 呼叫，位於 if/else 外層
+js/modules/order-service.js	createOrUpdateOrder() 與 markPendingOrderPaid() 結帳時呼叫 displayPaid()
+js/pages/settings-page.js	新增 loadCustomerDisplayToForm() / saveCustomerDisplayFromForm() / initCustomerDisplaySettings()，並在 initSettingsPage() 內呼叫
+index.html	設定頁新增客顯 Tile（data-customer-display-open="1"）與 customerDisplayModal
+service-worker.js	CACHE_NAME 升為 pos-v20260618-display-cache，ASSETS 加入 customer-display-service.js
+APK（jess0937588151-hue/sunmi-pos-v2）
+檔案	變更內容
+DisplayHttpServer.java	新增。監聽 0.0.0.0:8081，提供 GET /display/（內嵌 HTML 頁面）、GET /display/state（無需 Token）、POST /display/update（需 Token）、GET /display/ping
+DisplayStateManager.java	新增。執行緒安全的記憶體狀態容器，提供 update() / reset() / getStateJson() / getType() / getUpdatedAt()
+MainActivity.java	新增 DisplayHttpServer field，onCreate 呼叫 startDisplayServer()，onDestroy 停止並 reset
+LogManager.java	新增 TAG_DISPLAY = "DisplayHttpServer" 常數
+📱 客顯使用方式（已完成，供參考）
+CopyAPK 健康檢查頁查看 Sunmi T2 的區域 IP（例如 192.168.1.50）
+        ↓
+iPad Safari 開啟：http://192.168.1.50:8081/display/
+        ↓
+頁面每秒輪詢 /display/state，自動切換三種畫面：
+  idle → 深色待機 + 時鐘 + 歡迎語
+  cart → 白底品項列表 + 右側藍色合計
+  paid → 綠色感謝畫面 + 5 秒倒數後自動回待機
+IP 變動時：重新查 APK 頁面的 IP，更新 iPad 書籤即可。若要固定 IP，在路由器 DHCP 設定綁定 Sunmi T2 MAC 地址。
 ## v20260617 線上點餐營業時間改為各店獨立（storeHours/{storeCode}）
 
 問題：營業時間原本寫在共用菜單 menu/{projectId} 內，但規則是「只有 store001 能上傳菜單，其他店唯讀」，
