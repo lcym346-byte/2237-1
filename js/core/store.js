@@ -118,6 +118,13 @@ const DEFAULT_IMAGE_LIBRARY = {
   importedAt: '',
   itemCount: 0
 };
+// ── v20260525 新增：客顯預設設定 ──
+const DEFAULT_CUSTOMER_DISPLAY = {
+  enabled:     true,   // 是否啟用客顯推送
+  port:        8081,   // DisplayHttpServer 埠號（與 PrintHttpServer 8080 分開）
+  token:       '',     // 與 APK 共用同一個 ApiToken（由 print-bridge.js detectPrinters 自動取得後填入）
+  idleMessage: '歡迎光臨'  // 待機時顯示的廣告語
+};
 
 
 // ── 工具 ──
@@ -306,6 +313,10 @@ function buildDefaultState(){
             store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),
       cloudBackup: JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP)),  // v20260608-b 新增
       imageLibrary: JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY)),  // v20260614 新增
+            imageLibrary: JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY)),
+      // v20260525 新增：客顯設定
+      customerDisplay: JSON.parse(JSON.stringify(DEFAULT_CUSTOMER_DISPLAY)),
+
       realtimeOrder: {
 
         enabled: true,
@@ -418,6 +429,16 @@ function applyHydrate(saved){
         }
       }
     }
+      // v20260525 新增：補 customerDisplay 預設
+      if (!state.settings.customerDisplay || typeof state.settings.customerDisplay !== 'object') {
+        state.settings.customerDisplay = JSON.parse(JSON.stringify(DEFAULT_CUSTOMER_DISPLAY));
+      } else {
+        Object.keys(DEFAULT_CUSTOMER_DISPLAY).forEach(k => {
+          if (typeof state.settings.customerDisplay[k] === 'undefined') {
+            state.settings.customerDisplay[k] = DEFAULT_CUSTOMER_DISPLAY[k];
+          }
+        });
+      }
 
 
     if (saved.reports && typeof saved.reports === 'object') {
