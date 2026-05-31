@@ -313,7 +313,6 @@ function buildDefaultState(){
             store: JSON.parse(JSON.stringify(DEFAULT_STORE_BINDING)),
       cloudBackup: JSON.parse(JSON.stringify(DEFAULT_CLOUD_BACKUP)),  // v20260608-b 新增
       imageLibrary: JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY)),  // v20260614 新增
-            imageLibrary: JSON.parse(JSON.stringify(DEFAULT_IMAGE_LIBRARY)),
       // v20260525 新增：客顯設定
       customerDisplay: JSON.parse(JSON.stringify(DEFAULT_CUSTOMER_DISPLAY)),
 
