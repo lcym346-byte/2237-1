@@ -374,7 +374,7 @@ function collectAllBusinessHours(){
   return bh;
 }
 
-function saveBusinessHours(){
+async function saveBusinessHours(){
   var bh = collectAllBusinessHours();
   var error = '';
   WEEKDAY_KEYS.forEach(function(key){
@@ -387,8 +387,19 @@ function saveBusinessHours(){
   if(error){ alert('儲存失敗：' + error); return; }
   state.settings.businessHours = bh;
   persistAll();
-  alert('營業時間已儲存');
+
+  // 上傳到本店 storeHours/{storeCode}，讓線上點餐讀得到（各店獨立）
+  try{
+    const { syncStoreHoursToFirebase } = await import('../modules/realtime-order-service.js');
+    await syncStoreHoursToFirebase();
+    alert('營業時間已儲存並上傳雲端');
+  }catch(e){
+    alert('營業時間已儲存（本機），但上傳雲端失敗：\n'
+      + (e && e.message ? e.message : e)
+      + '\n請確認已 Google 登入，且已設定店鋪代碼(storeId)。');
+  }
 }
+
 
 // ── SKU 圖庫對應 ──
 function getImageLibrary(){
