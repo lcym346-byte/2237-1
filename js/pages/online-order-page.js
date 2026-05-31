@@ -647,14 +647,20 @@ async function init(){
     return;
   }
 
-  try{
+    try{
     await startMenuAutoWatch(() => {
       renderCategoryTabs();
       renderProducts();
+      // 營業時間可能在雲端被 POS 更新，菜單監聽到變動時一併重建預約時段，
+      // 避免「只更新一次、之後改營業時間不生效」。
+      if(document.getElementById('onlineOrderType')?.value === '預約'){
+        renderReservationSlots();
+      }
     });
   }catch(err){
     console.warn('啟動菜單監聽失敗（不影響顯示）：', err);
   }
+
 
   renderCategoryTabs();
   renderProducts();
