@@ -3,13 +3,15 @@ import { state } from '../core/store.js';
 import { deepCopy, id } from '../core/utils.js';
 //import { getDiscountResult, getDiscountType } from './cart-service.js';
 import { getCurrentSession } from './report-session.js';
+// v20260525 新增：付款完成後同步到客顯
+import { displayPaid } from './customer-display-service.js';
 
 
 export function createOrUpdateOrder(paymentMethod){
   const subtotal = state.cart.reduce((s,x)=>s + (x.basePrice + x.extraPrice) * x.qty, 0);
   const discountAmount = 0;
-const total = subtotal;
-   // ─── v20260613：移除就地修改邏輯，每次結帳都是新訂單（避免營業額漏洞） ───
+  const total = subtotal;
+  // ─── v20260613：移除就地修改邏輯，每次結帳都是新訂單（避免營業額漏洞） ───
   // 「修改」流程改為「加到購物車 → 作廢原單 → 重新結帳」，留下完整審計軌跡
   const order = {
     id: id(),
@@ -34,6 +36,12 @@ const total = subtotal;
   };
   state.orders.unshift(order);
   state.cart = [];
+
+  // v20260525 新增：付款完成（非待付款）推送客顯
+  if (paymentMethod !== '待付款') {
+    displayPaid(order).catch(() => {});
+  }
+
   return order;
 }
 
@@ -49,6 +57,11 @@ export function markPendingOrderPaid(orderId, paymentMethod){
     const cur = getCurrentSession();
     if(cur) order.sessionId = cur.id;
   }
-  return order;
 
+  // v20260525 新增：待付款改為完成時也推送客顯
+  if (paymentMethod !== '待付款') {
+    displayPaid(order).catch(() => {});
+  }
+
+  return order;
 }
