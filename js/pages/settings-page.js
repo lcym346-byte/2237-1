@@ -747,7 +747,7 @@ function initCustomerDisplaySettings() {
       kitchen: _vr(document.getElementById('printRouteKitchen')?.value),
       label:   _vr(document.getElementById('printRouteLabel')?.value)
     };
-  }
+  
     cfg.autoPrintCheckout = !!document.getElementById('printAutoCheckout')?.checked;
     cfg.autoPrintKitchen = !!document.getElementById('printAutoKitchen')?.checked;
          // v20260620 每單別印表機路由（限定四個合法值，否則退回 auto）
