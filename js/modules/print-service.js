@@ -76,6 +76,8 @@ export function getPrintSettings(){
   cfg.labelOffsetX = Number(cfg.labelOffsetX || 0);
   cfg.labelOffsetY = Number(cfg.labelOffsetY || 0);
   cfg.kitchenCopies = Math.max(1, Number(cfg.kitchenCopies || 1));
+  cfg.fontKitchenItem = Number(cfg.fontKitchenItem || 32);
+  cfg.fontKitchenInfo = Number(cfg.fontKitchenInfo || 24);
   if (typeof cfg.openDrawer === 'undefined') cfg.openDrawer = false;
   if (!cfg.fields) cfg.fields = JSON.parse(JSON.stringify(DEFAULT_FIELDS));
     // v20260620 新增：確保 routes 存在（避免舊資料或單獨呼叫時為 undefined）
@@ -658,7 +660,11 @@ function buildBridgePayload(order, mode){
     // 金額（僅顧客單）
     subtotal:       (fields.subtotal && !isKitchen && !isLabel) ? Number(order.subtotal || 0)       : 0,
     discountAmount: (fields.discount && !isKitchen && !isLabel) ? Number(order.discountAmount || 0) : 0,
-    total:          (fields.total    && !isKitchen && !isLabel) ? Number(order.total || 0)          : 0
+    total:          (fields.total    && !isKitchen && !isLabel) ? Number(order.total || 0)          : 0,
+
+    // 廚房單字級（品名、選項分開）送給 APK
+    fontKitchenItem: Number(cfg.fontKitchenItem || 32),
+    fontKitchenInfo: Number(cfg.fontKitchenInfo || 24)
   };
   return payload;
 }
