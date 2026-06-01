@@ -740,14 +740,7 @@ function initCustomerDisplaySettings() {
      cfg.labelOffsetX = Number(document.getElementById('printLabelOffsetX')?.value) || 0;
     cfg.labelOffsetY = Number(document.getElementById('printLabelOffsetY')?.value) || 0;
     cfg.kitchenCopies = Math.max(1, Number(document.getElementById('printKitchenCopies')?.value) || 1);
-    // v20260620 每單別印表機路由（限四個合法值，否則 auto）
-    var _vr = function(v){ return (v==='sunmi'||v==='bluetooth'||v==='network') ? v : 'auto'; };
-    cfg.routes = {
-      receipt: _vr(document.getElementById('printRouteReceipt')?.value),
-      kitchen: _vr(document.getElementById('printRouteKitchen')?.value),
-      label:   _vr(document.getElementById('printRouteLabel')?.value)
-    };
-  }
+    
     cfg.autoPrintCheckout = !!document.getElementById('printAutoCheckout')?.checked;
     cfg.autoPrintKitchen = !!document.getElementById('printAutoKitchen')?.checked;
          // v20260620 每單別印表機路由（限定四個合法值，否則退回 auto）
@@ -759,8 +752,6 @@ function initCustomerDisplaySettings() {
       kitchen: _validRoute(document.getElementById('printRouteKitchen')?.value),
       label:   _validRoute(document.getElementById('printRouteLabel')?.value)
     };
-
-
 
      // 儲存欄位勾選（顧客單 / 廚房單 / 標籤 各自獨立）
     cfg.fields = collectPrintFieldsMatrix();
