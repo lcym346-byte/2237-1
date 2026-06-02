@@ -17,7 +17,7 @@
 
 import { state } from '../core/store.js';
 
-const DISPLAY_THROTTLE_MS = 5000; // 5 秒節流
+const DISPLAY_THROTTLE_MS = 400; // 0.4秒節流
 let _displayThrottleTimer = null;
 let _lastSentHash = '';
 
@@ -103,11 +103,19 @@ export function displayCart() {
       state.settings.printConfig &&
       state.settings.printConfig.storeName) || '';
 
-    const items = (state.cart || []).map(item => ({
-      name:    item.name    || '',
-      qty:     item.qty     || 1,
-      price:   (item.basePrice + item.extraPrice) * item.qty,
-      options: (item.selections || []).map(s => s.optionName).filter(Boolean).join('、')
+        const items = (state.cart || []).map(item => ({
+      name:      item.name      || '',
+      qty:       item.qty       || 1,
+      // 同時帶兩種欄位：price/options 給舊版客顯頁；basePrice/extraPrice/selections 給 APK 內嵌客顯頁
+      price:     (Number(item.basePrice||0) + Number(item.extraPrice||0)) * Number(item.qty||1),
+      options:   (item.selections || []).map(s => s.optionName).filter(Boolean).join('、'),
+      basePrice: Number(item.basePrice || 0),
+      extraPrice:Number(item.extraPrice || 0),
+      selections:(item.selections || []).map(s => ({
+        moduleName: s.moduleName || '',
+        optionName: s.optionName || ''
+      })),
+      note:      item.note || ''
     }));
 
     const subtotal = (state.cart || []).reduce(
