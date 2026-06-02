@@ -33,7 +33,6 @@ const ASSETS = [
   './js/modules/print-bridge.js',
   './js/modules/realtime-order-service.js',
   './js/modules/google-backup-service.js',
-  './js/modules/customer-display-service.js',  // ← 新增
   './assets/icon-192.png',
   './assets/icon-512.png'
 ];
