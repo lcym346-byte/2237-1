@@ -748,13 +748,28 @@
         <input id="cdPort" type="number" min="1024" max="65535" value="8081">
       </div>
 
-      <div class="sm-section-title">待機畫面</div>
+            <div class="sm-section-title">待機畫面</div>
       <div class="sm-form-group">
         <label>待機訊息</label>
         <input id="cdIdleMessage" type="text" maxlength="30" placeholder="歡迎光臨">
       </div>
 
+      <div class="sm-section-title">輪播圖（最多 5 張）</div>
+      <div class="sm-form-group">
+        <label>輪播圖存放位置（結尾要有 /）</label>
+        <input id="cdSlidesBaseUrl" type="text" placeholder="https://lcym346-byte.github.io/2237-1/images/">
+      </div>
+      <div class="sm-form-group">
+        <label>圖片檔名（一格一張，例 slide1.jpg；留空略過）</label>
+        <input id="cdSlide1" type="text" placeholder="slide1.jpg" style="margin-bottom:6px">
+        <input id="cdSlide2" type="text" placeholder="slide2.jpg" style="margin-bottom:6px">
+        <input id="cdSlide3" type="text" placeholder="slide3.jpg" style="margin-bottom:6px">
+        <input id="cdSlide4" type="text" placeholder="slide4.jpg" style="margin-bottom:6px">
+        <input id="cdSlide5" type="text" placeholder="slide5.jpg">
+      </div>
+
       <div class="sm-section-title">連線測試</div>
+
       <div class="sm-btn-row">
         <button id="cdPingBtn" class="sm-btn">🔍 偵測連線</button>
       </div>
