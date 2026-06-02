@@ -1,13 +1,14 @@
 /**
  * js/modules/customer-display-service.js
- * 客顯推送服務 v20260525
+ * 客顯推送服務 v20260602
  *
  * 職責：
  *   - 向 APK 的 DisplayHttpServer (127.0.0.1:8081) POST 客顯資料
  *   - 支援三種狀態：cart（購物車更新）、paid（付款完成）、idle（待機）
  *   - 讀取 state.settings.customerDisplay.enabled / port / token 設定
+ *   - v20260602：附帶 slides（商品輪播圖 URL 陣列），供客顯右半邊輪播
  *   - 失敗時只 console.warn，絕不影響列印功能
- *   - 採 5 秒節流（DISPLAY_THROTTLE_MS），避免快速點擊打爆 APK
+ *   - 採 0.4 秒節流（DISPLAY_THROTTLE_MS），避免快速點擊打爆 APK
  *
  * 設計原則：
  *   - 與 print-bridge.js 完全獨立，不共用任何變數
@@ -17,7 +18,8 @@
 
 import { state } from '../core/store.js';
 
-const DISPLAY_THROTTLE_MS = 400; // 0.4秒節流
+const DISPLAY_THROTTLE_MS = 400; // 0.4 秒節流
+const MAX_SLIDES = 12;           // 輪播圖最多張數（避免 payload 過大）
 let _displayThrottleTimer = null;
 let _lastSentHash = '';
 
@@ -34,6 +36,46 @@ function getDisplayConfig() {
 
 function getBaseUrl(port) {
   return 'http://127.0.0.1:' + port;
+}
+
+// ==================== 輪播圖收集（v20260602） ====================
+
+/**
+ * 收集商品輪播圖 URL 陣列，供客顯右半邊輪播。
+ * 來源優先順序（兩種設圖方式皆相容）：
+ *   1) product.image 有值（手動貼的完整 URL）→ 直接用
+ *   2) product.sku 在 imageLibrary.skuMap 有對應檔名 → baseUrl + 檔名 拼出 URL
+ * 只取啟用中的商品，去重、限制最多 MAX_SLIDES 張。
+ */
+function collectSlideImages() {
+  try {
+    const products = Array.isArray(state.products) ? state.products : [];
+    const lib = (state.settings && state.settings.imageLibrary) || {};
+    let base = (lib.baseUrl || '').trim();
+    if (base && !/\/$/.test(base)) base = base + '/';
+    const skuMap = (lib.skuMap && typeof lib.skuMap === 'object') ? lib.skuMap : {};
+
+    const urls = [];
+    const seen = {};
+    for (const p of products) {
+      if (!p || p.enabled === false) continue;
+      let url = '';
+      if (p.image && String(p.image).trim()) {
+        url = String(p.image).trim();
+      } else if (p.sku && skuMap[p.sku] && base) {
+        url = base + skuMap[p.sku];
+      }
+      if (url && !seen[url]) {
+        seen[url] = true;
+        urls.push(url);
+        if (urls.length >= MAX_SLIDES) break;
+      }
+    }
+    return urls;
+  } catch (e) {
+    console.warn('[customer-display] collectSlideImages error:', e && e.message);
+    return [];
+  }
 }
 
 // ==================== 核心推送 ====================
@@ -75,7 +117,7 @@ async function _sendToDisplay(payload) {
 }
 
 /**
- * 節流推送：5 秒內多次呼叫只送最後一次
+ * 節流推送：節流窗內多次呼叫只送最後一次
  * @param {object} payload
  */
 function _throttledSend(payload) {
@@ -91,7 +133,7 @@ function _throttledSend(payload) {
 // ==================== 公開 API ====================
 
 /**
- * 購物車更新時推送（節流 5 秒）
+ * 購物車更新時推送（節流）
  * 供 pos-page.js 的 renderCart() 呼叫
  */
 export function displayCart() {
@@ -103,7 +145,7 @@ export function displayCart() {
       state.settings.printConfig &&
       state.settings.printConfig.storeName) || '';
 
-        const items = (state.cart || []).map(item => ({
+    const items = (state.cart || []).map(item => ({
       name:      item.name      || '',
       qty:       item.qty       || 1,
       // 同時帶兩種欄位：price/options 給舊版客顯頁；basePrice/extraPrice/selections 給 APK 內嵌客顯頁
@@ -127,7 +169,8 @@ export function displayCart() {
       storeName,
       items,
       subtotal,
-      total:     subtotal
+      total:     subtotal,
+      slides:    collectSlideImages()   // v20260602 右半邊輪播圖
     });
   } catch (e) {
     console.warn('[customer-display] displayCart error:', e && e.message);
@@ -198,7 +241,8 @@ export function displayIdle() {
       items:     [],
       subtotal:  0,
       total:     0,
-      message
+      message,
+      slides:    collectSlideImages()   // v20260602 待機時也輪播商品圖
     }).catch(() => {});
   } catch (e) {
     console.warn('[customer-display] displayIdle error:', e && e.message);
@@ -206,7 +250,7 @@ export function displayIdle() {
 }
 
 /**
- * 心跳偵測：檢查客顯 Server 是否在線
+ * 更新偵測：檢查客顯 Server 是否在線
  * @returns {Promise<boolean>}
  */
 export async function pingDisplayServer() {
