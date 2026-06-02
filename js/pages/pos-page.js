@@ -460,7 +460,122 @@ if(order && printConfig.autoPrintKitchen){
     catch(e) { console.error('列印廚房單失敗:', e); }
 }
 
-    alert(paymentMethod === '待付款' ? '已加入待付款' : '結帳完成');
+        alert(paymentMethod === '待付款' ? '已加入待付款' : '結帳完成');
+}
+
+// ============================================================
+// v20260620 現金收款視窗（自製鍵盤，全程不調用系統鍵盤）
+// ============================================================
+let _cashReceived = '';   // 使用者輸入的實收金額字串（空 = 尚未輸入）
+let _cashDue = 0;         // 本次應收金額
+let _cashBound = false;   // 鍵盤事件是否已綁定（避免重複綁）
+
+// 取得目前購物車應收金額（與 renderCart 的 total 算法一致）
+function getCartDueAmount(){
+  const subtotal = state.cart.reduce((s,x)=> s + (x.basePrice + x.extraPrice) * x.qty, 0);
+  return Math.max(0, subtotal);
+}
+
+// 依應收金額算「快捷湊整」建議值：第一顆=進位整百，之後接更大的整鈔節點，封頂 5000
+function buildCashQuickValues(due){
+  if(due <= 0) return [];
+  const first = Math.ceil(due / 100) * 100;            // 進位到整百
+  const nodes = [500,1000,1500,2000,2500,3000,4000,5000];
+  const out = [first];
+  nodes.forEach(n=>{
+    if(n > first && out.length < 4 && out.indexOf(n) < 0) out.push(n);
+  });
+  return out;
+}
+
+function renderCashQuickButtons(){
+  const wrap = document.getElementById('cashQuickBtns');
+  if(!wrap) return;
+  const vals = buildCashQuickValues(_cashDue);
+  wrap.innerHTML = '';
+  vals.forEach(v=>{
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cash-quick';
+    b.textContent = '$' + v;
+    b.onclick = ()=>{ _cashReceived = String(v); updateCashDisplay(); };
+    wrap.appendChild(b);
+  });
+}
+
+function updateCashDisplay(){
+  const dueEl = document.getElementById('cashDueText');
+  const recvEl = document.getElementById('cashReceivedText');
+  const changeEl = document.getElementById('cashChangeText');
+  if(dueEl) dueEl.textContent = money(_cashDue);
+  const hasInput = _cashReceived !== '';
+  const recv = hasInput ? Number(_cashReceived) : 0;
+  if(recvEl) recvEl.textContent = hasInput ? money(recv) : '—';
+  // 沒輸入 = 收剛好，找零 0；有輸入則算差額（不足顯示 $0，不顯示負數）
+  const change = hasInput ? Math.max(0, recv - _cashDue) : 0;
+  if(changeEl) changeEl.textContent = money(change);
+}
+
+function openCashPayModal(){
+  _cashReceived = '';
+  _cashDue = getCartDueAmount();
+  renderCashQuickButtons();
+  updateCashDisplay();
+  const m = document.getElementById('cashPayModal');
+  if(m) m.classList.remove('hidden');
+}
+
+function closeCashPayModal(){
+  const m = document.getElementById('cashPayModal');
+  if(m) m.classList.add('hidden');
+}
+
+function bindCashPayModal(){
+  if(_cashBound) return;        // 只綁一次
+  _cashBound = true;
+
+  // 數字鍵盤
+  const pad = document.getElementById('cashKeypad');
+  if(pad){
+    pad.querySelectorAll('.cash-key').forEach(k=>{
+      k.onclick = ()=>{
+        const key = k.dataset.key;
+        if(key === 'del'){
+          _cashReceived = _cashReceived.slice(0, -1);
+        } else {
+          // 限制長度，避免爆位；開頭多個 0 自動正規化
+          if(_cashReceived.length < 7){
+            _cashReceived = String(Number(_cashReceived + key));
+          }
+        }
+        updateCashDisplay();
+      };
+    });
+  }
+
+  const clearBtn = document.getElementById('cashClearBtn');
+  if(clearBtn) clearBtn.onclick = ()=>{ _cashReceived = ''; updateCashDisplay(); };
+
+  const closeBtn = document.getElementById('cashPayCloseBtn');
+  if(closeBtn) closeBtn.onclick = closeCashPayModal;
+  const cancelBtn = document.getElementById('cashCancelBtn');
+  if(cancelBtn) cancelBtn.onclick = closeCashPayModal;
+  const backdrop = document.getElementById('cashPayBackdrop');
+  if(backdrop) backdrop.onclick = closeCashPayModal;
+
+  // 確認收款：沒輸入 = 收剛好；有輸入但不足應收則擋下
+  const confirmBtn = document.getElementById('cashConfirmBtn');
+  if(confirmBtn){
+    confirmBtn.onclick = ()=>{
+      const hasInput = _cashReceived !== '';
+      if(hasInput && Number(_cashReceived) < _cashDue){
+        alert('實收金額不足，請重新輸入或按快捷');
+        return;
+      }
+      closeCashPayModal();
+      finalizeOrder('現金');
+    };
+  }
 }
 
 
@@ -548,9 +663,18 @@ const selections = flattenSelections(product);
   };
 
 
-  document.getElementById('closePaymentModal').onclick = ()=> document.getElementById('paymentModal').classList.add('hidden');
+    document.getElementById('closePaymentModal').onclick = ()=> document.getElementById('paymentModal').classList.add('hidden');
   document.querySelector('#paymentModal .modal-backdrop').onclick = ()=> document.getElementById('paymentModal').classList.add('hidden');
-  document.querySelectorAll('.pay-btn').forEach(btn=> btn.onclick = ()=> finalizeOrder(btn.dataset.payment));
+  // v20260620 現金改走自製收款視窗（先輸入實收、算找零）；其它付款方式維持直接結帳
+  document.querySelectorAll('.pay-btn').forEach(btn=> btn.onclick = ()=>{
+    const pm = btn.dataset.payment;
+    if(pm === '現金'){
+      openCashPayModal();      // 先開收款鍵盤，確認後才 finalizeOrder('現金')
+    } else {
+      finalizeOrder(pm);
+    }
+  });
+  bindCashPayModal();          // 綁定收款視窗的鍵盤/快捷/確認（只綁一次）
   if(document.getElementById('cartModalBtn')){
     document.getElementById('cartModalBtn').onclick = ()=>{
       document.getElementById('cartModal').style.display = 'flex';
