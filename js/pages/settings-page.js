@@ -576,6 +576,7 @@ export function initSettingsPage() {
 function loadCustomerDisplayToForm() {
   var cd = (state.settings && state.settings.customerDisplay) || {};
   var el = function(id) { return document.getElementById(id); };
+  if (el('cdHost'))        el('cdHost').value             = cd.host || '127.0.0.1';
   if (el('cdEnabled'))     el('cdEnabled').checked       = cd.enabled !== false;
   if (el('cdPort'))        el('cdPort').value             = cd.port    || 8081;
   if (el('cdIdleMessage')) el('cdIdleMessage').value      = cd.idleMessage || '歡迎光臨';
@@ -586,6 +587,7 @@ function saveCustomerDisplayFromForm() {
   if (!state.settings) state.settings = {};
   if (!state.settings.customerDisplay) state.settings.customerDisplay = {};
   var el = function(id) { return document.getElementById(id); };
+  if (el('cdHost'))        state.settings.customerDisplay.host        = (el('cdHost').value || '').trim() || '127.0.0.1';
   if (el('cdEnabled'))     state.settings.customerDisplay.enabled     = el('cdEnabled').checked;
   if (el('cdPort'))        state.settings.customerDisplay.port        = parseInt(el('cdPort').value, 10) || 8081;
   if (el('cdIdleMessage')) state.settings.customerDisplay.idleMessage = el('cdIdleMessage').value.trim() || '歡迎光臨';
