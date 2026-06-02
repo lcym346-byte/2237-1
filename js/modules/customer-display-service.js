@@ -102,7 +102,7 @@ async function _sendToDisplay(payload) {
   if (hash === _lastSentHash) return;
   _lastSentHash = hash;
 
-  const url = getBaseUrl(cfg) + '/display/ping';
+  const url = getBaseUrl(cfg) + '/display/update';
   try {
     const resp = await fetch(url, {
       method: 'POST',
