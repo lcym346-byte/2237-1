@@ -572,14 +572,83 @@ function bindCashPayModal(){
         alert('實收金額不足，請重新輸入或按快捷');
         return;
       }
-      closeCashPayModal();
+            closeCashPayModal();
       finalizeOrder('現金');
+    };
+  }
+}
+
+// ============================================================
+// v20260620 通用數字輸入視窗（取代 prompt，不調用系統鍵盤）
+// 用法：openNumPad({ title, hint, onConfirm:(value:number)=>void })
+// 按確認時把輸入的整數傳給 onConfirm；輸入為空視為 0
+// ============================================================
+let _numPadValue = '';
+let _numPadOnConfirm = null;
+let _numPadBound = false;
+
+function updateNumPadDisplay(){
+  const el = document.getElementById('numPadValue');
+  if(el) el.textContent = _numPadValue === '' ? '0' : _numPadValue;
+}
+
+function closeNumPad(){
+  const m = document.getElementById('numPadModal');
+  if(m) m.classList.add('hidden');
+  _numPadOnConfirm = null;
+}
+
+function openNumPad(opts){
+  opts = opts || {};
+  _numPadValue = '';
+  _numPadOnConfirm = typeof opts.onConfirm === 'function' ? opts.onConfirm : null;
+  const titleEl = document.getElementById('numPadTitle');
+  const hintEl = document.getElementById('numPadHint');
+  if(titleEl) titleEl.textContent = opts.title || '輸入數字';
+  if(hintEl) hintEl.textContent = opts.hint || '';
+  updateNumPadDisplay();
+  bindNumPad();
+  const m = document.getElementById('numPadModal');
+  if(m) m.classList.remove('hidden');
+}
+
+function bindNumPad(){
+  if(_numPadBound) return;     // 只綁一次
+  _numPadBound = true;
+
+  document.querySelectorAll('#numPadModal .np-key').forEach(k=>{
+    k.onclick = ()=>{
+      const key = k.dataset.key;
+      if(key === 'del'){
+        _numPadValue = _numPadValue.slice(0, -1);
+      } else if(_numPadValue.length < 7){
+        _numPadValue = String(Number(_numPadValue + key));
+      }
+      updateNumPadDisplay();
+    };
+  });
+
+  const closeBtn = document.getElementById('numPadCloseBtn');
+  if(closeBtn) closeBtn.onclick = closeNumPad;
+  const cancelBtn = document.getElementById('numPadCancelBtn');
+  if(cancelBtn) cancelBtn.onclick = closeNumPad;
+  const backdrop = document.getElementById('numPadBackdrop');
+  if(backdrop) backdrop.onclick = closeNumPad;
+
+  const confirmBtn = document.getElementById('numPadConfirmBtn');
+  if(confirmBtn){
+    confirmBtn.onclick = ()=>{
+      const v = _numPadValue === '' ? 0 : Number(_numPadValue);
+      const cb = _numPadOnConfirm;
+      closeNumPad();
+      if(cb) cb(v);
     };
   }
 }
 
 
 export function initPOSPage(){
+
     // 預約：訂單類型切換時切換時段選擇器
   const _otSel = document.getElementById('orderType');
   if(_otSel) _otSel.addEventListener('change', posTogglePosReservationBlock);
@@ -713,44 +782,53 @@ const selections = flattenSelections(product);
       renderCart();
     };
   }
-  document.getElementById('discountAmountBtn').onclick = ()=>{
-    const val = prompt('請輸入折扣金額（正數）');
-    if(!val) return;
+    document.getElementById('discountAmountBtn').onclick = ()=>{
+    openNumPad({
+      title: '折扣金額',
+      hint: '請輸入折扣金額（正整數）',
+      onConfirm: (val)=>{
+        const amount = Math.abs(Number(val));
+        if(!amount || amount <= 0) return alert('請輸入正確金額');
+        mergeOrPushCartItem({
+          rowId: id(),
+          productId: '_discount_',
+          name: '折扣 -$' + amount,
+          basePrice: -amount,
+          qty: 1,
+          note: '',
+          selections: [],
+          extraPrice: 0
+        });
+        renderCart();
+      }
+    });
+  };
 
-    const amount = Math.abs(Number(val));
-    if(!amount || amount <= 0) return alert('請輸入正確金額');
-    mergeOrPushCartItem({
-      rowId: id(),
-      productId: '_discount_',
-      name: '折扣 -$' + amount,
-      basePrice: -amount,
-      qty: 1,
-      note: '',
-      selections: [],
-      extraPrice: 0
+    document.getElementById('discountPercentBtn').onclick = ()=>{
+    openNumPad({
+      title: '折扣百分比',
+      hint: '請輸入 1～99（例如 10 表示打 9 折）',
+      onConfirm: (val)=>{
+        const percent = Math.abs(Number(val));
+        if(!percent || percent <= 0 || percent >= 100) return alert('請輸入 1～99 之間的數字');
+        const subtotal = state.cart.reduce((s,x)=> s + (x.basePrice + x.extraPrice) * x.qty, 0);
+        const discountAmount = Math.round(subtotal * percent / 100);
+        if(discountAmount <= 0) return alert('目前購物車金額為 0，無法計算折扣');
+        mergeOrPushCartItem({
+          rowId: id(),
+          productId: '_discount_',
+          name: '折扣 ' + percent + '% (-$' + discountAmount + ')',
+          basePrice: -discountAmount,
+          qty: 1,
+          note: '',
+          selections: [],
+          extraPrice: 0
+        });
+        renderCart();
+      }
     });
-    renderCart();
   };
-  document.getElementById('discountPercentBtn').onclick = ()=>{
-    const val = prompt('請輸入折扣百分比（例如：10 表示打9折）');
-    if(!val) return;
-    const percent = Math.abs(Number(val));
-    if(!percent || percent <= 0 || percent >= 100) return alert('請輸入 1～99 之間的數字');
-    const subtotal = state.cart.reduce((s,x)=> s + (x.basePrice + x.extraPrice) * x.qty, 0);
-    const discountAmount = Math.round(subtotal * percent / 100);
-    if(discountAmount <= 0) return alert('目前購物車金額為 0，無法計算折扣');
-    mergeOrPushCartItem({
-      rowId: id(),
-      productId: '_discount_',
-      name: '折扣 ' + percent + '% (-$' + discountAmount + ')',
-      basePrice: -discountAmount,
-      qty: 1,
-      note: '',
-      selections: [],
-      extraPrice: 0
-    });
-    renderCart();
-  };
+
   // ── 06.16/5：未開班鎖定 POS 頁 ──
   
   // 切換到 POS 頁時刷新鎖定狀態
