@@ -863,7 +863,7 @@
         <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
       <label style="font-size:13px;font-weight:600;color:#475569">數量</label>
       <button type="button" id="qtyMinusBtn" onclick="(function(){var i=document.getElementById('itemQtyInput');var v=Math.max(1,(parseInt(i.value,10)||1)-1);i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}));})()" style="width:36px;height:36px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;font-size:18px;font-weight:700;cursor:pointer">−</button>
-      <input id="itemQtyInput" type="number" min="1" value="1" style="width:70px;text-align:center">
+      <input id="itemQtyInput" type="number" min="1" value="1" readonly inputmode="none" style="width:70px;text-align:center;background:#fff;cursor:pointer">
       <button type="button" id="qtyPlusBtn" onclick="(function(){var i=document.getElementById('itemQtyInput');var v=Math.max(1,(parseInt(i.value,10)||1)+1);i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}));})()" style="width:36px;height:36px;border:1px solid #cbd5e1;background:#f1f5f9;border-radius:8px;font-size:18px;font-weight:700;cursor:pointer">＋</button>
       <span id="itemPricePreview" style="margin-left:auto;font-size:15px;font-weight:700;color:#1e293b">小計：$0</span>
     </div>
