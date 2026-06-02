@@ -27,16 +27,26 @@ let _lastSentHash = '';
 
 function getDisplayConfig() {
   const cfg = (state.settings && state.settings.customerDisplay) || {};
+  // token 來源優先序：
+  //   1) customerDisplay.token（設定頁手動填的，最高優先）
+  //   2) localStorage 'pos_apk_api_token'（print-bridge.js detectPrinters 從 /ping 同步寫入）
+  // 修正：APK 首次啟動即自動產生隨機 ApiToken（UUID），客顯原本只讀 cfg.token 且預設為空字串，
+  //       導致 POST /display/update 帶空 token → APK checkToken 回 unauthorized → 客顯永遠停在 idle。
+  let token = (cfg.token && String(cfg.token).trim()) || '';
+  if (!token) {
+    try { token = localStorage.getItem('pos_apk_api_token') || ''; } catch (e) {}
+  }
   return {
     enabled: cfg.enabled !== false,   // 預設啟用
     port:    cfg.port    || 8081,
-    token:   cfg.token   || ''
+    token
   };
 }
 
 function getBaseUrl(port) {
   return 'http://127.0.0.1:' + port;
 }
+
 
 // ==================== 輪播圖收集（v20260602） ====================
 
