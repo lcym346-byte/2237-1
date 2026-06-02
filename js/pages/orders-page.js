@@ -157,35 +157,91 @@ function addOrderToCart(orderId){
 
 // ── 作廢訂單（取代刪除）──
 // 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
+// ── 作廢訂單（取代刪除）──
+// 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
+// v20260620：作廢原因改為「選單式」按鈕，全程不調用系統鍵盤
+const VOID_REASONS = [
+  '客人取消',
+  '點錯餐 / 輸入錯誤',
+  '重複下單',
+  '缺貨 / 無法製作',
+  '客訴 / 重做',
+  '測試單',
+  '其他原因'
+];
+
 function voidOrder(orderId){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
   const o = state.orders.find(x=>x.id===orderId);
   if(!o) return;
   if(o.status === 'void') return alert('此訂單已作廢');
 
-  const reason = prompt(`作廢訂單「${o.orderNo}」\n\n金額：${money(o.total)}\n\n請輸入作廢原因（必填）：`);
-  if(reason === null) return; // 使用者取消
-  const trimmed = String(reason).trim();
-  if(!trimmed){
-    alert('必須輸入作廢原因');
-    return;
-  }
+  openVoidReasonModal(o, (reason)=>{
+    const currentSession = getCurrentSession();
+    const staffId = currentSession ? currentSession.staffId : '';
 
-  const currentSession = getCurrentSession();
-  const staffId = currentSession ? currentSession.staffId : '';
+    // 記錄原始狀態，方便日後追溯
+    o.statusBeforeVoid = o.status || '';
+    o.status = 'void';
+    o.voidedAt = new Date().toISOString();
+    o.voidedReason = reason;
+    o.voidedBy = staffId;
+    o.updatedAt = new Date().toISOString();
 
-  // 記錄原始狀態，方便日後追溯
-  o.statusBeforeVoid = o.status || '';
-  o.status = 'void';
-  o.voidedAt = new Date().toISOString();
-  o.voidedReason = trimmed;
-  o.voidedBy = staffId;
-  o.updatedAt = new Date().toISOString();
-
-  persistAll();
-  window.refreshAllViews();
-  alert(`已作廢訂單「${o.orderNo}」\n原因：${trimmed}`);
+    persistAll();
+    window.refreshAllViews();
+    alert(`已作廢訂單「${o.orderNo}」\n原因：${reason}`);
+  });
 }
+
+// 作廢原因選單 modal（動態建立，不需改 index.html，全程不打字）
+function openVoidReasonModal(order, onPick){
+  // 移除舊的（避免重複）
+  const old = document.getElementById('voidReasonModal');
+  if(old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'voidReasonModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.6);padding:20px;';
+
+  const reasonBtns = VOID_REASONS.map(r=>
+    `<button type="button" class="void-reason-btn" data-reason="${escapeHtml(r)}"
+       style="padding:14px;font-size:16px;font-weight:600;border:1px solid #fca5a5;background:#fef2f2;color:#b91c1c;border-radius:10px;cursor:pointer;text-align:left">${escapeHtml(r)}</button>`
+  ).join('');
+
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);overflow:hidden">
+      <div style="padding:16px 18px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center">
+        <h2 style="margin:0;font-size:18px;color:#dc2626">作廢訂單</h2>
+        <button type="button" id="voidReasonClose" style="border:none;background:none;font-size:22px;cursor:pointer;color:#94a3b8">✕</button>
+      </div>
+      <div style="padding:14px 18px">
+        <div style="font-size:14px;color:#475569;margin-bottom:4px">訂單「${escapeHtml(order.orderNo || '')}」　金額：${money(order.total)}</div>
+        <div style="font-size:13px;color:#64748b;margin-bottom:12px">請選擇作廢原因（點選即作廢）：</div>
+        <div style="display:grid;grid-template-columns:1fr;gap:8px">${reasonBtns}</div>
+      </div>
+      <div style="padding:12px 18px;border-top:1px solid #f1f5f9;text-align:right">
+        <button type="button" id="voidReasonCancel"
+          style="padding:10px 18px;border:1px solid #cbd5e1;background:#f1f5f9;color:#475569;border-radius:8px;cursor:pointer">取消</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const close = ()=> modal.remove();
+  modal.addEventListener('click', (e)=>{ if(e.target === modal) close(); });
+  modal.querySelector('#voidReasonClose').onclick = close;
+  modal.querySelector('#voidReasonCancel').onclick = close;
+  modal.querySelectorAll('.void-reason-btn').forEach(btn=>{
+    btn.onclick = ()=>{
+      const reason = btn.dataset.reason;
+      close();
+      if(onPick) onPick(reason);
+    };
+  });
+}
+
 
 function renderOrdersSection(wrap, orders, mode){
   // mode: 'pending' | 'completed' | 'void'
@@ -242,7 +298,7 @@ function renderOrdersSection(wrap, orders, mode){
         <button class="secondary-btn small-btn">列印顧客單</button>
         <button class="secondary-btn small-btn">列印廚房單</button>
         <button class="secondary-btn small-btn">列印標籤</button>
-        ${isPending ? '<button class="primary-btn small-btn">改為已付款</button>' : ''}
+        ${isPending ? '<button class="primary-btn small-btn">結帳</button>' : ''}
       </div>
     `;
     const btns = Array.from(row.querySelectorAll('button'));
