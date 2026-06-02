@@ -103,7 +103,6 @@ async function _sendToDisplay(payload) {
   _lastSentHash = hash;
 
   const url = getBaseUrl(cfg) + '/display/update';
-  const url = getBaseUrl(cfg) + '/display/ping';
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -265,7 +264,6 @@ export async function pingDisplayServer() {
   try {
     const cfg = getDisplayConfig();
     const url = getBaseUrl(cfg) + '/display/update';
-    const url = getBaseUrl(cfg) + '/display/ping';
     const resp = await fetch(url, { method: 'GET' });
     if (resp.ok) {
       const data = await resp.json();
