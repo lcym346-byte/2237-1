@@ -28,22 +28,21 @@ let _lastSentHash = '';
 
 function getDisplayConfig() {
   const cfg = (state.settings && state.settings.customerDisplay) || {};
-  // token：優先用 print-bridge 從 APK /ping 抓到並存進 localStorage 的那把（與列印共用，確定正確）；
-  // 沒有才退用設定裡的 customerDisplay.token（目前一直是空字串，正是客顯被 APK 擋掉的原因）
   let token = '';
   try { token = getApiToken() || ''; } catch (e) {}
   if (!token) token = cfg.token || '';
   return {
     enabled: cfg.enabled !== false,
+    host:    (cfg.host && String(cfg.host).trim()) || '127.0.0.1',
     port:    cfg.port    || 8081,
     token:   token
   };
 }
 
-
-function getBaseUrl(port) {
-  return 'http://127.0.0.1:' + port;
+function getBaseUrl(cfg) {
+  return 'http://' + cfg.host + ':' + cfg.port;
 }
+
 
 
 // ==================== 輪播圖收集（v20260602） ====================
@@ -103,7 +102,8 @@ async function _sendToDisplay(payload) {
   if (hash === _lastSentHash) return;
   _lastSentHash = hash;
 
-  const url = getBaseUrl(cfg.port) + '/display/update';
+  const url = getBaseUrl(cfg) + '/display/update';
+  const url = getBaseUrl(cfg) + '/display/ping';
   try {
     const resp = await fetch(url, {
       method: 'POST',
@@ -264,7 +264,8 @@ export function displayIdle() {
 export async function pingDisplayServer() {
   try {
     const cfg = getDisplayConfig();
-    const url = getBaseUrl(cfg.port) + '/display/ping';
+    const url = getBaseUrl(cfg) + '/display/update';
+    const url = getBaseUrl(cfg) + '/display/ping';
     const resp = await fetch(url, { method: 'GET' });
     if (resp.ok) {
       const data = await resp.json();
