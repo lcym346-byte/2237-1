@@ -961,6 +961,42 @@
   }
   .cash-quick:active{ background:#bfdbfe; }
 </style>
+<!-- ===== 通用數字輸入 Modal（折扣等用，自製鍵盤）v20260620 ===== -->
+<div id="numPadModal" class="modal hidden">
+  <div class="modal-backdrop" id="numPadBackdrop"></div>
+  <div class="modal-dialog" style="max-width:360px;width:92%">
+    <div class="row between wrap">
+      <h2 id="numPadTitle" style="margin:0">輸入數字</h2>
+      <button id="numPadCloseBtn" class="ghost-btn">✕</button>
+    </div>
+
+    <div id="numPadHint" style="font-size:13px;color:#64748b;margin-top:6px"></div>
+
+    <div style="background:#f1f5f9;border-radius:10px;padding:14px;margin-top:10px;text-align:right">
+      <span id="numPadValue" style="font-size:30px;font-weight:800;color:#0f172a">0</span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px">
+      <button type="button" class="cash-key np-key" data-key="1">1</button>
+      <button type="button" class="cash-key np-key" data-key="2">2</button>
+      <button type="button" class="cash-key np-key" data-key="3">3</button>
+      <button type="button" class="cash-key np-key" data-key="4">4</button>
+      <button type="button" class="cash-key np-key" data-key="5">5</button>
+      <button type="button" class="cash-key np-key" data-key="6">6</button>
+      <button type="button" class="cash-key np-key" data-key="7">7</button>
+      <button type="button" class="cash-key np-key" data-key="8">8</button>
+      <button type="button" class="cash-key np-key" data-key="9">9</button>
+      <button type="button" class="cash-key np-key" data-key="00">00</button>
+      <button type="button" class="cash-key np-key" data-key="0">0</button>
+      <button type="button" class="cash-key np-key" data-key="del" style="background:#fee2e2;color:#b91c1c">⌫</button>
+    </div>
+
+    <div class="form-actions" style="margin-top:14px">
+      <button id="numPadConfirmBtn" class="primary-btn" style="flex:2;background:#10b981">確認</button>
+      <button id="numPadCancelBtn" class="secondary-btn" style="flex:1">取消</button>
+    </div>
+  </div>
+</div>
 
 <!-- ===== 開始值班 Modal ===== -->
 <div id="startSessionModal" class="modal hidden">
