@@ -580,7 +580,13 @@ function loadCustomerDisplayToForm() {
   if (el('cdEnabled'))     el('cdEnabled').checked       = cd.enabled !== false;
   if (el('cdPort'))        el('cdPort').value             = cd.port    || 8081;
   if (el('cdIdleMessage')) el('cdIdleMessage').value      = cd.idleMessage || '歡迎光臨';
+  if (el('cdSlidesBaseUrl')) el('cdSlidesBaseUrl').value  = cd.slidesBaseUrl || '';
+  var slides = Array.isArray(cd.slides) ? cd.slides : [];
+  for (var i = 1; i <= 5; i++) {
+    if (el('cdSlide' + i)) el('cdSlide' + i).value = slides[i - 1] || '';
+  }
 }
+
 
 /** 從表單收集客顯設定並儲存到 state */
 function saveCustomerDisplayFromForm() {
@@ -591,8 +597,19 @@ function saveCustomerDisplayFromForm() {
   if (el('cdEnabled'))     state.settings.customerDisplay.enabled     = el('cdEnabled').checked;
   if (el('cdPort'))        state.settings.customerDisplay.port        = parseInt(el('cdPort').value, 10) || 8081;
   if (el('cdIdleMessage')) state.settings.customerDisplay.idleMessage = el('cdIdleMessage').value.trim() || '歡迎光臨';
+  if (el('cdSlidesBaseUrl')) {
+    var b = (el('cdSlidesBaseUrl').value || '').trim();
+    if (b && !/\/$/.test(b)) b = b + '/';
+    state.settings.customerDisplay.slidesBaseUrl = b;
+  }
+  var slides = [];
+  for (var i = 1; i <= 5; i++) {
+    if (el('cdSlide' + i)) slides.push((el('cdSlide' + i).value || '').trim());
+  }
+  state.settings.customerDisplay.slides = slides;
   persistAll();
 }
+
 
 /** 掛接客顯設定 tile 點擊與 Modal 儲存按鈕 */
 function initCustomerDisplaySettings() {
