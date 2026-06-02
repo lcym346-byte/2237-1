@@ -17,6 +17,7 @@
  */
 
 import { state } from '../core/store.js';
+import { getApiToken } from './print-bridge.js';
 
 const DISPLAY_THROTTLE_MS = 400; // 0.4 秒節流
 const MAX_SLIDES = 12;           // 輪播圖最多張數（避免 payload 過大）
@@ -27,21 +28,18 @@ let _lastSentHash = '';
 
 function getDisplayConfig() {
   const cfg = (state.settings && state.settings.customerDisplay) || {};
-  // token 來源優先序：
-  //   1) customerDisplay.token（設定頁手動填的，最高優先）
-  //   2) localStorage 'pos_apk_api_token'（print-bridge.js detectPrinters 從 /ping 同步寫入）
-  // 修正：APK 首次啟動即自動產生隨機 ApiToken（UUID），客顯原本只讀 cfg.token 且預設為空字串，
-  //       導致 POST /display/update 帶空 token → APK checkToken 回 unauthorized → 客顯永遠停在 idle。
-  let token = (cfg.token && String(cfg.token).trim()) || '';
-  if (!token) {
-    try { token = localStorage.getItem('pos_apk_api_token') || ''; } catch (e) {}
-  }
+  // token：優先用 print-bridge 從 APK /ping 抓到並存進 localStorage 的那把（與列印共用，確定正確）；
+  // 沒有才退用設定裡的 customerDisplay.token（目前一直是空字串，正是客顯被 APK 擋掉的原因）
+  let token = '';
+  try { token = getApiToken() || ''; } catch (e) {}
+  if (!token) token = cfg.token || '';
   return {
-    enabled: cfg.enabled !== false,   // 預設啟用
+    enabled: cfg.enabled !== false,
     port:    cfg.port    || 8081,
-    token
+    token:   token
   };
 }
+
 
 function getBaseUrl(port) {
   return 'http://127.0.0.1:' + port;
