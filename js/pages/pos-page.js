@@ -659,6 +659,26 @@ export function initPOSPage(){
     const p = state.products.find(x=>x.id===state.configTarget?.productId);
     if(p) updateItemPricePreview(p);
   });
+    // v20260620 點數量框 → 開自製數字鍵盤輸入數量（不調用系統鍵盤）
+  (function(){
+    const qtyEl = document.getElementById('itemQtyInput');
+    if(!qtyEl) return;
+    qtyEl.addEventListener('click', (e)=>{
+      e.preventDefault();
+      const cur = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+      openNumPad({
+        title: '數量',
+        hint: '請輸入數量（最少 1）',
+        onConfirm: (val)=>{
+          const q = Math.max(1, Math.floor(Number(val) || 0));
+          qtyEl.value = q;
+          // 觸發既有的 input 監聽，更新小計預覽
+          qtyEl.dispatchEvent(new Event('input', { bubbles:true }));
+        }
+      });
+    });
+  })();
+
   document.getElementById('saveProductConfigBtn').onclick = ()=>{
     const product = state.products.find(p=>p.id===state.configTarget?.productId);
     if(!product) return closeProductConfig();
