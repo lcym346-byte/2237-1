@@ -126,6 +126,7 @@ const DEFAULT_IMAGE_LIBRARY = {
 // ── v20260525 新增：客顯預設設定 ──
 const DEFAULT_CUSTOMER_DISPLAY = {
   enabled:     true,   // 是否啟用客顯推送
+  host:        '127.0.0.1',  // 客顯主機 IP：POS 與客顯同一台(T2)填 127.0.0.1；POS 在另一台(iPad)請填 T2 的區域 IP，例 192.168.1.101
   port:        8081,   // DisplayHttpServer 埠號（與 PrintHttpServer 8080 分開）
   token:       '',     // 與 APK 共用同一個 ApiToken（由 print-bridge.js detectPrinters 自動取得後填入）
   idleMessage: '歡迎光臨'  // 待機時顯示的廣告語
