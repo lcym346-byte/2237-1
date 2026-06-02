@@ -56,6 +56,21 @@ function getBaseUrl(cfg) {
  */
 function collectSlideImages() {
   try {
+    // v20260603：優先使用客顯獨立輪播圖（與餐點圖無關）
+    const cd = (state.settings && state.settings.customerDisplay) || {};
+    let cdBase = (cd.slidesBaseUrl || '').trim();
+    if (cdBase && !/\/$/.test(cdBase)) cdBase = cdBase + '/';
+    const cdSlides = Array.isArray(cd.slides) ? cd.slides : [];
+    const independent = [];
+    for (const name of cdSlides) {
+      const n = (name || '').trim();
+      if (!n) continue;
+      // 已是完整網址就直接用，否則用 slidesBaseUrl 拼
+      independent.push(/^https?:\/\//i.test(n) ? n : (cdBase + n));
+    }
+    if (independent.length > 0) return independent.slice(0, MAX_SLIDES);
+
+    // 沒設獨立輪播圖 → 退回原本商品圖邏輯
     const products = Array.isArray(state.products) ? state.products : [];
     const lib = (state.settings && state.settings.imageLibrary) || {};
     let base = (lib.baseUrl || '').trim();
@@ -84,6 +99,7 @@ function collectSlideImages() {
     return [];
   }
 }
+
 
 // ==================== 核心推送 ====================
 
