@@ -611,6 +611,8 @@ function openNumPad(opts){
   const m = document.getElementById('numPadModal');
   if(m) m.classList.remove('hidden');
 }
+// v20260603：點數查詢區跨檔呼叫用
+window.openNumPad = openNumPad;
 
 function bindNumPad(){
   if(_numPadBound) return;     // 只綁一次
