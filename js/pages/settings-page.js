@@ -561,6 +561,79 @@ function saveImageLibrarySettings(){
   alert('圖庫設定已儲存');
 }
 
+// ── 會員點數查詢（原 Google 備份區改用）──
+function getQueryStoreCode(){
+  return (state.settings && state.settings.dashboard && state.settings.dashboard.storeId) || '';
+}
+
+function resetPointsQueryUI(){
+  var phoneEl = document.getElementById('pointsQueryPhone');
+  if(phoneEl) phoneEl.value = '';
+  var balBox = document.getElementById('pointsQueryBalanceBox');
+  if(balBox) balBox.textContent = '點數餘額：—';
+  var histBox = document.getElementById('pointsQueryHistoryBox');
+  if(histBox) histBox.innerHTML = '（尚未查詢）';
+}
+
+async function runPointsQuery(){
+  var phoneEl = document.getElementById('pointsQueryPhone');
+  var phone = (phoneEl && phoneEl.value || '').trim();
+  if(!phone){ alert('請先輸入顧客手機號碼'); return; }
+  var storeCode = getQueryStoreCode();
+  if(!storeCode){ alert('尚未設定店鋪代碼(storeId)，無法查詢'); return; }
+  var balBox = document.getElementById('pointsQueryBalanceBox');
+  var histBox = document.getElementById('pointsQueryHistoryBox');
+  if(balBox) balBox.textContent = '查詢中…';
+  if(histBox) histBox.innerHTML = '查詢中…';
+  try{
+    var cust = await import('../modules/customer-service.js');
+    var res = await cust.getPointsHistory(phone, storeCode);
+    var balance = (res && typeof res.balance === 'number') ? res.balance : 0;
+    var history = (res && Array.isArray(res.history)) ? res.history : [];
+    if(balBox) balBox.textContent = '點數餘額：' + balance + ' 點';
+    if(histBox){
+      if(history.length === 0){
+        histBox.innerHTML = '（無交易紀錄）';
+      } else {
+        histBox.innerHTML = history.slice().reverse().map(function(h){
+          var t = h.time ? new Date(h.time).toLocaleString() : '';
+          var delta = Number(h.points || 0);
+          var sign = delta > 0 ? '+' : '';
+          var color = delta > 0 ? '#16a34a' : '#dc2626';
+          return '<div style="padding:4px 0;border-bottom:1px dashed #e2e8f0">'
+            + '<span style="color:#64748b">' + escapeHtml(t) + '</span> '
+            + '<strong>' + escapeHtml(h.type || '') + '</strong> '
+            + '<span style="color:' + color + ';font-weight:700">' + sign + delta + '</span>'
+            + (h.orderNo ? ' <span style="color:#94a3b8">#' + escapeHtml(h.orderNo) + '</span>' : '')
+            + '</div>';
+        }).join('');
+      }
+    }
+  }catch(err){
+    if(balBox) balBox.textContent = '查詢失敗';
+    if(histBox) histBox.innerHTML = '查詢失敗：' + escapeHtml(err && err.message ? err.message : String(err));
+  }
+}
+
+function bindPointsQueryEvents(){
+  var phoneEl = document.getElementById('pointsQueryPhone');
+  if(phoneEl){
+    phoneEl.addEventListener('click', function(){
+      if(typeof window.openNumPad !== 'function'){
+        alert('數字鍵盤尚未就緒，請先進入點餐頁一次');
+        return;
+      }
+      window.openNumPad({
+        title: '輸入手機號碼',
+        hint: '請輸入顧客手機號碼',
+        onConfirm: function(val){ phoneEl.value = String(val || ''); }
+      });
+    });
+  }
+  var btn = document.getElementById('pointsQueryBtn');
+  if(btn) btn.addEventListener('click', runPointsQuery);
+}
+
 // ── 主函式 ──
 
 export function initSettingsPage() {
@@ -706,13 +779,15 @@ function initCustomerDisplaySettings() {
   });
 
 
-  // Google 備份
+    // 會員點數查詢（原 Google 備份區改用）
   document.querySelector('[data-modal="modalGoogle"]')?.addEventListener('click', function() {
-    loadGoogleSettingsToForm();
+    resetPointsQueryUI();
     openModal('modalGoogle');
   });
+  bindPointsQueryEvents();
 
   // 本機資料
+
   document.querySelector('[data-modal="modalLocalData"]')?.addEventListener('click', function() {
     openModal('modalLocalData');
   });
