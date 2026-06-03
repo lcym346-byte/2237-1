@@ -235,7 +235,13 @@ function showOnlineOrderOverlay(orderId){
       const result = await confirmOnlineOrder(orderId, prepTime, msg);
       stopAlarm();
       if(result){
-        const posOrder = buildRealtimeOrderForPOS(result);
+                const posOrder = buildRealtimeOrderForPOS(result);
+        try {
+          const cust = await import('./customer-service.js');
+          // 接單預扣折抵點數（以真實餘額為上限），並把應付調整為 小計 − 實際折抵
+          const used = await cust.deductPointsOnConfirm(posOrder);
+          if(used > 0) posOrder.total = Math.max(0, Number(posOrder.subtotal || 0) - used);
+        } catch (e) { console.warn('接單預扣點數失敗：', e); }
         if(!Array.isArray(state.orders)) state.orders = [];
         state.orders.unshift(posOrder);
         persistAll();
@@ -245,6 +251,7 @@ function showOnlineOrderOverlay(orderId){
           cust.upsertCustomerFromOrder(posOrder);
           cust.syncCustomerToFirebase(posOrder);
         } catch (e) { console.warn('顧客主檔更新失敗：', e); }
+
 
         if(!isReservation){
           try{
@@ -320,7 +327,12 @@ function startAlarm(orderId){
     try{
       const result = await confirmOnlineOrder(autoOrderId, 20, '系統自動接單，預計準備時間 20 分鐘');
       if(result){
-        const posOrder = buildRealtimeOrderForPOS(result);
+                const posOrder = buildRealtimeOrderForPOS(result);
+        try {
+          const cust = await import('./customer-service.js');
+          const used = await cust.deductPointsOnConfirm(posOrder);
+          if(used > 0) posOrder.total = Math.max(0, Number(posOrder.subtotal || 0) - used);
+        } catch (e) { console.warn('接單預扣點數失敗：', e); }
         if(!Array.isArray(state.orders)) state.orders = [];
         state.orders.unshift(posOrder);
         persistAll();
@@ -330,6 +342,7 @@ function startAlarm(orderId){
           cust.upsertCustomerFromOrder(posOrder);
           cust.syncCustomerToFirebase(posOrder);
         } catch (e) { console.warn('顧客主檔更新失敗：', e); }
+
 
         try{
           const { printOrderReceipt, printKitchenCopies } = await import('./print-service.js');
@@ -614,10 +627,12 @@ export function buildRealtimeOrderForPOS(remote){
     // ===== 套用線上訂單帶來的優惠碼／折扣 =====
   // 顧客送單時 payload 已寫入 discount / couponCode / couponMessage
   // 折扣不可超過小計、不可為負
-  const remoteDiscount = Math.max(0, Math.min(Number(remote.discount || 0), subtotal));
+    // v20260603：優惠不折現，金額將於結帳完成時轉成點數；total 先放小計，接單預扣點數後再調整
+  const remoteDiscount = Math.max(0, Number(remote.discount || 0));
   const remoteCouponCode = String(remote.couponCode || '').toUpperCase();
   const remoteCouponMessage = String(remote.couponMessage || '');
-  const grandTotal = Math.max(0, subtotal - remoteDiscount);
+  const grandTotal = subtotal;
+
 
   return {
     id: 'online_' + remote.id,
@@ -642,7 +657,12 @@ export function buildRealtimeOrderForPOS(remote){
     discountAmount: remoteDiscount,
     couponCode: remoteCouponCode,
     couponMessage: remoteCouponMessage,
+    pointsRequested: Math.max(0, Math.round(Number(remote.pointsRequested || 0))),
+    pointsUsed: 0,
+    pointsEarned: 0,
+    pointsSettled: false,
     sessionId: getCurrentSession()?.id || null,
+
     subtotal,
     total: grandTotal,
     items
