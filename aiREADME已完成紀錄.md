@@ -9,6 +9,7 @@
 
 | 版本 | 日期 | 重點 |
 |---|---|---|
+| v20260603-points | 2026-06-03 | 會員點數模組：賺點/折抵預扣/作廢退點/POS查詢 + Firebase points 規則 |
 | v20260616 | 2026-05-20 | SKU 圖庫工具按鈕 + 2234 storeId 部署疏失修正 + 線上點餐標題來源確認 + Google OAuth 環境排查 |
 | v20260615 | 2026-05-20 | 促銷整合 + 優惠碼帶入訂單 + 訂單卡折扣明細 + 預約 30 分鐘提醒 + SKU 圖庫反推 + 三個舊 bug |
 | v20260613 | 2026-05-13 | 營業日 BD + 外送統計 + 修改改加單 |
@@ -19,6 +20,30 @@
 | v20260602 | 2026-04-xx | 印表機字串排版、token 驗證初版、SW cache 更新 |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+## v20260603-points — 會員點數模組（賺點 / 折抵 / 退點 / POS 查詢）
+
+### 規則
+- 賺點：僅線上單，店家確認＋結帳完成(completed) 才入帳，賺點 = order.discountAmount（優惠不折現、全轉點）。
+- 折抵：1點=1元，僅線上點餐用。接單(confirmed)時 POS 預扣 min(pointsRequested, 真實餘額)，杜絕超折。
+- 退點：pending 單作廢退回 pointsUsed；completed 作廢不退。
+- 儲存：points/{storeCode}/{phone}/balance 與 /history/{pushId}，各店獨立；POS 才能寫，顧客匿名只讀。
+
+### 異動檔案
+1. js/modules/customer-service.js — 新增點數核心六函式：getPointsBalance、_writePointsTxn（改餘額＋推 history，欄位 at/type/delta/balanceAfter/orderNo）、deductPointsOnConfirm（回寫 order.pointsUsed）、refundPointsOnCancel（completed 不退）、earnPointsOnComplete（pointsSettled 防重複）、getPointsHistory（回 {balance, history} 新→舊）。
+2. js/modules/realtime-order-service.js — showOnlineOrderOverlay 彈窗接單已接 deductPointsOnConfirm 並調整 total；新增 export _getRef / _dbApi / getStoreCode 供 customer-service 跨檔讀寫 points。
+3. js/modules/order-service.js — 第 2 行 import 補 persistAll；markPendingOrderPaid 結帳完成且 discountAmount>0 且未 settle 時 import customer-service 呼叫 earnPointsOnComplete 後 persistAll。
+4. js/pages/orders-page.js — 列表接單 accept-btn 補 deductPointsOnConfirm（與彈窗一致）；voidOrder callback 改 async，pending 單作廢時 refundPointsOnCancel。
+5. index.html — modalGoogle 改為「🎯 會員點數查詢」區（電話輸入框＋查詢鈕＋餘額框＋紀錄框）；設定頁 tile 文字改「會員點數查詢」。
+6. js/pages/settings-page.js — 新增 getQueryStoreCode / resetPointsQueryUI / openPhonePad（自製字串鍵盤保留開頭 0）/ runPointsQuery（欄位 at/delta，type 翻賺點/折抵/退點）/ bindPointsQueryEvents；Google tile 綁定改為開點數查詢區，移除舊 loadGoogleSettingsToForm。
+7. Firebase 安全規則 — 新增 points/{storeCode}/{phone}：.read=true（顧客匿名只讀餘額/紀錄）、.write 限 admin 或 stores/{storeCode}===true 員工；balance 驗證為 >=0 數字，history 子項驗證 at/type/delta/balanceAfter 且 type∈{earn,use,refund}。已於 Console 發布。
+
+### 設計決策 / 注意
+- 電話輸入不可用 pos-page 的 openNumPad（走 Number() 會吃掉開頭 0），改用 settings-page 自製字串鍵盤 openPhonePad，與 points key（replace(/\D/g,'') 保留 0）對齊。
+- 查詢區沿用 modalGoogle 容器（保留原 id 與開關機制），只換內容與綁定，降低風險。
+- storeCode 來源統一為 state.settings.dashboard.storeId（與接單預扣、realtime getStoreCode 同源）。
+- 待實機驗證：全鏈路（帶券下單→接單預扣→結帳賺點→查詢顯示）、作廢退點 pending/completed 差異。
+
+## v20260603 — 結帳列印偵測逾時 / 客顯推送干擾列印（已驗證 2026-06-03）
 
 ## v20260603 — 結帳列印偵測逾時 / 客顯推送干擾列印（已驗證 2026-06-03）
 
