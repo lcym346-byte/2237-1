@@ -20,7 +20,40 @@
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
 
----
+## v20260603 — 結帳列印偵測逾時 / 客顯推送干擾列印（已驗證 2026-06-03）
+
+### 問題
+- 症狀：結帳不會自動印廚房單，改跳瀏覽器 PDF；從「訂單查詢」手動列印正常。
+- 實機 log 證據（T2，08:43）：結帳當下 detectPrinters 對 127.0.0.1:8080 的 /ping
+  逾時 1500ms → fallback BROWSER → 跳 PDF；閒置時同一支 ping 要 1248ms 才回。
+- 根因（雙重）：
+  1. 客顯（8081）POST 在結帳瞬間搶佔 T2（2GB RAM）連線池與 CPU，
+     把緊接其後的列印 ping（8080）拖到逾時。
+  2. print-bridge 的 PING_TIMEOUT_MS=1500 太短（實機閒置已要 1248ms，邊際幾乎為 0），
+     且 fetchWithTimeout 只對 socket 死掉重試，timeout 不重試 → 一逾時就掉 browser。
+
+### 修正一：js/modules/print-bridge.js（commit 1，已驗證直印恢復）
+- PING_TIMEOUT_MS：1500 → 3500。
+- fetchWithTimeout：重試條件新增 timeout（原僅 'Failed to fetch'/'NetworkError'，
+  加上 || msg.indexOf('timeout')>=0），逾時也重試一次（間隔 250ms）。
+- 驗證：2026-06-03 09:17 結帳，廚房單由 APK 直印實體紙（單號 OD1780478245090），不再跳 PDF。
+
+### 修正二：js/modules/customer-display-service.js（v20260603-interval，commit baa1391→b9caf5a）
+- 移除 400ms 節流（DISPLAY_THROTTLE_MS / _throttledSend）。
+- 改為 _postNow(payload)：保留 _lastSentHash 去重，內容相同不重送。
+- 新增固定間隔機制：IDLE_INTERVAL_MS=10000（10 秒），_ensureIdleTimer/_resetIdleTimer
+  管理單一 setInterval；無購物車變動時每 10 秒重送 _lastPayload。
+- 購物車變動（displayCart）：更新 _lastPayload → _resetIdleTimer() → _postNow() 立即推送。
+- displayPaid 加 PAID_DELAY_MS=600ms 延遲再推，讓結帳列印 ping 先完成；推送後 5 秒回 displayIdle。
+- collectSlideImages 優先序：customerDisplay.slides(含 slidesBaseUrl) → product.image/skuMap，上限 12。
+- 設計原則落實：購物車有變動→立即推送；無變動→每 10 秒固定推送，避免結帳瞬間爆量 POST。
+
+### 注意（非程式問題，已排除）
+- 廚房單標題出現「Bd」並非 bug：getReceiptHtml 廚房單會先印 cfg.storeName 一行、
+  再印「** 廚房單 **」一行。當時 printConfig.storeName 被設成「Bd」（測試殘留），
+  故印成兩行黏在一起。解法為設定頁→列印設定→修正店名或取消廚房單「店名」欄位勾選，
+  無需改程式。getPrintSettings 店名預設為 cfg.storeName || '我的店'。
+
 ---
 v20260525 客顯功能）
 Web POS（lcym346-byte/2237-1）
