@@ -48,8 +48,7 @@
 - Sunmi T2 Android 7.1.1 不支援部分新 API
 - WebView 內 OAuth 被 Google 封鎖（disallowed_useragent）→ 因此採純後台 HTTP 架構，APK 不再開 WebView
 - Android 沒 console / Logcat 不易接：所有錯誤都必須寫到 LogManager 檔案 + HTTP /logs 端點
-- 使用者不寫程式：所有改動必須給「完整檔案內容 + 檔案路徑 + GitHub 編輯連結 + Commit message」，禁止只貼片段叫使用者插入
-
+- 使用者不寫程式：所有改動必須給「 檔案路徑+完整段落跟錨點。如果修改超過3處以上就給完整檔案內容** + +GitHub edit 連結 + Commit message」；若必須給片段，至少要包含「上下各 3 行不改動的內容」作為錨點，禁止只說「在第 N 行加上 X」。
 ---
 
 ## 三、列印架構
@@ -158,7 +157,7 @@ POS 與看板統一使用「營業日」概念，跨日營業時段歸屬同一�
 7. 跨店資料路徑一律使用 `state.settings.store.storeId || state.settings.dashboard.storeId`，禁止寫死 `store001`。
 8. PWA 升版後**必須升 service-worker.js 的 CACHE_NAME**，否則使用者要手動清快取才能載入新檔。
 9. 修改 Firebase 安全規則前必須先在 Firebase Console 備份原規則，並回報新增的路徑。
-10. **使用者不寫程式**：所有改動必須給「 檔案路徑+**完整段落跟錨點。如果修改超過2處以上就給完整檔案內容** + +GitHub edit 連結 + Commit message」；若必須給片段，至少要包含「上下各 3 行不改動的內容」作為錨點，禁止只說「在第 N 行加上 X」。
+10. **使用者不寫程式**：所有改動必須給「 檔案路徑+**完整段落跟錨點。如果修改超過3處以上就給完整檔案內容** + +GitHub edit 連結 + Commit message」；若必須給片段，至少要包含「上下各 3 行不改動的內容」作為錨點，禁止只說「在第 N 行加上 X」。
 11. 一次 commit 只動一個檔案；多檔案改動拆成多個 commit，每個 commit 都要可獨立還原。
 12. 收到「網頁剩框架沒資料」「畫面空白」「Console SyntaxError」這類回報，**先懷疑上一次改動有沒有破壞語法**，立刻完整讀取該檔案、找出破壞點，不要急著加 console.log 或重寫邏輯。
 13. README 內若需嵌入 markdown 三反引號區塊，內層改用四空白縮排，避免破壞外層 fence。
