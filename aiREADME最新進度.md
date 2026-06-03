@@ -3,7 +3,7 @@
 > 本檔記錄**當前版本進行中的項目、待處理事項、已知問題**。
 > 已完成項目請見 `aiREADME已完成紀錄.md`。
 > 規範與架構說明請見 `aiREADME.md`。
-## 會員點數模組 (v20260603-points) — 進行中
+## 會員點數模組 (v20260603-points) — ✅ 已完成（詳見 aiREADME已完成紀錄.md）
 
 ### 規則（使用者已定案，為後續開發依據）
 - 賺點：僅線上單，且「店家確認 + 結帳完成(completed)」兩條件成立才入帳。
@@ -17,22 +17,24 @@
   寫入只能 POS（已登入 staff/admin）；顧客匿名端只能讀 balance 顯示。
 - 歷史：每筆異動記 at / type(earn|use|refund) / delta / balanceAfter / orderNo。
 
-### 已完成（已進 repo）
-- customer-service.js：點數核心六函式
-  getPointsBalance / _writePointsTxn / deductPointsOnConfirm /
-  refundPointsOnCancel / earnPointsOnComplete / getPointsHistory。
+### 全部完成項目（已進 repo + Firebase 規則已發布）
+- customer-service.js：點數核心六函式（getPointsBalance / _writePointsTxn /
+  deductPointsOnConfirm / refundPointsOnCancel / earnPointsOnComplete / getPointsHistory）。
 - realtime-order-service.js：彈窗接單(showOnlineOrderOverlay) 已接 deductPointsOnConfirm 預扣。
-- order-service.js：markPendingOrderPaid 已接 earnPointsOnComplete 賺點掛鉤。
+- order-service.js：第 2 行已改 import { state, persistAll }；markPendingOrderPaid
+  已接 earnPointsOnComplete 賺點掛鉤（persistAll 已可正常呼叫）。
+- orders-page.js：列表接單 accept-btn 已接 deductPointsOnConfirm（與彈窗一致，防超折）；
+  voidOrder callback 已改 async 並接 refundPointsOnCancel（pending 作廢退點、completed 不退）。
+- index.html：原 Google 備份區(modalGoogle)改為「🎯 會員點數查詢」區，
+  含 pointsQueryPhone / pointsQueryBtn / pointsQueryBalanceBox / pointsQueryHistoryBox。
+- settings-page.js：點數查詢邏輯（getQueryStoreCode / openPhonePad / runPointsQuery /
+  bindPointsQueryEvents），電話用自製字串鍵盤保留開頭 0，紀錄欄位用 at/delta。
+- Firebase 規則：已新增 points/{storeCode}/{phone} 節點（.read=true 顧客匿名只讀，
+  .write 限 admin 或 stores/{storeCode}===true 的員工），已於 Console 發布。
 
-### 待處理 / 已知問題
-- [Bug] order-service.js 第 2 行只 import { state }，但賺點區塊呼叫 persistAll，
-  會 ReferenceError。需改成 import { state, persistAll } from '../core/store.js'。
-- [缺口] orders-page.js 列表接單 accept-btn 沒接 deductPointsOnConfirm，
-  與彈窗接單不一致，從列表接單不會預扣 → 超折風險。
-- [缺口] orders-page.js voidOrder callback 沒接 refundPointsOnCancel，
-  作廢未結帳單不會退點。
-- [未做] Firebase 規則尚未新增 points/{storeCode} 節點（顧客匿名只讀、POS 才能寫）。
-- [未做] POS 設定頁 Google 備份區改點數查詢區（輸入電話查餘額+歷史，用既有 openNumPad 數字鍵盤）。
+### 待驗證（實機）
+- [ ] 線上單帶優惠碼 → 接單預扣 → 結帳完成賺點 → 設定頁查詢顯示餘額與紀錄，全鏈路實機跑一次。
+- [ ] 接單預扣後作廢(pending)→ 點數退回；已結帳(completed)作廢 → 不退。
 
 ## 最新進度 (v20260603) — last updated 2026-06-03
 
