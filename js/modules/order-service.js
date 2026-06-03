@@ -1,5 +1,5 @@
 /* 中文備註：訂單服務。建立訂單後會回傳訂單資料，供列印功能使用。 */
-import { state } from '../core/store.js';
+import { state, persistAll } from '../core/store.js';
 import { deepCopy, id } from '../core/utils.js';
 //import { getDiscountResult, getDiscountType } from './cart-service.js';
 import { getCurrentSession } from './report-session.js';
