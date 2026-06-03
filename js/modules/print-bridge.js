@@ -10,7 +10,7 @@
 const HTTP_HOST = '127.0.0.1';
 const HTTP_PORT = 8080;
 const HTTP_BASE = `http://${HTTP_HOST}:${HTTP_PORT}`;
-const PING_TIMEOUT_MS = 1500;
+const PING_TIMEOUT_MS = 3500;
 const CACHE_TTL_MS = 8000;
 const TOKEN_STORAGE_KEY = 'pos_apk_api_token';
 
@@ -138,8 +138,8 @@ function fetchOnce(url, opts, ms) {
 function fetchWithTimeout(url, opts, ms) {
   return fetchOnce(url, opts, ms).catch(async (e) => {
     const msg = String(e && e.message || e);
-    // 只對「socket 死掉」類型的錯誤重試一次（瀏覽器拿到死的 keep-alive 連線）
-    if (msg.indexOf('Failed to fetch') >= 0 || msg.indexOf('NetworkError') >= 0) {
+    // v20260603：socket 死掉 或 timeout 都重試一次（T2 結帳當下 8080 容易被客顯 POST 拖慢）
+    if (msg.indexOf('Failed to fetch') >= 0 || msg.indexOf('NetworkError') >= 0 || msg.indexOf('timeout') >= 0) {
       plog('fetchWithTimeout: ' + msg + ' → retry once after 250ms');
       await new Promise(res => setTimeout(res, 250));
       return fetchOnce(url, opts, ms);
@@ -147,7 +147,6 @@ function fetchWithTimeout(url, opts, ms) {
     throw e;
   });
 }
-
 
 export async function detectPrinters(force = false) {
   if (!force && _cache && (Date.now() - _cache.timestamp) < CACHE_TTL_MS) {
