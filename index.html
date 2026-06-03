@@ -350,10 +350,10 @@
       <span class="tile-label">即時接單</span>
       <span class="tile-desc">Firebase 線上點餐設定</span>
     </div>
-    <div class="setting-tile" data-modal="modalGoogle">
-      <span class="tile-icon">☁️</span>
-      <span class="tile-label">Google 備份</span>
-      <span class="tile-desc">Google Drive 備份與還原</span>
+       <div class="setting-tile" data-modal="modalGoogle">
+      <span class="tile-icon">🎯</span>
+      <span class="tile-label">會員點數查詢</span>
+      <span class="tile-desc">輸入電話查詢點數餘額與紀錄</span>
     </div>
     <div class="setting-tile" data-modal="modalLocalData">
       <span class="tile-icon">💾</span>
@@ -784,30 +784,27 @@
 <!-- ===== Google 備份 Modal ===== -->
 <div id="modalGoogle" class="settings-modal-backdrop">
   <div class="settings-modal" style="max-width:640px">
-    <div class="settings-modal-header">
-      <h3>☁️ Google Drive 備份 / 還原</h3>
+        <div class="settings-modal-header">
+      <h3>🎯 會員點數查詢</h3>
       <button class="close-modal-btn" data-close-modal="modalGoogle">✕</button>
     </div>
     <div class="settings-modal-body">
-      <div class="sm-form-group"><label>Google OAuth Client ID</label><input id="googleClientId" placeholder="貼上 Client ID"></div>
-      <div class="sm-form-group"><label>Google Drive 資料夾 ID（可留空）</label><input id="googleFolderId"></div>
-      <div class="sm-check-row"><input id="googleAutoBackupEnabled" type="checkbox"><span>啟用定期自動備份</span></div>
-      <div class="sm-form-group"><label>備份間隔（分鐘）</label><input id="googleAutoBackupMinutes" type="number" min="5" max="1440"></div>
-
-      <div class="sm-section-title">帳號與操作</div>
+      <div class="sm-info-box" style="font-size:13px;color:#475569;margin-bottom:12px">
+        輸入顧客手機號碼，查詢目前點數餘額與最近交易紀錄。
+      </div>
+      <div class="sm-section-title">查詢</div>
+      <div class="sm-form-group">
+        <label>顧客手機號碼</label>
+        <input id="pointsQueryPhone" type="text" inputmode="none" readonly placeholder="點此用數字鍵盤輸入" style="cursor:pointer">
+      </div>
       <div class="sm-btn-row">
-        <button id="saveGoogleBackupSettingsBtn" class="sm-btn primary">儲存設定</button>
-        <button id="googleLoginBtn" class="sm-btn">登入 Google</button>
-        <button id="googleLogoutBtn" class="sm-btn">登出 Google</button>
+        <button id="pointsQueryBtn" class="sm-btn primary">查詢點數</button>
       </div>
-      <div class="sm-btn-row" style="margin-top:8px">
-        <button id="manualGoogleBackupBtn" class="sm-btn success">立即備份</button>
-        <button id="manualGoogleRestoreBtn" class="sm-btn danger">從雲端還原</button>
-      </div>
-      <div id="googleDriveAccountBox" class="sm-info-box" style="margin-top:10px">登入狀態：未登入</div>
-      <div id="googleBackupFileList" class="sm-info-box">備份清單：無</div>
-      <div id="googleBackupStatusBox" class="sm-info-box">備份狀態：無</div>
+      <div id="pointsQueryBalanceBox" class="sm-info-box" style="margin-top:10px">點數餘額：—</div>
+      <div class="sm-section-title">交易紀錄</div>
+      <div id="pointsQueryHistoryBox" style="max-height:280px;overflow:auto;border:1px solid #e2e8f0;border-radius:6px;padding:8px;font-size:13px;background:#f8fafc">（尚未查詢）</div>
     </div>
+
     <div class="settings-modal-footer">
       <button class="sm-btn" data-close-modal="modalGoogle">關閉</button>
     </div>
