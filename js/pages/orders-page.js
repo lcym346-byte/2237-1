@@ -74,10 +74,16 @@ function renderIncomingOnlineOrders(){
         const replyMessage = row.querySelector('.reply-message-input').value.trim() || defaultReply;
         const confirmedRemote = await confirmOnlineOrder(o.id, prepMinutes, replyMessage);
         const posOrder = buildRealtimeOrderForPOS({ id: o.id, ...confirmedRemote });
+        try{
+          const cust = await import('../modules/customer-service.js');
+          const used = await cust.deductPointsOnConfirm(posOrder);
+          if(used > 0) posOrder.total = Math.max(0, Number(posOrder.subtotal || 0) - used);
+        }catch(e){ console.warn('接單預扣點數失敗：', e); }
         if(!state.orders.some(x => x.id === posOrder.id)){
           state.orders.unshift(posOrder);
         }
         persistAll();
+
         const realtimeCfg = getRealtimeConfig();
         // 預約單接單時不立即列印（要等 30 分鐘前再列印），一般單才立即列印
         if(!isReservation){
@@ -176,7 +182,7 @@ function voidOrder(orderId){
   if(!o) return;
   if(o.status === 'void') return alert('此訂單已作廢');
 
-  openVoidReasonModal(o, (reason)=>{
+    openVoidReasonModal(o, async (reason)=>{
     const currentSession = getCurrentSession();
     const staffId = currentSession ? currentSession.staffId : '';
 
@@ -188,10 +194,18 @@ function voidOrder(orderId){
     o.voidedBy = staffId;
     o.updatedAt = new Date().toISOString();
 
+    if(o.statusBeforeVoid === 'pending' && Number(o.pointsUsed||0) > 0){
+      try{
+        const cust = await import('../modules/customer-service.js');
+        await cust.refundPointsOnCancel(o);
+      }catch(err){ console.warn('作廢退點失敗：', err); }
+    }
+
     persistAll();
     window.refreshAllViews();
     alert(`已作廢訂單「${o.orderNo}」\n原因：${reason}`);
   });
+
 }
 
 // 作廢原因選單 modal（動態建立，不需改 index.html，全程不打字）
