@@ -506,12 +506,14 @@ export async function refundPointsOnCancel(order){
   }
 }
 
-/** 結帳完成(completed)時：賺點 = 該單現金折扣 order.discountAmount。用 pointsSettled 防重複。 */
+/** 結帳完成(completed)時：賺點 = 該單付款方式回饋點數 order.pointsEarnReward。用 pointsSettled 防重複。
+ *  v20260603-v2：賺點來源改為「付款方式回饋(現金/電支)換算的點數」，與直接折現金的 discountAmount 完全脫鉤。
+ *  支援小數點後一位（付款回饋 percent 可能有 .x），不再四捨五入成整數。 */
 export async function earnPointsOnComplete(order){
   if(!order) return 0;
   if(order.pointsSettled === true) return 0;   // 防重複賺點
   const phone = String(order.customerPhone || '').replace(/\D/g, '');
-  const earn = Math.max(0, Math.round(Number(order.discountAmount || 0)));
+  const earn = Math.max(0, Math.round(Number(order.pointsEarnReward || 0) * 10) / 10);
   if(!phone){ order.pointsSettled = true; return 0; }
   if(earn <= 0){ order.pointsSettled = true; order.pointsEarned = 0; return 0; }
   try{
@@ -527,6 +529,7 @@ export async function earnPointsOnComplete(order){
     return 0;
   }
 }
+
 
 /** POS 查詢區塊用：讀某顧客點數異動歷史（依時間新→舊）。 */
 export async function getPointsHistory(phone, storeCode){
