@@ -575,6 +575,54 @@ function resetPointsQueryUI(){
   if(histBox) histBox.innerHTML = '（尚未查詢）';
 }
 
+// 自製電話鍵盤：以「字串」累加，完整保留開頭 0（不可用 openNumPad，它會把 0912 變 912）
+function openPhonePad(onConfirm){
+  var old = document.getElementById('phonePadModal');
+  if(old) old.remove();
+  var val = '';
+  var modal = document.createElement('div');
+  modal.id = 'phonePadModal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:100000;display:flex;align-items:center;justify-content:center;background:rgba(15,23,42,0.6);padding:20px;';
+  var keys = ['1','2','3','4','5','6','7','8','9','0'];
+  modal.innerHTML =
+    '<div style="background:#fff;border-radius:14px;max-width:340px;width:100%;padding:18px;box-shadow:0 20px 50px rgba(0,0,0,0.3)">'
+    + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
+    +   '<h2 style="margin:0;font-size:17px">輸入手機號碼</h2>'
+    +   '<button type="button" id="phonePadClose" style="border:none;background:none;font-size:22px;cursor:pointer;color:#94a3b8">✕</button>'
+    + '</div>'
+    + '<div style="background:#f1f5f9;border-radius:10px;padding:14px;text-align:right;margin-bottom:12px">'
+    +   '<span id="phonePadValue" style="font-size:24px;font-weight:800;color:#0f172a">—</span>'
+    + '</div>'
+    + '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">'
+    +   keys.map(function(k){ return '<button type="button" class="cash-key pp-key" data-key="'+k+'">'+k+'</button>'; }).join('')
+    +   '<button type="button" class="cash-key pp-key" data-key="del" style="background:#fee2e2;color:#b91c1c">⌫</button>'
+    + '</div>'
+    + '<div style="display:flex;gap:8px;margin-top:14px">'
+    +   '<button type="button" id="phonePadConfirm" class="primary-btn" style="flex:2;background:#10b981">確認</button>'
+    +   '<button type="button" id="phonePadCancel" class="secondary-btn" style="flex:1">取消</button>'
+    + '</div>'
+    + '</div>';
+  document.body.appendChild(modal);
+  var disp = modal.querySelector('#phonePadValue');
+  function refresh(){ disp.textContent = val === '' ? '—' : val; }
+  function close(){ modal.remove(); }
+  modal.addEventListener('click', function(e){ if(e.target === modal) close(); });
+  modal.querySelector('#phonePadClose').onclick = close;
+  modal.querySelector('#phonePadCancel').onclick = close;
+  modal.querySelectorAll('.pp-key').forEach(function(btn){
+    btn.onclick = function(){
+      var k = btn.dataset.key;
+      if(k === 'del') val = val.slice(0, -1);
+      else if(val.length < 15) val = val + k;   // 字串累加，保留開頭 0
+      refresh();
+    };
+  });
+  modal.querySelector('#phonePadConfirm').onclick = function(){
+    close();
+    if(onConfirm) onConfirm(val);
+  };
+}
+
 async function runPointsQuery(){
   var phoneEl = document.getElementById('pointsQueryPhone');
   var phone = (phoneEl && phoneEl.value || '').trim();
@@ -595,14 +643,16 @@ async function runPointsQuery(){
       if(history.length === 0){
         histBox.innerHTML = '（無交易紀錄）';
       } else {
-        histBox.innerHTML = history.slice().reverse().map(function(h){
-          var t = h.time ? new Date(h.time).toLocaleString() : '';
-          var delta = Number(h.points || 0);
+        // getPointsHistory 已依時間新→舊排序；欄位為 at / type / delta / orderNo
+        histBox.innerHTML = history.map(function(h){
+          var t = h.at ? new Date(h.at).toLocaleString() : '';
+          var delta = Number(h.delta || 0);
           var sign = delta > 0 ? '+' : '';
           var color = delta > 0 ? '#16a34a' : '#dc2626';
+          var typeLabel = h.type === 'earn' ? '賺點' : (h.type === 'use' ? '折抵' : (h.type === 'refund' ? '退點' : (h.type || '')));
           return '<div style="padding:4px 0;border-bottom:1px dashed #e2e8f0">'
             + '<span style="color:#64748b">' + escapeHtml(t) + '</span> '
-            + '<strong>' + escapeHtml(h.type || '') + '</strong> '
+            + '<strong>' + escapeHtml(typeLabel) + '</strong> '
             + '<span style="color:' + color + ';font-weight:700">' + sign + delta + '</span>'
             + (h.orderNo ? ' <span style="color:#94a3b8">#' + escapeHtml(h.orderNo) + '</span>' : '')
             + '</div>';
@@ -619,15 +669,7 @@ function bindPointsQueryEvents(){
   var phoneEl = document.getElementById('pointsQueryPhone');
   if(phoneEl){
     phoneEl.addEventListener('click', function(){
-      if(typeof window.openNumPad !== 'function'){
-        alert('數字鍵盤尚未就緒，請先進入點餐頁一次');
-        return;
-      }
-      window.openNumPad({
-        title: '輸入手機號碼',
-        hint: '請輸入顧客手機號碼',
-        onConfirm: function(val){ phoneEl.value = String(val || ''); }
-      });
+      openPhonePad(function(val){ phoneEl.value = String(val || ''); });
     });
   }
   var btn = document.getElementById('pointsQueryBtn');
@@ -779,7 +821,7 @@ function initCustomerDisplaySettings() {
   });
 
 
-    // 會員點數查詢（原 Google 備份區改用）
+      // 會員點數查詢（原 Google 備份區改用）
   document.querySelector('[data-modal="modalGoogle"]')?.addEventListener('click', function() {
     resetPointsQueryUI();
     openModal('modalGoogle');
@@ -787,6 +829,7 @@ function initCustomerDisplaySettings() {
   bindPointsQueryEvents();
 
   // 本機資料
+
 
   document.querySelector('[data-modal="modalLocalData"]')?.addEventListener('click', function() {
     openModal('modalLocalData');
