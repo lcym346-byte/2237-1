@@ -3,6 +3,36 @@
 > 本檔記錄**當前版本進行中的項目、待處理事項、已知問題**。
 > 已完成項目請見 `aiREADME已完成紀錄.md`。
 > 規範與架構說明請見 `aiREADME.md`。
+## 會員點數模組 (v20260603-points) — 進行中
+
+### 規則（使用者已定案，為後續開發依據）
+- 賺點：僅線上單，且「店家確認 + 結帳完成(completed)」兩條件成立才入帳。
+  賺點金額 = 該單優惠碼折扣 order.discountAmount。
+  優惠碼不再折現金，total = 小計不變，顧客照小計付，折扣全轉點數。
+- 折抵：1點=1元，僅線上點餐頁可用。店家「接單(confirmed)」當下由 POS 端預扣，
+  以 min(顧客宣告 pointsRequested, 當下真實餘額) 為上限，杜絕超折。
+- 退點：已接單未結帳(pending)的單被作廢/取消 → 退回該單 pointsUsed；
+  已結帳完成(completed)作廢 → 不退（規則四）。
+- 儲存：Firebase points/{storeCode}/{phone}/balance 與 /history/{pushId}，各店獨立。
+  寫入只能 POS（已登入 staff/admin）；顧客匿名端只能讀 balance 顯示。
+- 歷史：每筆異動記 at / type(earn|use|refund) / delta / balanceAfter / orderNo。
+
+### 已完成（已進 repo）
+- customer-service.js：點數核心六函式
+  getPointsBalance / _writePointsTxn / deductPointsOnConfirm /
+  refundPointsOnCancel / earnPointsOnComplete / getPointsHistory。
+- realtime-order-service.js：彈窗接單(showOnlineOrderOverlay) 已接 deductPointsOnConfirm 預扣。
+- order-service.js：markPendingOrderPaid 已接 earnPointsOnComplete 賺點掛鉤。
+
+### 待處理 / 已知問題
+- [Bug] order-service.js 第 2 行只 import { state }，但賺點區塊呼叫 persistAll，
+  會 ReferenceError。需改成 import { state, persistAll } from '../core/store.js'。
+- [缺口] orders-page.js 列表接單 accept-btn 沒接 deductPointsOnConfirm，
+  與彈窗接單不一致，從列表接單不會預扣 → 超折風險。
+- [缺口] orders-page.js voidOrder callback 沒接 refundPointsOnCancel，
+  作廢未結帳單不會退點。
+- [未做] Firebase 規則尚未新增 points/{storeCode} 節點（顧客匿名只讀、POS 才能寫）。
+- [未做] POS 設定頁 Google 備份區改點數查詢區（輸入電話查餘額+歷史，用既有 openNumPad 數字鍵盤）。
 
 ## 最新進度 (v20260603) — last updated 2026-06-03
 
