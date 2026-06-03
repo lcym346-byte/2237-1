@@ -58,10 +58,17 @@ export function markPendingOrderPaid(orderId, paymentMethod){
     if(cur) order.sessionId = cur.id;
   }
 
-  // v20260525 新增：待付款改為完成時也推送客顯
+    // v20260525 新增：待付款改為完成時也推送客顯
   if (paymentMethod !== '待付款') {
     displayPaid(order).catch(() => {});
+    // v20260603：線上單結帳完成 → 把該單優惠金額(discountAmount)轉成會員點數（防重複 settle）
+    if (order.status === 'completed' && Number(order.discountAmount || 0) > 0 && !order.pointsSettled) {
+      import('./customer-service.js').then(cust => {
+        cust.earnPointsOnComplete(order).then(() => { persistAll(); }).catch(() => {});
+      }).catch(() => {});
+    }
   }
 
   return order;
 }
+
