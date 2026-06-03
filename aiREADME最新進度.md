@@ -4,7 +4,24 @@
 > 已完成項目請見 `aiREADME已完成紀錄.md`。
 > 規範與架構說明請見 `aiREADME.md`。
 
-最後更新：2026-05-20
+## 最新進度 (v20260603) — last updated 2026-06-03
+
+### 本次已完成並驗證（詳見 aiREADME已完成紀錄.md v20260603）
+- 結帳不自動印廚房單／跳 PDF：已修復並實機驗證直印恢復。
+  - print-bridge.js：ping timeout 1500→3500ms、timeout 時重試一次。
+  - customer-display-service.js：客顯改「變動立即推、閒置每 10 秒推」，避免干擾列印。
+
+### 待處理 / 待驗證
+- （可緩做、低風險）若日後仍偶發跳 PDF，再做補強：把客顯 displayPaid 推送
+  改由 finalizeOrder 在「列印送出之後」呼叫，而非在 createOrUpdateOrder 內最早觸發。
+  涉及 order-service.js（移除其中的 displayPaid 呼叫）+ pos-page.js（列印後再呼叫），
+  須兩檔同批上線，否則 paid 推送會暫時消失。目前直印已穩，暫不動。
+- 沿用前述既有待辦（Store002 上線、POS 折扣清理等），不變。
+
+### 提醒
+- 若 service-worker.js 有 pre-cache print-bridge.js / customer-display-service.js，
+  本次改動後須提升 CACHE_NAME 並更新 pre-cache（守則 8、14），否則 T2 Chrome 吃到舊檔。
+
 
 ---
 
