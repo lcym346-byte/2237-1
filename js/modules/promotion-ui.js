@@ -83,11 +83,24 @@ function buildSettingsModalHtml(){
 '          <label style="display:block"><div style="font-size:13px;color:#475569;margin-bottom:4px">活動類型代碼（內部用）</div><input type="text" id="promoCampaignType" maxlength="32" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box"></label>' +
 '        </div>' +
 '      </fieldset>' +
-'      <fieldset style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">' +
+'      '      <fieldset style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">' +
 '        <legend style="padding:0 8px;font-weight:600;color:#0f172a">優惠碼清單</legend>' +
 '        <div id="promoCouponList" style="display:flex;flex-direction:column;gap:8px"></div>' +
 '        <button id="promoAddCouponBtn" type="button" style="margin-top:10px;padding:6px 12px;background:#f1f5f9;border:1px dashed #94a3b8;border-radius:6px;cursor:pointer;width:100%">+ 新增優惠碼</button>' +
+'        <div style="margin-top:14px;padding-top:12px;border-top:1px dashed #cbd5e1">' +
+'          <div style="font-weight:600;color:#0f172a;margin-bottom:4px">付款方式回饋（不折現金，改送點數）</div>' +
+'          <div style="color:#64748b;font-size:12px;margin-bottom:8px">顧客在線上點餐按「現金／電子支付」時，自動套用所選優惠碼，折扣金額 1:1 轉成本次回饋點數（結帳完成才入帳）。不選＝不回饋。</div>' +
+'          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+'            <label style="display:block"><div style="font-size:13px;color:#475569;margin-bottom:4px">現金按鈕套用</div>' +
+'              <select id="promoCashCouponSelect" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box"></select>' +
+'            </label>' +
+'            <label style="display:block"><div style="font-size:13px;color:#475569;margin-bottom:4px">電子支付按鈕套用</div>' +
+'              <select id="promoEpayCouponSelect" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box"></select>' +
+'            </label>' +
+'          </div>' +
+'        </div>' +
 '      </fieldset>' +
+
 '      <div id="promoLastSave" style="font-size:12px;color:#64748b;margin-bottom:12px"></div>' +
 '    </div>' +
 '    <div style="padding:14px 20px;border-top:1px solid #e2e8f0;display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#fff">' +
@@ -127,8 +140,27 @@ function loadFormFromConfig(){
   var list = document.getElementById('promoCouponList');
   list.innerHTML = (cfg.coupons || []).map(renderCouponRow).join('') || '<div style="color:#94a3b8;font-size:13px;padding:8px;text-align:center">尚未設定優惠碼</div>';
 
+  // v20260603-v2：填入「現金／電支回饋碼」兩個下拉（選項來自目前優惠碼清單）
+  fillRewardCouponSelects(cfg);
+
   var saveLbl = document.getElementById('promoLastSave');
   saveLbl.textContent = cfg.updatedAt ? '最後儲存：' + new Date(cfg.updatedAt).toLocaleString('zh-TW') : '尚未儲存';
+}
+
+// v20260603-v2：用目前優惠碼清單填入現金/電支回饋碼下拉，並選回已存的 id
+function fillRewardCouponSelects(cfg){
+  var cashSel = document.getElementById('promoCashCouponSelect');
+  var epaySel = document.getElementById('promoEpayCouponSelect');
+  if(!cashSel || !epaySel) return;
+  var opts = '<option value="">不回饋（不套用）</option>' +
+    (cfg.coupons || []).map(function(c){
+      var label = (c.code || '') + '（' + (c.title || '') + '・' + (c.type === 'percent' ? c.value + '%' : '折' + c.value) + '）';
+      return '<option value="' + esc(c.id || '') + '">' + esc(label) + '</option>';
+    }).join('');
+  cashSel.innerHTML = opts;
+  epaySel.innerHTML = opts;
+  cashSel.value = cfg.cashCouponId || '';
+  epaySel.value = cfg.epayCouponId || '';
 }
 
 function collectFormToConfig(){
@@ -150,7 +182,7 @@ function collectFormToConfig(){
       minSpend: Number(row.querySelector('.cp-minspend').value || 0)
     });
   });
-  return {
+    return {
     enabled: document.getElementById('promoEnabledChk').checked,
     heroTitle: heroTitle,
     heroSubtitle: heroSubtitle,
@@ -168,9 +200,12 @@ function collectFormToConfig(){
       startsAt: '',
       endsAt: ''
     }],
-    coupons: coupons
+    coupons: coupons,
+    cashCouponId: (document.getElementById('promoCashCouponSelect') || {}).value || '',
+    epayCouponId: (document.getElementById('promoEpayCouponSelect') || {}).value || ''
   };
 }
+
 
 function fillTemplateSelect(){
   var sel = document.getElementById('promoTemplateSelect');
