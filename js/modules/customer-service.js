@@ -407,3 +407,144 @@ export async function cleanupOldOrders(){
     skipped: false
   };
 }
+
+// ============================================================
+// 會員點數（v20260603 新增）
+// 規則：
+//   - 各店獨立，路徑 points/{storeCode}/{phone}/balance 與 /history/{pushId}
+//   - 寫入只在 POS 端（已登入 staff/admin）；顧客端匿名只讀 balance 顯示
+//   - 賺點：線上單結帳完成(completed)時，賺 = 該單現金折扣 order.discountAmount（優惠不折現、全變點數）
+//   - 折抵：1點=1元，僅線上點餐用。店家接單(confirmed)時預扣 min(顧客宣告pointsRequested, 當下真實餘額)
+//   - 退點：已接單未結帳的單被取消 → 退回該單 pointsUsed；已結帳完成作廢 → 不退
+//   - 防重複：賺點用 order.pointsSettled 旗標
+// ============================================================
+
+/** 取得某顧客點數餘額（POS 與顧客端皆可呼叫，讀失敗回 0） */
+export async function getPointsBalance(phone, storeCode){
+  const ph = String(phone || '').replace(/\D/g, '');
+  if(!ph) return 0;
+  try{
+    const rt = await import('./realtime-order-service.js');
+    const cfg = rt.getRealtimeConfig();
+    if(!cfg.enabled) return 0;
+    const code = String(storeCode || '').trim() || (function(){ try{ return rt.getStoreCode(); }catch(e){ return ''; } })();
+    if(!code) return 0;
+    const ref = await rt._getRef(`points/${code}/${ph}/balance`);
+    const snap = await rt._dbApi().get(ref);
+    const v = Number(snap.val() || 0);
+    return isNaN(v) ? 0 : Math.max(0, v);
+  }catch(err){
+    console.warn('getPointsBalance failed:', err && err.message);
+    return 0;
+  }
+}
+
+/** 內部：POS 端寫一筆點數異動（改餘額 + 推 history）。delta 可正可負，餘額不低於 0。 */
+async function _writePointsTxn(phone, delta, type, orderNo){
+  const ph = String(phone || '').replace(/\D/g, '');
+  if(!ph) return { ok:false, reason:'no-phone' };
+  const rt = await import('./realtime-order-service.js');
+  const cfg = rt.getRealtimeConfig();
+  if(!cfg.enabled) return { ok:false, reason:'disabled' };
+  const user = rt.getRealtimeAuthUser && rt.getRealtimeAuthUser();
+  if(!user) return { ok:false, reason:'not-logged-in' };
+  const code = rt.getStoreCode(); // 沒設會丟錯，POS 端應已設定
+
+  const balRef = await rt._getRef(`points/${code}/${ph}/balance`);
+  const snap = await rt._dbApi().get(balRef);
+  const cur = Math.max(0, Number(snap.val() || 0));
+  const next = Math.max(0, cur + Number(delta || 0));
+  await rt._dbApi().set(balRef, next);
+
+  const histRoot = await rt._getRef(`points/${code}/${ph}/history`);
+  const newRef = rt._dbApi().push(histRoot);
+  await rt._dbApi().set(newRef, {
+    at: new Date().toISOString(),
+    type: String(type || ''),        // 'earn' | 'use' | 'refund'
+    delta: Number(delta || 0),
+    balanceAfter: next,
+    orderNo: String(orderNo || '')
+  });
+  return { ok:true, balanceAfter: next };
+}
+
+/** 店家接單(confirmed)時：預扣折抵點數。以當下真實餘額為上限，回寫 order.pointsUsed。 */
+export async function deductPointsOnConfirm(order){
+  if(!order) return 0;
+  const phone = String(order.customerPhone || '').replace(/\D/g, '');
+  const want = Math.max(0, Number(order.pointsRequested || 0));
+  if(!phone || want <= 0) return 0;
+  try{
+    const bal = await getPointsBalance(phone);
+    const use = Math.min(want, bal);           // 以真實餘額為上限，杜絕超折
+    if(use <= 0){ order.pointsUsed = 0; return 0; }
+    const r = await _writePointsTxn(phone, -use, 'use', order.orderNo || order.id);
+    if(r.ok){ order.pointsUsed = use; return use; }
+    order.pointsUsed = 0;
+    return 0;
+  }catch(err){
+    console.warn('deductPointsOnConfirm failed:', err && err.message);
+    order.pointsUsed = 0;
+    return 0;
+  }
+}
+
+/** 取消「已接單未結帳」的單時：退回該單預扣的 pointsUsed。已結帳完成的單不退。 */
+export async function refundPointsOnCancel(order){
+  if(!order) return 0;
+  if(order.status === 'completed') return 0;   // 已結帳完成 → 不退（規則四）
+  const phone = String(order.customerPhone || '').replace(/\D/g, '');
+  const used = Math.max(0, Number(order.pointsUsed || 0));
+  if(!phone || used <= 0) return 0;
+  try{
+    const r = await _writePointsTxn(phone, used, 'refund', order.orderNo || order.id);
+    if(r.ok){ order.pointsUsed = 0; return used; }
+    return 0;
+  }catch(err){
+    console.warn('refundPointsOnCancel failed:', err && err.message);
+    return 0;
+  }
+}
+
+/** 結帳完成(completed)時：賺點 = 該單現金折扣 order.discountAmount。用 pointsSettled 防重複。 */
+export async function earnPointsOnComplete(order){
+  if(!order) return 0;
+  if(order.pointsSettled === true) return 0;   // 防重複賺點
+  const phone = String(order.customerPhone || '').replace(/\D/g, '');
+  const earn = Math.max(0, Math.round(Number(order.discountAmount || 0)));
+  if(!phone){ order.pointsSettled = true; return 0; }
+  if(earn <= 0){ order.pointsSettled = true; order.pointsEarned = 0; return 0; }
+  try{
+    const r = await _writePointsTxn(phone, earn, 'earn', order.orderNo || order.id);
+    if(r.ok){
+      order.pointsEarned = earn;
+      order.pointsSettled = true;
+      return earn;
+    }
+    return 0;
+  }catch(err){
+    console.warn('earnPointsOnComplete failed:', err && err.message);
+    return 0;
+  }
+}
+
+/** POS 查詢區塊用：讀某顧客點數異動歷史（依時間新→舊）。 */
+export async function getPointsHistory(phone, storeCode){
+  const ph = String(phone || '').replace(/\D/g, '');
+  if(!ph) return { balance: 0, history: [] };
+  try{
+    const rt = await import('./realtime-order-service.js');
+    const code = String(storeCode || '').trim() || rt.getStoreCode();
+    const root = await rt._getRef(`points/${code}/${ph}`);
+    const snap = await rt._dbApi().get(root);
+    const val = snap.val() || {};
+    const balance = Math.max(0, Number(val.balance || 0));
+    const history = Object.entries(val.history || {})
+      .map(([id, row]) => ({ id, ...row }))
+      .sort((a,b)=> new Date(b.at || 0) - new Date(a.at || 0));
+    return { balance, history };
+  }catch(err){
+    console.warn('getPointsHistory failed:', err && err.message);
+    return { balance: 0, history: [] };
+  }
+}
