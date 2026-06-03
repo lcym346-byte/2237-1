@@ -123,7 +123,7 @@ const DEFAULT_PROMOTIONS = {
       endsAt: ''
     }
   ],
-  coupons: [
+    coupons: [
     {
       id: 'coupon_lunch20_default',
       enabled: true,
@@ -136,6 +136,11 @@ const DEFAULT_PROMOTIONS = {
       endsAt: ''
     }
   ],
+  cashCouponId: '',     // v20260603-v2：現金按鈕自動套用的優惠碼 id（換點數不折現金）
+  epayCouponId: '',     // v20260603-v2：電子支付按鈕自動套用的優惠碼 id（換點數不折現金）
+  updatedAt: ''
+};
+
   updatedAt: ''
 };
 
@@ -164,13 +169,16 @@ export function ensurePromotionsConfig(){
   cfg.heroBadge = cleanText(cfg.heroBadge || DEFAULT_PROMOTIONS.heroBadge, 24);
   cfg.theme = cleanText(cfg.theme || DEFAULT_PROMOTIONS.theme, 20);
   cfg.campaignType = cleanText(cfg.campaignType || DEFAULT_PROMOTIONS.campaignType || '', 32);
+  // v20260603-v2：付款方式回饋碼指定
+  if(typeof cfg.cashCouponId !== 'string') cfg.cashCouponId = '';
+  if(typeof cfg.epayCouponId !== 'string') cfg.epayCouponId = '';
   return cfg;
 }
 
 export function normalizePromotionsConfig(input){
   var base = cloneDefault();
   var src = input && typeof input === 'object' ? input : base;
-  var out = {
+    var out = {
     enabled: src.enabled !== false,
     activeTemplate: cleanText(src.activeTemplate || base.activeTemplate, 32),
     heroTitle: cleanOptionalText(src, 'heroTitle', base.heroTitle, 80),
@@ -180,8 +188,11 @@ export function normalizePromotionsConfig(input){
     campaignType: cleanText(src.campaignType || base.campaignType || '', 32),
     banners: [],
     coupons: [],
+    cashCouponId: cleanText(src.cashCouponId || '', 48),
+    epayCouponId: cleanText(src.epayCouponId || '', 48),
     updatedAt: cleanText(src.updatedAt || '', 40)
   };
+
   (Array.isArray(src.banners) ? src.banners : []).slice(0, 8).forEach(function(b, i){
     if(!b) return;
     out.banners.push({
@@ -279,7 +290,7 @@ export function getPublicPromotionsConfig(){
   if(!cfg.enabled){
     return { enabled: false, banners: [], coupons: [], updatedAt: cfg.updatedAt || '' };
   }
-  return {
+    return {
     enabled: true,
     heroTitle: cfg.heroTitle,
     heroSubtitle: cfg.heroSubtitle,
@@ -288,10 +299,13 @@ export function getPublicPromotionsConfig(){
     campaignType: cfg.campaignType || '',
     banners: cfg.banners.filter(isActiveWindow).sort(function(a,b){ return Number(a.sortOrder || 0) - Number(b.sortOrder || 0); }),
     coupons: cfg.coupons.filter(isActiveWindow).map(function(c){
-      return { code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend };
+      return { id: c.id, code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend };
     }),
+    cashCouponId: cfg.cashCouponId || '',
+    epayCouponId: cfg.epayCouponId || '',
     updatedAt: cfg.updatedAt || ''
   };
+
 }
 
 export function importPromotionsFromCloud(data){
@@ -336,6 +350,40 @@ export function calculatePromotion(cart, code){
   }
   discount = Math.max(0, Math.min(subtotal, Math.round(discount)));
   return { ok: true, code: coupon.code, title: coupon.title, type: coupon.type, value: Number(coupon.value || 0), subtotal: subtotal, discount: discount, total: subtotal - discount, message: '已套用：' + coupon.title };
+}
+/**
+ * v20260603-v2：依付款方式(現金/電子支付)取得「本次回饋點數」。
+ * 規則：不折現金，用對應優惠碼算出的折扣金額 1:1 當點數，
+ *       percent 用小計×百分比、四捨五入到小數點後一位（保留 .x）。
+ * @param {Array} cart 購物車
+ * @param {string} payMethod '現金' | '電子支付'（其他一律回 0）
+ * @returns {{points:number, couponId:string, couponCode:string, title:string}}
+ */
+export function getPaymentRewardPoints(cart, payMethod){
+  var cfg = ensurePromotionsConfig();
+  var empty = { points: 0, couponId: '', couponCode: '', title: '' };
+  if(!cfg.enabled) return empty;
+
+  var targetId = '';
+  if(payMethod === '現金') targetId = cfg.cashCouponId || '';
+  else if(payMethod === '電子支付') targetId = cfg.epayCouponId || '';
+  if(!targetId) return empty;
+
+  var coupon = (cfg.coupons || []).filter(function(c){ return c && c.id === targetId; })[0];
+  if(!coupon || coupon.enabled === false || !isActiveWindow(coupon)) return empty;
+
+  var subtotal = cartSubtotal(cart);
+  if(subtotal < Number(coupon.minSpend || 0)) return empty;
+
+  var pts = 0;
+  if(coupon.type === 'percent'){
+    // 小計×百分比，四捨五入到小數點後一位
+    pts = Math.round(subtotal * Math.min(100, Number(coupon.value || 0)) / 100 * 10) / 10;
+  }else{
+    pts = Math.round(Number(coupon.value || 0) * 10) / 10;
+  }
+  pts = Math.max(0, pts);
+  return { points: pts, couponId: coupon.id, couponCode: coupon.code, title: coupon.title || coupon.code };
 }
 
 export function buildPromotionSummaryForDashboard(){
@@ -425,7 +473,7 @@ export async function pushPromotionsToCloud(){
   if(!db) return { ok: false, reason: 'no-firebase' };
   try{
     const cfg = getPublicPromotionsConfig();
-    const payload = {
+        const payload = {
       enabled: !!cfg.enabled,
       heroTitle: cfg.heroTitle || '',
       heroSubtitle: cfg.heroSubtitle || '',
@@ -434,8 +482,11 @@ export async function pushPromotionsToCloud(){
       campaignType: cfg.campaignType || '',
       banners: Array.isArray(cfg.banners) ? cfg.banners : [],
       coupons: Array.isArray(cfg.coupons) ? cfg.coupons : [],
+      cashCouponId: cfg.cashCouponId || '',
+      epayCouponId: cfg.epayCouponId || '',
       updatedAt: new Date().toISOString()
     };
+
     const api = db.__api;
     const refPath = `publicOnlineStores/${code}/promotions`;
     await api.set(api.ref(db, refPath), payload);
