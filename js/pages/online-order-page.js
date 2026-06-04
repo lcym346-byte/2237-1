@@ -7,17 +7,22 @@
 import { state } from '../core/store.js';
 import { escapeHtml, id, money, fmtLocalDateTime} from '../core/utils.js';
 import { getRealtimeConfig, pushOnlineOrder, watchCustomerOrder, fetchMenuFromFirebase, startMenuAutoWatch } from '../modules/realtime-order-service.js';
-import { lookupOrdersByCustomer } from '../modules/customer-service.js';
+import { lookupOrdersByCustomer, getPointsBalance } from '../modules/customer-service.js';
 import { mountPromotionOnlineUI, refreshPromotionDisplay, getCurrentPromotionResult } from '../modules/promotion-ui.js';
-import { pullPromotionsFromCloud } from '../modules/promotion-service.js';
+import { pullPromotionsFromCloud, getPaymentRewardPoints } from '../modules/promotion-service.js';
+
 
 const onlineState = {
   selectedCategory: '全部',
   cart: [],
   currentSelections: {},
   configTarget: null,
-  storeCode: ''      // ← 多店分流：從 URL 取得
+  storeCode: '',     // ← 多店分流：從 URL 取得
+  payMethod: '',     // v20260603-v2：客人選的付款別（現金 / 電子支付）
+  pointsBalance: 0,  // v20260603-v2：查到的目前點數餘額（顯示與折抵上限用）
+  _lastPhoneQueried: '' // v20260603-v2：避免重複查同一支電話
 };
+
 
 // ============================================================
 // 從 URL 取 storeId
@@ -305,12 +310,15 @@ function renderCart(){
   const totalQty = onlineState.cart.reduce((s,x)=>s + x.qty, 0);
   document.getElementById('onlineSubtotalText').textContent = money(subtotal);
   document.getElementById('onlineTotalQtyText').textContent = String(totalQty);
-  document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
+    document.getElementById('openCartBtn').innerHTML = `購物車 <span id="cartQtyBadge">${totalQty}</span>`;
   updateFloatingCartBadge();
 
     if(typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
+    // v20260603-v2：購物車變動 → 重算折扣/折抵上限/可得點數/應付合計
+    if(typeof refreshOnlineTotals === 'function') refreshOnlineTotals();
 
 }
+
 
 function openCartDrawer(){ document.getElementById('onlineCartDrawer').classList.remove('hidden'); }
 function closeCartDrawer(){ document.getElementById('onlineCartDrawer').classList.add('hidden'); }
@@ -433,14 +441,103 @@ function renderReservationSlots(){
 function toggleReservationBlock(){
   const type = document.getElementById('onlineOrderType').value;
   const block = document.getElementById('onlineReservationBlock');
+  const hint = document.getElementById('onlineReservationHint');
   if(!block) return;
   if(type === '預約'){
     block.style.display = 'block';
+    if(hint) hint.style.display = 'block';
     renderReservationSlots();
   } else {
     block.style.display = 'none';
+    if(hint) hint.style.display = 'none';
   }
 }
+
+// ── v20260603-v2：會員點數（查餘額 + 折抵 + 本次可得點數預覽）──
+
+// 用電話查餘額並更新「目前點數」顯示與折抵上限
+async function refreshPointsBalance(){
+  const phoneEl = document.getElementById('onlineCustomerPhone');
+  const balText = document.getElementById('onlinePointsBalanceText');
+  const phone = (phoneEl && phoneEl.value || '').replace(/\D/g, '');
+  if(!phone){
+    onlineState.pointsBalance = 0;
+    onlineState._lastPhoneQueried = '';
+    if(balText) balText.textContent = '—';
+    refreshOnlineTotals();
+    return;
+  }
+  if(phone === onlineState._lastPhoneQueried) return; // 同一支不重查
+  onlineState._lastPhoneQueried = phone;
+  if(balText) balText.textContent = '查詢中…';
+  try{
+    const bal = await getPointsBalance(phone, onlineState.storeCode);
+    onlineState.pointsBalance = Math.max(0, Number(bal) || 0);
+  }catch(e){
+    onlineState.pointsBalance = 0;
+  }
+  if(balText) balText.textContent = fmtPts(onlineState.pointsBalance);
+  refreshOnlineTotals();
+}
+
+// 點數格式化（最多 1 位小數、整數不顯示 .0）
+function fmtPts(n){
+  const v = Math.round(Number(n || 0) * 10) / 10;
+  return (Math.round(v) === v) ? String(Math.round(v)) : String(v);
+}
+
+// 取得目前小計
+function getOnlineSubtotal(){
+  return onlineState.cart.reduce((s,x)=> s + (x.basePrice + x.extraPrice) * x.qty, 0);
+}
+
+// 取得手動優惠碼折扣（直接折現金那種）
+function getOnlineCouponDiscount(){
+  try{
+    const promo = getCurrentPromotionResult();
+    if(promo && promo.ok && Number(promo.discount) > 0){
+      return Math.min(Number(promo.discount) || 0, getOnlineSubtotal());
+    }
+  }catch(e){}
+  return 0;
+}
+
+// 取得折抵點數（受餘額與「小計−折扣」上限約束；1點=1元）
+function getOnlinePointsUse(){
+  const inputEl = document.getElementById('onlinePointsUseInput');
+  let want = Math.max(0, Math.floor(Number(inputEl && inputEl.value || 0)));
+  const subtotal = getOnlineSubtotal();
+  const couponDiscount = getOnlineCouponDiscount();
+  const cap = Math.max(0, Math.min(onlineState.pointsBalance, subtotal - couponDiscount));
+  if(want > cap){ want = cap; if(inputEl) inputEl.value = String(cap); }
+  return want;
+}
+
+// 重算並更新「折扣 / 本次可得點數 / 應付合計」
+function refreshOnlineTotals(){
+  const subtotal = getOnlineSubtotal();
+  const couponDiscount = getOnlineCouponDiscount();
+  const pointsUse = getOnlinePointsUse();
+
+  // 本次可得點數：依客人選的付款別，用對應回饋碼算（不折現金、純預覽、結帳完成才入帳）
+  let reward = 0;
+  if(onlineState.payMethod){
+    try{
+      const r = getPaymentRewardPoints(onlineState.cart, onlineState.payMethod);
+      reward = Math.max(0, Number(r && r.points || 0));
+    }catch(e){ reward = 0; }
+  }
+
+  const grand = Math.max(0, subtotal - couponDiscount - pointsUse);
+
+  const dEl = document.getElementById('onlineDiscountSummaryText');
+  if(dEl) dEl.textContent = '-' + money(couponDiscount + pointsUse);
+  const rEl = document.getElementById('onlineRewardPointsText');
+  if(rEl) rEl.textContent = fmtPts(reward);
+  const gEl = document.getElementById('onlineGrandTotalSummaryText');
+  if(gEl) gEl.textContent = money(grand);
+}
+
 
 // ============================================================
 // 送單（帶 storeCode）
@@ -527,7 +624,13 @@ async function submitOnlineOrder(){
   }catch(e){
     console.warn('[online-order] 取得促銷結果失敗', e);
   }
-  const grandTotal = Math.max(0, subtotal - promoDiscount);
+    // v20260603-v2：必須先選付款別（現金 / 電子支付）
+  if(onlineState.payMethod !== '現金' && onlineState.payMethod !== '電子支付'){
+    return alert('請先選擇付款方式（現金 / 電子支付）');
+  }
+  // v20260603-v2：折抵點數（受餘額與「小計−折扣」上限約束）
+  const pointsRequested = getOnlinePointsUse();
+  const grandTotal = Math.max(0, subtotal - promoDiscount - pointsRequested);
 
   const payload = {
     orderNo: 'ON' + Date.now(),
@@ -542,8 +645,11 @@ async function submitOnlineOrder(){
     discount: promoDiscount,
     couponCode: promoCode,
     couponMessage: promoMessage,
+    payMethod: onlineState.payMethod,          // v20260603-v2：客人選的付款別（回饋點數依據）
+    pointsRequested: pointsRequested,          // v20260603-v2：要折抵的點數（POS 接單以真實餘額為上限預扣）
     total: grandTotal
   };
+
 
 
   try{
@@ -693,8 +799,49 @@ async function init(){
   }
   updateFloatingCartBadge();
 
-  document.getElementById('onlineOrderType').addEventListener('change', toggleReservationBlock);
+    document.getElementById('onlineOrderType').addEventListener('change', toggleReservationBlock);
   toggleReservationBlock();
+
+  // v20260603-v2：付款別兩顆鈕（現金 / 電子支付，二選一）
+  (function(){
+    const cashBtn = document.getElementById('onlinePayCash');
+    const epayBtn = document.getElementById('onlinePayEpay');
+    function selectPay(method){
+      onlineState.payMethod = method;
+      [cashBtn, epayBtn].forEach(b=>{
+        if(!b) return;
+        const on = (b.dataset.pay === method);
+        b.style.borderColor = on ? '#2563eb' : '#cbd5e1';
+        b.style.background = on ? '#eff6ff' : '#fff';
+        b.style.color = on ? '#1e3a8a' : '#0f172a';
+      });
+      refreshOnlineTotals();
+    }
+    if(cashBtn) cashBtn.onclick = ()=> selectPay('現金');
+    if(epayBtn) epayBtn.onclick = ()=> selectPay('電子支付');
+  })();
+
+  // v20260603-v2：電話輸入後查點數餘額（blur 與輸入停止時）
+  (function(){
+    const phoneEl = document.getElementById('onlineCustomerPhone');
+    if(phoneEl){
+      phoneEl.addEventListener('blur', refreshPointsBalance);
+      phoneEl.addEventListener('change', refreshPointsBalance);
+    }
+  })();
+
+  // v20260603-v2：折抵點數輸入 → 即時重算（含上限約束）
+  (function(){
+    const useEl = document.getElementById('onlinePointsUseInput');
+    if(useEl) useEl.addEventListener('input', refreshOnlineTotals);
+  })();
+
+  // v20260603-v2：讓 promotion-ui 套用/清除優惠碼時也連動重算點數列與合計
+  window.__refreshOnlinePromotion = function(){
+    try{ refreshPromotionDisplay(); }catch(e){}
+    try{ refreshOnlineTotals(); }catch(e){}
+  };
+
 
   document.getElementById('onlineSearchInput').addEventListener('input', renderProducts);
   document.getElementById('onlineItemQtyInput').addEventListener('input', ()=>{
