@@ -390,7 +390,9 @@ function applyCoupon(){
   onlinePromoState.couponCode = (input ? input.value : '').trim().toUpperCase();
   refreshPromotionDisplay();
   if(typeof onlinePromoState.onChange === 'function') onlinePromoState.onChange(getCurrentPromotion());
+  if(typeof window !== 'undefined' && typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
 }
+
 
 function clearCoupon(){
   onlinePromoState.couponCode = '';
@@ -398,7 +400,9 @@ function clearCoupon(){
   if(input) input.value = '';
   refreshPromotionDisplay();
   if(typeof onlinePromoState.onChange === 'function') onlinePromoState.onChange(getCurrentPromotion());
+  if(typeof window !== 'undefined' && typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
 }
+
 
 function getCurrentPromotion(){
   var cart = typeof onlinePromoState.cartGetter === 'function' ? onlinePromoState.cartGetter() : [];
