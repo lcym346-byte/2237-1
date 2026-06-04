@@ -146,7 +146,36 @@ POS 與看板統一使用「營業日」概念，跨日營業時段歸屬同一�
 
 ---
 
+## 六之二、會員點數與線上付款架構（v20260603-points / v20260604 確立）
+
+### 點數資料路徑與權限
+- 儲存路徑：`points/{storeCode}/{phone}/balance`（餘額，數字 >=0）與 `points/{storeCode}/{phone}/history/{pushId}`（異動明細，欄位 at / type / delta / balanceAfter / orderNo，type∈{earn,use,refund}）。各店獨立。
+- `phone` 一律經 `replace(/\D/g,'')` 正規化（只留數字、保留開頭 0）。
+- Firebase 規則：`points/{storeCode}/{phone}` 的 `.read = true`（**任何人含匿名顧客皆可讀餘額**），`.write` 限 admin 或 `stores/{storeCode}===true` 的員工。故顧客端能顯示點數但改不了。
+- 查餘額顯示為 0 時，代表該電話真的無餘額，**不是權限問題**（與查單走的 `customerOrderLookup` 需 `auth!=null` 不同；點數讀取連登入都不需要）。
+- 核心函式都在 `js/modules/customer-service.js`：getPointsBalance / _writePointsTxn / deductPointsOnConfirm / refundPointsOnCancel / earnPointsOnComplete / getPointsHistory。寫入只在 POS 端（已登入 staff/admin）。
+
+### 點數業務規則
+- 賺點：僅線上單，店家確認 + 結帳完成(completed) 才入帳；用 `order.pointsSettled` 防重複。
+- 折抵：1點=1元，僅線上點餐用。接單(confirmed)時 POS 端 `deductPointsOnConfirm` 預扣 min(顧客宣告 pointsRequested, 當下真實餘額)，杜絕超折，回寫 `order.pointsUsed`。
+- 退點：pending 單作廢 → 退回 `order.pointsUsed`；completed 作廢 → 不退。
+- 當次回饋點數不可當次折抵：只在結帳完成入帳，顧客端僅做「本次可得點數」預覽顯示。
+
+### 線上付款別欄位流向（兩個欄位勿混用）
+- `o.payMethod`：**顧客在線上點餐預選的付款別**，值為 '現金' / '電子支付' / ''。
+  流向：online-order-page.js 送單 payload.payMethod → Firebase onlineOrders → realtime-order-service.js `buildRealtimeOrderForPOS` 帶入 POS 訂單的 `payMethod`（只接受 '現金'/'電子支付'，否則空字串）。
+- `o.paymentMethod`：**實際結帳時的收款方式**（待付款階段為「待付款」，結帳後才是真正收款別）。
+- 兩者意義不同：訂單卡若要顯示「顧客當初選什麼」用 `o.payMethod`；顯示「實際怎麼收的」用 `o.paymentMethod`。orders-page.js renderOrdersSection 待付款卡的「顧客選擇：現金/電子支付」標籤讀的是 `o.payMethod`。
+
+### 線上點餐購物車與點數顯示入口
+- 購物車有兩個開啟入口：`#openCartBtn`（標題列按鈕）與動態建立的浮動鈕 `#floatingCartBtn`。兩者都應呼叫 `openCartDrawer()`，不要各自直接 `classList.remove('hidden')`，否則新增的開啟時連動邏輯（如查點數）會漏掉其中一個入口。
+- 「目前點數」由 `refreshPointsBalance()` 查 `getPointsBalance(phone, storeCode)` 後顯示。觸發時機：電話欄位 blur/change，以及 `openCartDrawer()` 打開購物車時各查一次（`_lastPhoneQueried` 擋同一支重查）。
+- 顧客端不需做雲端備份，init() 已關閉 cloudBackup，避免匿名身分每 10 秒噴 PERMISSION_DENIED。
+
+---
+
 ## 七、AI 工作守則
+
 
 1. **動手前先讀完本檔 + `aiREADME最新進度.md`**，禁止憑記憶或猜測修改。
 2. **每次只改一個檔案**，每個檔案一個 commit，commit message 描述清楚做了什麼。
