@@ -451,19 +451,41 @@ export async function pushOnlineOrder(order, storeCode){
     console.warn('buildLookupKeyForOrder failed:', e);
   }
 
+    const nowIso = new Date().toISOString();
   await dbApi.set(newRef, Object.assign({}, order, {
     storeCode: code,
     customerUid: user.uid,
     customerLookupKey,
     status: 'pending_confirm',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
+    createdAt: nowIso,
+    updatedAt: nowIso,
     prepTimeMinutes: null,
     estimatedReadyAt: null,
     replyMessage: ''
   }));
 
+  // 加寫顧客反查表 customerOrderLookup/{code}/{lookupKey}/{orderId}
+  // 顧客查單只讀自己 lookupKey 底下這批，不必讀整店 onlineOrders（符合 rules）
+  if(customerLookupKey){
+    try{
+      const lookupRef = await getRef(`customerOrderLookup/${code}/${customerLookupKey}/${newRef.key}`);
+      await dbApi.set(lookupRef, {
+        id: newRef.key,
+        orderNo: order.orderNo || ('ON' + Date.now()),
+        createdAt: nowIso,
+        updatedAt: nowIso,
+        status: 'pending_confirm',
+        total: Number(order.total || 0),
+        customerUid: user.uid,
+        items: Array.isArray(order.items) ? order.items : []
+      });
+    }catch(e){
+      console.warn('寫 customerOrderLookup 失敗（不影響下單）：', e && e.message);
+    }
+  }
+
   cfg.lastOrderAt = new Date().toISOString();
+
   cfg.lastSyncStatus = `顧客訂單已送出（${code}）`;
   persistAll();
   return newRef.key;
