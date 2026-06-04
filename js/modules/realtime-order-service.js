@@ -627,11 +627,13 @@ export function buildRealtimeOrderForPOS(remote){
     // ===== 套用線上訂單帶來的優惠碼／折扣 =====
   // 顧客送單時 payload 已寫入 discount / couponCode / couponMessage
   // 折扣不可超過小計、不可為負
-    // v20260603：優惠不折現，金額將於結帳完成時轉成點數；total 先放小計，接單預扣點數後再調整
+        // v20260603-v2：手動優惠碼直接折現金（total 要扣 discount）；
+    // 折抵點數於接單 deductPointsOnConfirm 時再從 total 減。
   const remoteDiscount = Math.max(0, Number(remote.discount || 0));
   const remoteCouponCode = String(remote.couponCode || '').toUpperCase();
   const remoteCouponMessage = String(remote.couponMessage || '');
-  const grandTotal = subtotal;
+  const grandTotal = Math.max(0, subtotal - remoteDiscount);
+
 
 
   return {
