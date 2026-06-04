@@ -61,26 +61,21 @@ export function markPendingOrderPaid(orderId, paymentMethod){
     // v20260525 新增：待付款改為完成時也推送客顯
   if (paymentMethod !== '待付款') {
     displayPaid(order).catch(() => {});
-    // v20260603-v2：線上單結帳完成 → 依「付款別 + 本機促銷設定」重算付款回饋點數，
-    //   再轉成會員點數（防重複 settle）。不信任顧客端送上來的數字。
-    //   只有線上單(有 customerPhone)且回饋點數 > 0 才賺點；直接折現金的優惠碼不再賺點。
-    if (order.status === 'completed' && !order.pointsSettled && String(order.customerPhone || '').replace(/\D/g, '')) {
-      // 判斷付款別（寬鬆比對 POS 結帳字串）
-      let payKind = '';
-      const pm = String(paymentMethod || '');
-      if (pm.indexOf('現金') >= 0) payKind = '現金';
-      else if (pm.indexOf('電子') >= 0 || pm.indexOf('電支') >= 0 || pm.indexOf('電') >= 0) payKind = '電子支付';
-
+    // v20260603-v2：線上單結帳完成 → 依「客人線上選的付款別 order.payMethod」+ 本機促銷設定
+    //   重算付款回饋點數，再轉成會員點數（防重複 settle、不信任顧客端送上來的點數值）。
+    //   回饋只看 order.payMethod（現金 / 電子支付），與店員按哪顆付款鈕無關。
+    //   只有線上單(有 customerPhone + payMethod)且回饋 > 0 才賺點；直接折現金的優惠碼不再賺點。
+    if (order.status === 'completed' && !order.pointsSettled
+        && String(order.customerPhone || '').replace(/\D/g, '')
+        && (order.payMethod === '現金' || order.payMethod === '電子支付')) {
       Promise.all([
         import('./promotion-service.js'),
         import('./customer-service.js')
       ]).then(([promo, cust]) => {
         let reward = 0;
         try {
-          if (payKind) {
-            const r = promo.getPaymentRewardPoints(order.items || [], payKind);
-            reward = Math.max(0, Math.round(Number(r && r.points || 0) * 10) / 10);
-          }
+          const r = promo.getPaymentRewardPoints(order.items || [], order.payMethod);
+          reward = Math.max(0, Math.round(Number(r && r.points || 0) * 10) / 10);
         } catch (e) { console.warn('重算付款回饋點數失敗：', e); }
         order.pointsEarnReward = reward;
         if (reward > 0) {
@@ -97,5 +92,6 @@ export function markPendingOrderPaid(orderId, paymentMethod){
 
   return order;
 }
+
 
 
