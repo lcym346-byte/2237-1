@@ -37,52 +37,98 @@
     </section>
   </main>
 
-  <div id="onlineCartDrawer" class="online-drawer hidden">
+    <div id="onlineCartDrawer" class="online-drawer hidden">
     <div class="online-drawer-backdrop"></div>
     <div class="online-drawer-panel">
-      <div class="row between wrap">
+      <!-- v20260603-v2：只「送出訂單」固定在底，其餘全部可捲動 -->
+      <div class="row between wrap" style="flex:0 0 auto">
         <h2>購物車</h2>
         <button id="closeCartBtn" class="ghost-btn">✕</button>
       </div>
-      <div id="onlineCartList" class="stack"></div>
 
-      <!-- 顧客資訊（截帳時填寫） -->
-      <section class="card stack">
-        <h2>顧客資訊</h2>
-        <label>訂單類型
-          <select id="onlineOrderType">
-            <option value="外帶">外帶</option>
-            <option value="內用">內用</option>
-            <option value="預約">預約</option>
-          </select>
-        </label>
-        <div id="onlineReservationBlock" style="display:none">
-          <label>選擇預約取餐時間</label>
-          <select id="onlineReservationSlot" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">
-            <option value="">請選擇時段</option>
-          </select>
-          <div id="onlineReservationHint" class="muted" style="font-size:12px;margin-top:4px">起始時間為 1 小時後，每 15 分鐘一個區間，可預約至 2 天內。</div>
-        </div>
-        <div style="display:flex;gap:8px;">
-          <label style="flex:1;">姓名
-            <input id="onlineCustomerName" placeholder="請輸入姓名">
-          </label>
-          <label style="flex:1;">電話
-            <input id="onlineCustomerPhone" placeholder="請輸入電話">
-          </label>
-        </div>
-        <label>顧客備註
-          <textarea id="onlineCustomerNote" rows="3" placeholder="例如：晚點取餐、餐具需求、桌號"></textarea>
-        </label>
-      </section>
+      <!-- 可捲動區（餐點 + 顧客資訊 + 金額 + 點數 + 優惠碼），送出鈕不在這裡面 -->
+      <div id="onlineDrawerScroll" style="flex:1 1 auto;overflow-y:auto;-webkit-overflow-scrolling:touch">
+        <!-- 餐點內容（不動） -->
+        <div id="onlineCartList" class="stack"></div>
 
-      <div class="online-summary">
-        <div class="row between"><span>小計</span><strong id="onlineSubtotalText">0</strong></div>
-        <div class="row between"><span>總數量</span><strong id="onlineTotalQtyText">0</strong></div>
+        <!-- 顧客資訊 -->
+        <section class="card stack">
+          <h2>顧客資訊</h2>
+          <!-- v20260603-v2：訂單類型左右兩欄（左=類型，右=預約時段，選預約才顯示） -->
+          <div style="display:flex;gap:8px;">
+            <label style="flex:1;">訂單類型
+              <select id="onlineOrderType">
+                <option value="外帶">外帶</option>
+                <option value="內用">內用</option>
+                <option value="預約">預約</option>
+              </select>
+            </label>
+            <label style="flex:1;" id="onlineReservationBlock" style="display:none">選擇預約取餐時間
+              <select id="onlineReservationSlot" style="width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:14px">
+                <option value="">請選擇時段</option>
+              </select>
+            </label>
+          </div>
+          <div id="onlineReservationHint" class="muted" style="font-size:12px;margin-top:-4px;display:none">起始時間為 1 小時後，每 15 分鐘一個區間，可預約至 2 天內。</div>
+
+          <!-- 姓名/電話（不動） -->
+          <div style="display:flex;gap:8px;">
+            <label style="flex:1;">姓名
+              <input id="onlineCustomerName" placeholder="請輸入姓名">
+            </label>
+            <label style="flex:1;">電話
+              <input id="onlineCustomerPhone" placeholder="請輸入電話">
+            </label>
+          </div>
+
+          <!-- v20260603-v2：顧客備註縮成一列 -->
+          <label>顧客備註
+            <input id="onlineCustomerNote" placeholder="例如：晚點取餐、餐具需求、桌號">
+          </label>
+        </section>
+
+        <div class="online-summary">
+          <!-- v20260603-v2：小計 + 總數量同一列 -->
+          <div class="row between">
+            <span>小計 <strong id="onlineSubtotalText">0</strong></span>
+            <span>總數量 <strong id="onlineTotalQtyText">0</strong></span>
+          </div>
+
+          <!-- 優惠碼區由 promotion-ui.js 動態插在 #onlinePointsRow 之前（見 JS） -->
+
+          <!-- v20260603-v2：點數列（左=目前點數，右=折抵點數輸入） -->
+          <div id="onlinePointsRow" class="row between" style="margin-top:8px;align-items:center">
+            <span>目前點數 <strong id="onlinePointsBalanceText">—</strong></span>
+            <span style="display:flex;align-items:center;gap:6px">折抵
+              <input id="onlinePointsUseInput" type="number" min="0" inputmode="numeric" placeholder="0" style="width:84px;padding:6px;border:1px solid #cbd5e1;border-radius:6px;text-align:right">
+            </span>
+          </div>
+
+          <!-- v20260603-v2：折扣金額（左） + 本次可得點數（右） -->
+          <div class="row between" style="margin-top:6px">
+            <span>折扣 <strong id="onlineDiscountSummaryText" style="color:#16a34a">-0</strong></span>
+            <span>本次可得點數 <strong id="onlineRewardPointsText" style="color:#f59e0b">0</strong></span>
+          </div>
+
+          <!-- 應付合計（單一列） -->
+          <div class="row between" style="margin-top:6px;font-weight:700;border-top:1px dashed #cbd5e1;padding-top:8px">
+            <span>應付合計</span>
+            <span id="onlineGrandTotalSummaryText" style="color:#dc2626">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- v20260603-v2：固定在底——付款別兩顆鈕 + 送出訂單 -->
+      <div style="flex:0 0 auto;padding-top:10px;border-top:1px solid #e2e8f0;background:#fff">
+        <div style="display:flex;gap:8px;margin-bottom:8px">
+          <button type="button" id="onlinePayCash" class="pay-method-btn" data-pay="現金" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">現金</button>
+          <button type="button" id="onlinePayEpay" class="pay-method-btn" data-pay="電子支付" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">電子支付</button>
+        </div>
         <button id="submitOnlineOrderBtn" class="primary-btn full">送出訂單</button>
       </div>
     </div>
   </div>
+
 
   <div id="onlineProductModal" class="modal hidden">
     <div class="modal-backdrop"></div>
