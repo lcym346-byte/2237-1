@@ -377,15 +377,12 @@ function buildCouponBoxHtml(){
 '    <button id="onlineCouponClearBtn" type="button" style="padding:8px 10px;background:#f1f5f9;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer">清除</button>' +
 '  </div>' +
 '  <div id="onlineCouponMessage" style="margin-top:6px;font-size:12px;color:#64748b">若有店家提供的優惠碼，可在此輸入。</div>' +
-'  <div id="onlineDiscountRow" style="display:none;margin-top:8px;display:flex;justify-content:space-between;font-size:14px">' +
+'  <div id="onlineDiscountRow" style="display:none;margin-top:8px;justify-content:space-between;font-size:14px">' +
 '    <span style="color:#475569">折扣</span>' +
 '    <strong id="onlineDiscountText" style="color:#16a34a">-0</strong>' +
 '  </div>' +
-'  <div style="margin-top:6px;display:flex;justify-content:space-between;font-size:15px;font-weight:700;border-top:1px dashed #cbd5e1;padding-top:8px">' +
-'    <span>應付合計</span>' +
-'    <span id="onlineGrandTotalText" style="color:#dc2626">0</span>' +
-'  </div>' +
 '</div>';
+
 }
 
 function applyCoupon(){
@@ -472,11 +469,11 @@ export function mountPromotionOnlineUI(opts){
   }
   renderBannerArea();
 
-      // 2. 優惠碼輸入區（插在送出訂單按鈕「之前」）
+        // 2. 優惠碼輸入區（v20260603-v3：插在捲動區小計下、點數列之前）
   if(!document.getElementById('onlineCouponBox')){
-    var submitBtn = document.getElementById('submitOnlineOrderBtn');
-    if(submitBtn && submitBtn.parentNode){
-      submitBtn.insertAdjacentHTML('beforebegin', buildCouponBoxHtml());
+    var pointsRow = document.getElementById('onlinePointsRow');
+    if(pointsRow && pointsRow.parentNode){
+      pointsRow.insertAdjacentHTML('beforebegin', buildCouponBoxHtml());
     } else {
       var couponHost =
         document.querySelector('.online-summary') ||
@@ -484,6 +481,7 @@ export function mountPromotionOnlineUI(opts){
         document.body;
       couponHost.insertAdjacentHTML('beforeend', buildCouponBoxHtml());
     }
+
     document.getElementById('onlineCouponApplyBtn').onclick = applyCoupon;
     document.getElementById('onlineCouponClearBtn').onclick = clearCoupon;
     document.getElementById('onlineCouponInput').addEventListener('keydown', function(e){
