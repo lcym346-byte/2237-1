@@ -38,8 +38,15 @@
 - [ ] **online-order-html / online-order-page.js**：版面改版（見下「版面定案」）＋
       付款別（現金/電支）選擇＋「目前點數 / 折抵點數輸入」＋「本次可得點數」預覽（純顯示）；
       送單 payload 補 payMethod、pointsRequested、付款回饋碼資訊。
+      - (v20260604 補強) 「目前點數」原本只在電話欄位 blur/change 時查（refreshPointsBalance）。
+        改為「打開購物車就主動查一次」：openCartDrawer() 內加呼叫 refreshPointsBalance()。
+        購物車有兩個開啟入口（#openCartBtn 與浮動鈕 #floatingCartBtn），浮動鈕原本直接
+        remove('hidden') 不走 openCartDrawer，已改成呼叫 openCartDrawer()，兩入口行為一致。
+        Firebase points/{storeCode}/{phone}/balance 規則為 .read=true（匿名可讀），手機查得到；
+        顯示 0 代表該電話真的沒餘額，非權限問題。配套升 service-worker CACHE_NAME（顧客端清舊快取）。
 - [ ] **customer-service.js**：earnPointsOnComplete 賺點來源從 order.discountAmount
       改為 order.pointsEarnReward（與直接折現金脫鉤）。
+
 - [ ] **order-service.js**：結帳完成、呼叫 earnPointsOnComplete 前，依本機促銷設定 + payMethod
       重算並寫入 order.pointsEarnReward（防作弊）。
 - [ ] 文件：完成後更新本檔與已完成紀錄，並修正 v20260603-points 段落的舊賺點規則描述。
