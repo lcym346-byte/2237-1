@@ -141,9 +141,6 @@ const DEFAULT_PROMOTIONS = {
   updatedAt: ''
 };
 
-  updatedAt: ''
-};
-
 export function getPromotionTemplates(){
   return Object.keys(TEMPLATE_MAP).map(function(key){ return { key: key, name: TEMPLATE_MAP[key].name }; });
 }
