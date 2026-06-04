@@ -518,12 +518,21 @@ function updateCashDisplay(){
 
 function openCashPayModal(){
   _cashReceived = '';
-  _cashDue = getCartDueAmount();
+  // v20260604：待付款訂單結帳時購物車是空的，應收要讀那筆訂單的 total，不能讀購物車
+  var _payMode = document.getElementById('paymentTargetMode').value || 'new';
+  if(_payMode === 'pending'){
+    var _payTargetId = document.getElementById('paymentTargetOrderId').value || '';
+    var _payOrder = state.orders.find(function(x){ return x.id === _payTargetId; });
+    _cashDue = _payOrder ? Math.max(0, Number(_payOrder.total || 0)) : 0;
+  } else {
+    _cashDue = getCartDueAmount();
+  }
   renderCashQuickButtons();
   updateCashDisplay();
   const m = document.getElementById('cashPayModal');
   if(m) m.classList.remove('hidden');
 }
+
 
 function closeCashPayModal(){
   const m = document.getElementById('cashPayModal');
