@@ -285,18 +285,18 @@ export async function lookupOrdersByCustomer(fullPhone, name, storeCode){
     const cfg = rt.getRealtimeConfig();
     if (!cfg.enabled) throw new Error('店家未啟用線上查單');
 
-            // 顧客需先匿名登入（onlineOrders 規則允許匿名讀自己的單）
+    // 顧客需先匿名登入（customerOrderLookup 規則允許 auth != null 讀）
     await rt.signInCustomerAnonymously();
 
-    // 查 /onlineOrders/{storeCode} 中 customerLookupKey 一致的訂單
-    const ref = await rt._getRef(`onlineOrders/${code}`);
+    // 改讀反查表 customerOrderLookup/{storeCode}/{lookupKey}
+    // 顧客匿名只能讀自己 lookupKey 底下這批，無法讀整店 onlineOrders（符合 Firebase 規則）
+    const ref = await rt._getRef(`customerOrderLookup/${code}/${lookupKey}`);
     const snapshot = await rt._dbApi().get(ref);
 
     const all = snapshot.val() || {};
 
     const matched = Object.entries(all)
       .map(([id, row]) => ({ id, ...row }))
-      .filter(o => o.customerLookupKey === lookupKey)
       .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
 
     return matched;
@@ -304,6 +304,7 @@ export async function lookupOrdersByCustomer(fullPhone, name, storeCode){
 
   } catch (err) {
     if (err.code === 'PERMISSION_DENIED') {
+
       throw new Error('無權限查詢，請確認姓名與電話是否正確');
     }
     throw err;
