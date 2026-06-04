@@ -286,9 +286,11 @@ function renderOrdersSection(wrap, orders, mode){
           <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escapeHtml(o.orderNo)}</strong>
           <span class="badge ${badgeClass}" style="${isVoid ? 'background:#fecaca;color:#991b1b' : ''}">${badgeText}</span>
           <div class="muted">${escapeHtml(fmtLocalDateTime(o.createdAt))} ・ ${escapeHtml(o.orderType)} ${o.tableNo ? '・' + escapeHtml(o.tableNo) : ''}${!isPending && !isVoid && o.paymentMethod ? ' ・ 付款：' + escapeHtml(o.paymentMethod) : ''}${prepMeta}${readyMeta}</div>
+          ${o.payMethod === '現金' || o.payMethod === '電子支付' ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;${o.payMethod === '現金' ? 'background:#dcfce7;color:#15803d' : 'background:#dbeafe;color:#1d4ed8'}">顧客選擇：${escapeHtml(o.payMethod)}</span></div>` : ''}
           ${replyMeta}
           ${voidMeta}
         </div>
+
                <div style="text-align:right">
           ${Number(o.discountAmount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money(Number(o.subtotal||0))}</div>` : ''}
           <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong>
