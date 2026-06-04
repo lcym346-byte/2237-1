@@ -83,7 +83,7 @@ function buildSettingsModalHtml(){
 '          <label style="display:block"><div style="font-size:13px;color:#475569;margin-bottom:4px">活動類型代碼（內部用）</div><input type="text" id="promoCampaignType" maxlength="32" style="width:100%;padding:8px;border:1px solid #cbd5e1;border-radius:6px;box-sizing:border-box"></label>' +
 '        </div>' +
 '      </fieldset>' +
-'      '      <fieldset style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">' +
+'      <fieldset style="border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px">' +
 '        <legend style="padding:0 8px;font-weight:600;color:#0f172a">優惠碼清單</legend>' +
 '        <div id="promoCouponList" style="display:flex;flex-direction:column;gap:8px"></div>' +
 '        <button id="promoAddCouponBtn" type="button" style="margin-top:10px;padding:6px 12px;background:#f1f5f9;border:1px dashed #94a3b8;border-radius:6px;cursor:pointer;width:100%">+ 新增優惠碼</button>' +
