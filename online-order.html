@@ -110,22 +110,26 @@
             <span>本次可得點數 <strong id="onlineRewardPointsText" style="color:#f59e0b">0</strong></span>
           </div>
 
-          <!-- 應付合計（單一列） -->
+                    <!-- 應付合計（單一列） -->
           <div class="row between" style="margin-top:6px;font-weight:700;border-top:1px dashed #cbd5e1;padding-top:8px">
             <span>應付合計</span>
             <span id="onlineGrandTotalSummaryText" style="color:#dc2626">0</span>
           </div>
+
+          <!-- v20260603-v3：付款別兩顆鈕移進捲動區（只剩送出鈕固定） -->
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <button type="button" id="onlinePayCash" class="pay-method-btn" data-pay="現金" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">現金</button>
+            <button type="button" id="onlinePayEpay" class="pay-method-btn" data-pay="電子支付" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">電子支付</button>
+          </div>
         </div>
       </div>
 
-      <!-- v20260603-v2：固定在底——付款別兩顆鈕 + 送出訂單 -->
+
+            <!-- v20260603-v3：只「送出訂單」固定在底 -->
       <div style="flex:0 0 auto;padding-top:10px;border-top:1px solid #e2e8f0;background:#fff">
-        <div style="display:flex;gap:8px;margin-bottom:8px">
-          <button type="button" id="onlinePayCash" class="pay-method-btn" data-pay="現金" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">現金</button>
-          <button type="button" id="onlinePayEpay" class="pay-method-btn" data-pay="電子支付" style="flex:1;padding:12px;border:2px solid #cbd5e1;border-radius:10px;background:#fff;font-weight:700;cursor:pointer">電子支付</button>
-        </div>
         <button id="submitOnlineOrderBtn" class="primary-btn full">送出訂單</button>
       </div>
+
     </div>
   </div>
 
