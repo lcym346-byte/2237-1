@@ -315,12 +315,13 @@ function renderCart(){
 
     if(typeof window.__refreshOnlinePromotion === 'function') window.__refreshOnlinePromotion();
     // v20260603-v2：購物車變動 → 重算折扣/折抵上限/可得點數/應付合計
-    if(typeof refreshOnlineTotals === 'function') refreshOnlineTotals();
-
+  if(typeof refreshOnlineTotals === 'function') refreshOnlineTotals();
 }
-
-
-function openCartDrawer(){ document.getElementById('onlineCartDrawer').classList.remove('hidden'); }
+function openCartDrawer(){
+  document.getElementById('onlineCartDrawer').classList.remove('hidden');
+  // v20260604：打開購物車時，若已有電話則主動查一次會員點數並顯示
+  if(typeof refreshPointsBalance === 'function') refreshPointsBalance();
+}
 function closeCartDrawer(){ document.getElementById('onlineCartDrawer').classList.add('hidden'); }
 
 function openStatusOverlay(title, text, closable = false){
@@ -789,11 +790,11 @@ async function init(){
   let floatBtn = document.getElementById('floatingCartBtn');
   if (!floatBtn) {
     floatBtn = document.createElement('button');
-    floatBtn.id = 'floatingCartBtn';
+        floatBtn.id = 'floatingCartBtn';
     floatBtn.innerHTML = '🛒<span id="floatingCartBadge" style="display:none;">0</span>';
     floatBtn.onclick = () => {
-      const drawer = document.getElementById('onlineCartDrawer');
-      if (drawer) drawer.classList.remove('hidden');
+      // v20260604：改走 openCartDrawer，打開時一併查詢會員點數
+      openCartDrawer();
     };
     document.body.appendChild(floatBtn);
   }
