@@ -633,12 +633,17 @@ async function runPointsQuery(){
   var histBox = document.getElementById('pointsQueryHistoryBox');
   if(balBox) balBox.textContent = '查詢中…';
   if(histBox) histBox.innerHTML = '查詢中…';
+  // v20260603-v2：點數可能有小數一位（付款回饋 percent），格式化成最多 1 位小數、整數不顯示 .0
+  function fmtPts(n){
+    var v = Math.round(Number(n || 0) * 10) / 10;
+    return (Math.round(v) === v) ? String(Math.round(v)) : String(v);
+  }
   try{
     var cust = await import('../modules/customer-service.js');
     var res = await cust.getPointsHistory(phone, storeCode);
     var balance = (res && typeof res.balance === 'number') ? res.balance : 0;
     var history = (res && Array.isArray(res.history)) ? res.history : [];
-    if(balBox) balBox.textContent = '點數餘額：' + balance + ' 點';
+    if(balBox) balBox.textContent = '點數餘額：' + fmtPts(balance) + ' 點';
     if(histBox){
       if(history.length === 0){
         histBox.innerHTML = '（無交易紀錄）';
@@ -653,7 +658,7 @@ async function runPointsQuery(){
           return '<div style="padding:4px 0;border-bottom:1px dashed #e2e8f0">'
             + '<span style="color:#64748b">' + escapeHtml(t) + '</span> '
             + '<strong>' + escapeHtml(typeLabel) + '</strong> '
-            + '<span style="color:' + color + ';font-weight:700">' + sign + delta + '</span>'
+            + '<span style="color:' + color + ';font-weight:700">' + sign + fmtPts(delta) + '</span>'
             + (h.orderNo ? ' <span style="color:#94a3b8">#' + escapeHtml(h.orderNo) + '</span>' : '')
             + '</div>';
         }).join('');
@@ -664,6 +669,7 @@ async function runPointsQuery(){
     if(histBox) histBox.innerHTML = '查詢失敗：' + escapeHtml(err && err.message ? err.message : String(err));
   }
 }
+
 
 function bindPointsQueryEvents(){
   var phoneEl = document.getElementById('pointsQueryPhone');
