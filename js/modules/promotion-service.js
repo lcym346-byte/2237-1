@@ -211,9 +211,10 @@ export function normalizePromotionsConfig(input){
     if(['amount','percent'].indexOf(type) < 0) type = 'amount';
     var code = cleanCode(c.code);
     if(!code) return;
-    out.coupons.push({
+        out.coupons.push({
       id: cleanText(c.id || uid('coupon'), 48),
       enabled: c.enabled !== false,
+      showToCustomer: c.showToCustomer !== false,
       code: code,
       title: cleanText(c.title || code, 80),
       type: type,
@@ -222,6 +223,7 @@ export function normalizePromotionsConfig(input){
       startsAt: cleanText(c.startsAt || '', 40),
       endsAt: cleanText(c.endsAt || '', 40)
     });
+
   });
   if(!out.banners.length && !hasOwn(src, 'banners')) out.banners = base.banners;
   return out;
@@ -295,9 +297,10 @@ export function getPublicPromotionsConfig(){
     theme: cfg.theme,
     campaignType: cfg.campaignType || '',
     banners: cfg.banners.filter(isActiveWindow).sort(function(a,b){ return Number(a.sortOrder || 0) - Number(b.sortOrder || 0); }),
-    coupons: cfg.coupons.filter(isActiveWindow).map(function(c){
-      return { id: c.id, code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend };
+        coupons: cfg.coupons.filter(isActiveWindow).map(function(c){
+      return { id: c.id, code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend, showToCustomer: c.showToCustomer !== false };
     }),
+
     cashCouponId: cfg.cashCouponId || '',
     epayCouponId: cfg.epayCouponId || '',
     updatedAt: cfg.updatedAt || ''
