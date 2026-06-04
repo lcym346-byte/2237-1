@@ -658,9 +658,12 @@ export function buildRealtimeOrderForPOS(remote){
     couponCode: remoteCouponCode,
     couponMessage: remoteCouponMessage,
     pointsRequested: Math.max(0, Math.round(Number(remote.pointsRequested || 0))),
+    payMethod: (remote.payMethod === '現金' || remote.payMethod === '電子支付') ? remote.payMethod : '',
+    pointsEarnReward: 0,
     pointsUsed: 0,
     pointsEarned: 0,
     pointsSettled: false,
+
     sessionId: getCurrentSession()?.id || null,
 
     subtotal,
