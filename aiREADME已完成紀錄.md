@@ -9,7 +9,9 @@
 
 | 版本 | 日期 | 重點 |
 |---|---|---|
+| v20260604 | 2026-06-04 | 線上點餐購物車打開自動查點數（兩入口）+ 待付款訂單卡顯示顧客預選付款別（現金/電支）|
 | v20260603-points | 2026-06-03 | 會員點數模組：賺點/折抵預扣/作廢退點/POS查詢 + Firebase points 規則 |
+
 | v20260616 | 2026-05-20 | SKU 圖庫工具按鈕 + 2234 storeId 部署疏失修正 + 線上點餐標題來源確認 + Google OAuth 環境排查 |
 | v20260615 | 2026-05-20 | 促銷整合 + 優惠碼帶入訂單 + 訂單卡折扣明細 + 預約 30 分鐘提醒 + SKU 圖庫反推 + 三個舊 bug |
 | v20260613 | 2026-05-13 | 營業日 BD + 外送統計 + 修改改加單 |
@@ -19,8 +21,29 @@
 | v20260603 | 2026-04-xx | APK 商用化補強（LogManager、PrintQueue、API Token） |
 | v20260602 | 2026-04-xx | 印表機字串排版、token 驗證初版、SW cache 更新 |
 | v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
-| v20260601 | 2026-04-xx | APK 純後台改造、三層列印橋接、設定頁 UI |
+
+## v20260604 — 線上購物車自動查點數 + 待付款卡顯示顧客預選付款別
+
+### 異動檔案（2 支 JS + service-worker 升版）
+1. js/pages/online-order-page.js — 打開購物車時主動查一次會員點數並顯示。
+   - openCartDrawer() 內新增呼叫 refreshPointsBalance()（原本只在電話欄位 blur/change 時查，
+     導致電話雖已帶入、但要碰一下欄位點數才會出現）。
+   - 購物車有兩個開啟入口：#openCartBtn 與浮動鈕 #floatingCartBtn。浮動鈕原本直接
+     remove('hidden') 不走 openCartDrawer，已改成呼叫 openCartDrawer()，兩入口行為一致。
+2. js/pages/orders-page.js — renderOrdersSection 訂單卡新增顯示「顧客選擇：現金/電子支付」標籤。
+   - 讀 o.payMethod（由 realtime-order-service.js buildRealtimeOrderForPOS 帶入，
+     值為 '現金' / '電子支付' / ''）。現金綠底、電支藍底。
+   - pending/completed/void 三種 mode 共用該段 HTML，故三區皆顯示；POS 現場單無 payMethod 故不顯示。
+3. service-worker.js — 升 CACHE_NAME，強制顧客端與 POS 主機 T2 Chrome 清舊快取載新檔。
+
+### 設計決策 / 注意
+- 點數讀取走 Firebase points/{storeCode}/{phone}/balance，規則為 .read=true（匿名可讀），
+  手機顧客查得到；若顯示 0 是該電話真的無餘額，非權限問題（與查單需 auth!=null 的路徑不同）。
+- 顧客「預選付款別」o.payMethod 與「實際收款方式」o.paymentMethod 是兩個不同欄位，勿混用。
+- 兩項皆屬 points-v2 任務範圍內的補強，與付款回饋點數主流程不衝突。
+
 ## v20260603-points — 會員點數模組（賺點 / 折抵 / 退點 / POS 查詢）
+
 
 ### 規則
 - 賺點：僅線上單，店家確認＋結帳完成(completed) 才入帳，賺點 = order.discountAmount（優惠不折現、全轉點）。
