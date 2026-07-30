@@ -848,6 +848,48 @@ export async function printSessionReportViaBridge(reportData){
   body += '--------------------------------\n';
   lines.forEach(line => { body += (line.label || '') + '\n'; });
   body += '\n\n\n';
+  // ── v20260730：http 模式（Chrome / T2 8080 橋接）優先，與顧客單走同一條路 ──
+  // 修正：報表原本只走 window.SunmiPrinter（Chrome 無此物件 → 報 "SunmiPrinter is undefined"）。
+  // 改為偵測到 http 模式時，把報表每一行塞進 items（qty/price 欄關掉，不會多印 x1 $0），
+  // 經 routedHttpPrint 送 APK /print，APK 用 printPosReceipt 逐行印出。
+  await detectPrinters(true);
+  const _d = getDetect();
+  if (_d && _d.mode === 'http') {
+    const payload = {
+      mode: 'receipt',
+      openDrawer: false,
+      shopName: title,
+      subtitle: subtitle,
+      items: lines.map(line => ({
+        name: line.label || '',
+        qty: 1,
+        price: 0
+      })),
+      // 關掉數量欄與價格欄 → APK 只印品名那一欄，報表每行原樣輸出、不多字
+      fields: {
+        storeName: !!title,
+        subtitle: !!subtitle,
+        items: true,
+        itemQty: false,
+        itemPrice: false,
+        itemSelections: false,
+        itemNote: false,
+        // 報表沒有這些欄位，一律關掉避免 APK 印出多餘表頭
+        storePhone: false, storeAddress: false,
+        orderNo: false, dateTime: false, orderType: false,
+        paymentMethod: false, customerInfo: false, customerNote: false,
+        orderNote: false, subtotal: false, discount: false,
+        total: false, footer: false
+      }
+    };
+    const rr = await routedHttpPrint('receipt', payload, _d);
+    if (rr.ok) {
+      pslog('printSessionReportViaBridge http ok route=' + rr.route);
+      return { route: rr.route, ok: true };
+    }
+    pslog('printSessionReportViaBridge http failed (' + rr.error + '), fallback');
+  }
+
 
   if(hasSunmi() && typeof window.SunmiPrinter.printText === 'function'){
     try {
