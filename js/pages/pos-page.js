@@ -131,8 +131,21 @@ function flattenSelections(product){
       const opt = mod.options.find(o=>o.id===val);
       if(opt) rows.push({moduleId:mod.id, moduleName:mod.name, optionId:opt.id, optionName:opt.name, price:opt.price});
     }
-  }
+   }
   return rows;
+}
+
+function getEffectiveBasePrice(product){
+  const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+  const i = state.currentSizeIndex;
+  if(i >= 0 && sizes[i]) return Number(sizes[i].price || 0);
+  return Number(product.price || 0);
+}
+function getSizeSuffix(product){
+  const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+  const i = state.currentSizeIndex;
+  if(i >= 0 && sizes[i] && sizes[i].name) return '(' + sizes[i].name + ')';
+  return '';
 }
 
 function updateItemPricePreview(product){
@@ -140,7 +153,7 @@ function updateItemPricePreview(product){
   const selections = flattenSelections(product);
   selections.forEach(s=> add += Number(s.price || 0));
   const qty = Math.max(1, Number(document.getElementById('itemQtyInput').value || 1));
-  const subtotal = (Number(product.price||0) + add) * qty;
+  const subtotal = (getEffectiveBasePrice(product) + add) * qty;
   document.getElementById('itemPricePreview').textContent = '小計：' + money(subtotal);
 }
 
@@ -148,7 +161,27 @@ function renderProductConfig(product){
   document.getElementById('productConfigTitle').textContent = product.name + ' - 設定';
   const wrap = document.getElementById('productConfigModules');
   wrap.innerHTML = '';
+  const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+  if(sizes.length){
+    const sizeBlock = document.createElement('div');
+    sizeBlock.className = 'module-block';
+    sizeBlock.innerHTML = '<div class="module-header"><div><strong>份量</strong><div class="muted">單選</div></div></div><div class="option-list"></div>';
+    const sizeList = sizeBlock.querySelector('.option-list');
+    sizes.forEach((sz, idx) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'option-chip' + (state.currentSizeIndex === idx ? ' active' : '');
+      b.innerHTML = '<span>' + escapeHtml(sz.name) + '</span><strong>' + money(Number(sz.price||0)) + '</strong>';
+      b.onclick = () => {
+        state.currentSizeIndex = (state.currentSizeIndex === idx ? -1 : idx);
+        renderProductConfig(product);
+      };
+      sizeList.appendChild(b);
+    });
+    wrap.appendChild(sizeBlock);
+  }
   (product.modules || []).forEach(att=>{
+
     const mod = state.modules.find(m=>m.id===att.moduleId);
     if(!mod) return;
     const required = att.requiredOverride === null ? mod.required : att.requiredOverride;
@@ -221,15 +254,19 @@ function openProductConfigForNew(productId){
   state.configTarget = {mode:'new', productId};
   state.currentSelections = createConfigState(product);
   document.getElementById('itemNoteInput').value = '';
-  document.getElementById('itemQtyInput').value = 1;
+    document.getElementById('itemQtyInput').value = 1;
+  state.currentSizeIndex = -1;
   renderProductConfig(product);
+
   document.getElementById('productConfigModal').classList.remove('hidden');
 }
 
 function openProductConfigForEdit(rowId){
-  const item = state.cart.find(x=>x.rowId===rowId);
+    const item = state.cart.find(x=>x.rowId===rowId);
   if(!item) return;
+  state.currentSizeIndex = (item.sizeIndex ?? -1);
   const product = state.products.find(p=>p.id===item.productId);
+
   if(!product) return;
   state.configTarget = {mode:'edit', rowId, productId:item.productId};
   state.currentSelections = createConfigState(product);
@@ -245,9 +282,11 @@ function openProductConfigForEdit(rowId){
 
 function closeProductConfig(){
   document.getElementById('productConfigModal').classList.add('hidden');
-  state.configTarget = null;
+    state.configTarget = null;
   state.currentSelections = {};
+  state.currentSizeIndex = -1;
 }
+
 
 function sameSelections(a=[], b=[]){
   if(a.length !== b.length) return false;
@@ -726,9 +765,11 @@ const selections = flattenSelections(product);
     const extra = selections.reduce((s,x)=>s + Number(x.price||0), 0);
     const payload = {
       rowId: state.configTarget.mode === 'edit' ? state.configTarget.rowId : id(),
-      productId: product.id,
-      name: product.name,
-      basePrice: Number(product.price||0),
+            productId: product.id,
+      name: product.name + getSizeSuffix(product),
+      basePrice: getEffectiveBasePrice(product),
+      sizeIndex: state.currentSizeIndex,
+
       qty: Math.max(1, Number(document.getElementById('itemQtyInput').value || 1)),
       note: document.getElementById('itemNoteInput').value.trim(),
       selections,

@@ -345,6 +345,31 @@ export function renderModuleLibrary(expandModuleId=''){
     wrap.appendChild(card);
   });
 }
+function renderProductSizesEditor(){
+  const wrap = document.getElementById('productSizesEditor');
+  if(!wrap) return;
+  if(!Array.isArray(state.editSizes)) state.editSizes = [];
+  wrap.innerHTML = '';
+  if(!state.editSizes.length){
+    wrap.innerHTML = '<div class="muted" style="font-size:12px">尚未設定份量，客人點餐時只會用原價</div>';
+    return;
+  }
+  state.editSizes.forEach((sz, index)=>{
+    const row = document.createElement('div');
+    row.className = 'row gap wrap';
+    row.style.alignItems = 'center';
+    row.innerHTML =
+      '<input class="input sz-name" placeholder="份量名稱（例：4個）" value="'+escapeAttr(sz.name||'')+'" style="flex:1;min-width:120px">' +
+      '<input class="input sz-price" type="number" min="0" placeholder="價格" value="'+Number(sz.price||0)+'" style="width:100px">' +
+      '<button type="button" class="danger-btn small-btn sz-del">刪除</button>';
+    const nameInput = row.querySelector('.sz-name');
+    const priceInput = row.querySelector('.sz-price');
+    nameInput.oninput = ()=>{ state.editSizes[index].name = nameInput.value; };
+    priceInput.oninput = ()=>{ state.editSizes[index].price = Number(priceInput.value||0); };
+    row.querySelector('.sz-del').onclick = ()=>{ state.editSizes.splice(index,1); renderProductSizesEditor(); };
+    wrap.appendChild(row);
+  });
+}
 
 export function renderProductModulesEditor(){
   const wrap = document.getElementById('productModulesEditor');
@@ -577,6 +602,8 @@ export function resetProductForm(){
   renderCategoryOptions();
   if(catEl) catEl.value = '未分類';
   state.editModules = [];
+  state.editSizes = [];
+  renderProductSizesEditor();
   renderProductImagePreview('');
   const statusEl = document.getElementById('productImageStatus');
   if(statusEl) statusEl.textContent = '';
@@ -625,6 +652,8 @@ function openProductForm(product){
   renderCategoryOptions();
   document.getElementById('productCategory').value = product.category || '未分類';
   state.editModules = deepCopy(product.modules||[]);
+  state.editSizes = deepCopy(product && product.sizes ? product.sizes : []);
+  renderProductSizesEditor();
   renderModuleSelect();
   renderProductModulesEditor();
   validateProductForm(false);
@@ -1131,6 +1160,11 @@ export function initProductsPage(){
     state.editModules.push({moduleId, requiredOverride:null});
     renderProductModulesEditor();
   });
+  document.getElementById('addSizeBtn')?.addEventListener('click', ()=>{
+    if(!Array.isArray(state.editSizes)) state.editSizes = [];
+    state.editSizes.push({ name:'', price:0 });
+    renderProductSizesEditor();
+  });
 
       // SKU 變動時即時嘗試對應圖片
   document.getElementById('productSku')?.addEventListener('input', (e)=>{
@@ -1194,6 +1228,7 @@ export function initProductsPage(){
       image: resolvedUrl || imageFromForm,
       description: (document.getElementById('productDescription')?.value || '').trim().slice(0, 60),
       modules: deepCopy(state.editModules || []),
+      sizes: deepCopy(state.editSizes || []),
       sortOrder: idEl?.value ? (state.products.find(p=>p.id===idEl.value)?.sortOrder ?? state.products.length) : state.products.length,
     };
     const idx = state.products.findIndex(p=>p.id===product.id);
