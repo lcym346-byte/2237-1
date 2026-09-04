@@ -100,9 +100,9 @@ function focusFirstInvalidField(result){
 
 function createExcelTemplateRows(){
   return [
-    { SKU:'A001', 商品名稱:'紅茶', 價格:30, 分類:'飲料', 狀態:'啟用' },
-    { SKU:'A002', 商品名稱:'奶茶', 價格:45, 分類:'飲料', 狀態:'啟用' },
-    { SKU:'A003', 商品名稱:'雞排', 價格:80, 分類:'炸物', 狀態:'啟用' }
+    { SKU:'A001', 商品名稱:'紅茶', 價格:30, 分類:'飲料', 狀態:'啟用', 售完:'否', 說明:'古早味紅茶', 圖片網址:'', 份量JSON:'', 模組JSON:'' },
+    { SKU:'A002', 商品名稱:'奶茶', 價格:45, 分類:'飲料', 狀態:'啟用', 售完:'否', 說明:'', 圖片網址:'', 份量JSON:'[{"name":"大杯","price":10}]', 模組JSON:'' },
+    { SKU:'A003', 商品名稱:'雞排', 價格:80, 分類:'炸物', 狀態:'啟用', 售完:'否', 說明:'現點現炸酥脆美味', 圖片網址:'', 份量JSON:'', 模組JSON:'' }
   ];
 }
 
@@ -125,6 +125,15 @@ function downloadBlob(blob, filename){
   anchor.click();
   setTimeout(()=> URL.revokeObjectURL(url), 1200);
 }
+function safeParseJsonArray(raw){
+  const text = String(raw ?? '').trim();
+  if(!text) return [];
+  try{
+    const parsed = JSON.parse(text);
+    return Array.isArray(parsed) ? parsed : [];
+  }catch(e){ return []; }
+}
+
 function normalizeImportedRow(row){
   const sku = String(row['SKU'] ?? row['sku'] ?? row['編號'] ?? '').trim();
   const name = String(row['商品名稱'] ?? row['名稱'] ?? row['name'] ?? row['Name'] ?? '').trim();
@@ -132,7 +141,24 @@ function normalizeImportedRow(row){
   const category = String(row['分類'] ?? row['category'] ?? row['Category'] ?? '未分類').trim() || '未分類';
   const enabledText = String(row['狀態'] ?? row['啟用'] ?? row['enabled'] ?? '啟用').trim();
   const enabled = !['false', '停用', '0', '關閉'].includes(enabledText);
-  return { sku, name, price, category, enabled };
+  const soldOutText = String(row['售完'] ?? row['soldOut'] ?? row['SoldOut'] ?? '否').trim();
+  const soldOut = ['true', '是', '1', '售完'].includes(soldOutText);
+  const description = String(row['說明'] ?? row['商品說明'] ?? row['description'] ?? row['Description'] ?? '').trim().slice(0, 60);
+  const image = String(row['圖片網址'] ?? row['圖片'] ?? row['image'] ?? row['Image'] ?? '').trim();
+  const sizesRaw = row['份量JSON'] ?? row['份量'] ?? row['sizes'] ?? row['Sizes'] ?? '';
+  const sizes = safeParseJsonArray(sizesRaw)
+    .map(s => ({ name: String((s && s.name) || '').trim(), price: Number((s && s.price) || 0) }))
+    .filter(s => s.name);
+  const modulesRaw = row['模組JSON'] ?? row['模組'] ?? row['modules'] ?? row['Modules'] ?? '';
+  const moduleNames = safeParseJsonArray(modulesRaw).map(m => String(m || '').trim()).filter(Boolean);
+  return { sku, name, price, category, enabled, soldOut, description, image, sizes, moduleNames };
+}
+
+function resolveModuleIdsByNames(names){
+  return (names || [])
+    .map(n => (state.modules || []).find(m => m.name === n))
+    .filter(Boolean)
+    .map(m => ({ moduleId: m.id, requiredOverride: null }));
 }
 
 function importExcelRowsToPending(rows){
@@ -140,6 +166,7 @@ function importExcelRowsToPending(rows){
   const dupSkus = [];
   const updatedSkus = [];   // 已補 SKU 的現有商品
   const updatedImages = []; // 順帶補上圖片的商品
+  const updatedFields = []; // 已更新其他欄位（說明/售完/份量/模組...）的現有商品
   const skuMap = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.skuMap) || {};
   const baseUrl = (state.settings && state.settings.imageLibrary && state.settings.imageLibrary.baseUrl) || '';
 
@@ -156,45 +183,57 @@ function importExcelRowsToPending(rows){
     // 1) 先比對現有商品「商品名稱」是否存在
     const matchProduct = (state.products || []).find(p => (p.name || '').trim() === item.name);
     if(matchProduct){
-      // 已存在 → 補 SKU 與圖片
+      // 已存在 → 補 SKU、圖片，並同步其餘完整欄位
+      let fieldChanged = false;
       if(item.sku){
-        // 若該 SKU 已被別的商品使用，記錄為衝突並略過
+        // 若該 SKU 已被別的商品使用，記錄為衝突並略過整筆更新
         const conflict = (state.products || []).find(p => p.sku === item.sku && p !== matchProduct);
         if(conflict){
           dupSkus.push(item.sku + '（與「' + (conflict.name||'') + '」衝突）');
-        } else {
-          if(matchProduct.sku !== item.sku){
-            matchProduct.sku = item.sku;
-            updatedSkus.push(item.name + ' → ' + item.sku);
-          }
-          // 順帶套用圖庫圖片
-          if(skuMap[item.sku] && baseUrl){
-            const url = baseUrl + skuMap[item.sku];
-            if(matchProduct.image !== url){
-              matchProduct.image = url;
-              updatedImages.push(item.name);
-            }
-          }
+          return;
+        } else if(matchProduct.sku !== item.sku){
+          matchProduct.sku = item.sku;
+          updatedSkus.push(item.name + ' → ' + item.sku);
         }
       }
+      // 圖片：優先套用圖庫對應，否則使用 Excel 內的圖片網址
+      let resolvedImage = matchProduct.image || '';
+      if(item.sku && skuMap[item.sku] && baseUrl){
+        resolvedImage = baseUrl + skuMap[item.sku];
+      } else if(item.image){
+        resolvedImage = item.image;
+      }
+      if(resolvedImage !== matchProduct.image){
+        matchProduct.image = resolvedImage;
+        updatedImages.push(item.name);
+      }
+      // 其餘完整欄位同步：分類、狀態、售完、說明、份量、模組
+      if(matchProduct.category !== (item.category || '未分類')){ matchProduct.category = item.category || '未分類'; fieldChanged = true; }
+      if(matchProduct.enabled !== item.enabled){ matchProduct.enabled = item.enabled; fieldChanged = true; }
+      if(matchProduct.soldOut !== item.soldOut){ matchProduct.soldOut = item.soldOut; fieldChanged = true; }
+      if((matchProduct.description || '') !== item.description && item.description){ matchProduct.description = item.description; fieldChanged = true; }
+      if(item.sizes.length){ matchProduct.sizes = item.sizes; fieldChanged = true; }
+      if(item.moduleNames.length){ matchProduct.modules = resolveModuleIdsByNames(item.moduleNames); fieldChanged = true; }
+      if(fieldChanged) updatedFields.push(item.name);
       return; // 已存在的商品不進待上架
     }
 
-    // 2) 不存在 → 走原本「進待上架」流程
+    // 2) 不存在 → 走原本「進待上架」流程，帶入完整欄位
     if(item.sku){
       if(existingSkus.has(item.sku)){ dupSkus.push(item.sku); return; }
       existingSkus.add(item.sku);
     }
     const existsPending = (state.pendingProducts||[]).some(p => p.name === item.name && Number(p.price) === Number(item.price));
     if(existsPending) return;
-    let image = '';
+    let image = item.image || '';
     if(item.sku && skuMap[item.sku] && baseUrl){
       image = baseUrl + skuMap[item.sku];
     }
     imported.push({
       id: id(), sku: item.sku, name: item.name, price: item.price,
       category: item.category || '未分類', enabled: item.enabled,
-      modules: [], image,
+      soldOut: item.soldOut, description: item.description,
+      modules: resolveModuleIdsByNames(item.moduleNames), sizes: item.sizes, image,
       sortOrder: state.products.length + imported.length, status: 'pending'
     });
   });
@@ -203,10 +242,11 @@ function importExcelRowsToPending(rows){
   const msgs = [];
   if(updatedSkus.length) msgs.push('✓ 已補 SKU：' + updatedSkus.length + ' 筆');
   if(updatedImages.length) msgs.push('✓ 已套用圖片：' + updatedImages.length + ' 筆');
+  if(updatedFields.length) msgs.push('✓ 已更新其他欄位（分類/狀態/售完/說明/份量/模組）：' + updatedFields.length + ' 筆');
   if(imported.length) msgs.push('✓ 新增到待上架：' + imported.length + ' 筆');
   if(dupSkus.length) msgs.push('⚠ SKU 衝突已略過：' + dupSkus.join(', '));
 
-  if(updatedSkus.length || updatedImages.length || imported.length){
+  if(updatedSkus.length || updatedImages.length || updatedFields.length || imported.length){
     if(imported.length){
       if(!Array.isArray(state.pendingProducts)) state.pendingProducts = [];
       state.pendingProducts.unshift(...imported);
@@ -237,7 +277,14 @@ function exportProductsToExcel(){
     商品名稱: p.name || '',
     價格: Number(p.price || 0),
     分類: p.category || '未分類',
-    狀態: p.enabled === false ? '停用' : '啟用'
+    狀態: p.enabled === false ? '停用' : '啟用',
+    售完: p.soldOut === true ? '是' : '否',
+    說明: p.description || '',
+    圖片網址: p.image || '',
+    份量JSON: (p.sizes && p.sizes.length) ? JSON.stringify(p.sizes) : '',
+    模組JSON: (p.modules && p.modules.length)
+      ? JSON.stringify(getProductModuleNames(p))
+      : ''
   }));
   if(!rows.length){ alert('沒有商品可匯出'); return; }
   const workbook = buildWorkbookFromRows(rows);
@@ -1250,10 +1297,14 @@ export function initProductsPage(){
       if(!name || !(price > 0)) return;
       state.products.push({
         id: item.id || id(), name, price,
+        sku: item.sku || '',
         category: item.category || '未分類',
         enabled: item.enabled !== false,
+        soldOut: item.soldOut === true,
+        description: item.description || '',
         image: item.image || '',
         modules: item.modules || [],
+        sizes: item.sizes || [],
         sortOrder: state.products.length
       });
       state.pendingProducts = state.pendingProducts.filter(x=>x.id !== item.id);
