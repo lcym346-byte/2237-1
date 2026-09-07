@@ -78,13 +78,16 @@ function showOnlineToast(message){
 }
 
 function getStoreName(){
-  return '花蓮和平店';  //線上點餐店名顯示這裡修改
+  // 線上點餐抬頭：讀 POS「即時接單設定 → 線上點餐頁 → 店名」(onlineStoreTitle)，
+  // 未設定時退回顯示店代碼，避免空白
+  return state.settings?.realtimeOrder?.onlineStoreTitle || onlineState.storeCode || '線上點餐';
 }
 
 
 function getStoreMeta(){
   return state.settings?.realtimeOrder?.onlineStoreSubtitle || '內用 / 外帶皆可';
 }
+
 
 function createConfigState(product){
   const selections = {};
