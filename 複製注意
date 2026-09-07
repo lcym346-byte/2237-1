@@ -6,3 +6,8 @@ export const STORE_CONFIG = {
   storeCode: 'store002',     // 改這行
   lockFromUrl: true
 };
+
+js/pages/online-order-page.js
+function getStoreName(){
+  return '花蓮和平店';  //線上點餐店名顯示這裡修改
+}
