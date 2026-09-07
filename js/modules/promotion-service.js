@@ -211,7 +211,7 @@ export function normalizePromotionsConfig(input){
     if(['amount','percent'].indexOf(type) < 0) type = 'amount';
     var code = cleanCode(c.code);
     if(!code) return;
-        out.coupons.push({
+            out.coupons.push({
       id: cleanText(c.id || uid('coupon'), 48),
       enabled: c.enabled !== false,
       showToCustomer: c.showToCustomer !== false,
@@ -220,10 +220,10 @@ export function normalizePromotionsConfig(input){
       type: type,
       value: asMoney(c.value),
       minSpend: asMoney(c.minSpend),
+      rewardMode: (c.rewardMode === 'cash' ? 'cash' : 'points'),
       startsAt: cleanText(c.startsAt || '', 40),
       endsAt: cleanText(c.endsAt || '', 40)
     });
-
   });
   if(!out.banners.length && !hasOwn(src, 'banners')) out.banners = base.banners;
   return out;
@@ -297,11 +297,12 @@ export function getPublicPromotionsConfig(){
     theme: cfg.theme,
     campaignType: cfg.campaignType || '',
     banners: cfg.banners.filter(isActiveWindow).sort(function(a,b){ return Number(a.sortOrder || 0) - Number(b.sortOrder || 0); }),
-        coupons: cfg.coupons.filter(isActiveWindow).map(function(c){
-      return { id: c.id, code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend, showToCustomer: c.showToCustomer !== false };
+    coupons: cfg.coupons.filter(isActiveWindow).map(function(c){
+      return { id: c.id, code: c.code, title: c.title, type: c.type, value: c.value, minSpend: c.minSpend, rewardMode: (c.rewardMode === 'cash' ? 'cash' : 'points'), showToCustomer: c.showToCustomer !== false };
     }),
 
     cashCouponId: cfg.cashCouponId || '',
+
     epayCouponId: cfg.epayCouponId || '',
     updatedAt: cfg.updatedAt || ''
   };
@@ -372,8 +373,20 @@ export function getPaymentRewardPoints(cart, payMethod){
   var coupon = (cfg.coupons || []).filter(function(c){ return c && c.id === targetId; })[0];
   if(!coupon || coupon.enabled === false || !isActiveWindow(coupon)) return empty;
 
-  var subtotal = cartSubtotal(cart);
+    var subtotal = cartSubtotal(cart);
   if(subtotal < Number(coupon.minSpend || 0)) return empty;
+
+  // v20260906：回饋方式為「直接折扣」時，不轉點數，改回傳當次現金折抵金額
+  if(coupon.rewardMode === 'cash'){
+    var cd = 0;
+    if(coupon.type === 'percent'){
+      cd = Math.floor(subtotal * Math.min(100, Number(coupon.value || 0)) / 100);
+    }else{
+      cd = Number(coupon.value || 0);
+    }
+    cd = Math.max(0, Math.min(subtotal, Math.round(cd)));
+    return { points: 0, cashDiscount: cd, rewardMode: 'cash', couponId: coupon.id, couponCode: coupon.code, title: coupon.title || coupon.code };
+  }
 
   var pts = 0;
   if(coupon.type === 'percent'){
@@ -382,9 +395,10 @@ export function getPaymentRewardPoints(cart, payMethod){
   }else{
     pts = Math.round(Number(coupon.value || 0) * 10) / 10;
   }
-  pts = Math.max(0, pts);
-  return { points: pts, couponId: coupon.id, couponCode: coupon.code, title: coupon.title || coupon.code };
+    pts = Math.max(0, pts);
+  return { points: pts, cashDiscount: 0, rewardMode: 'points', couponId: coupon.id, couponCode: coupon.code, title: coupon.title || coupon.code };
 }
+
 
 export function buildPromotionSummaryForDashboard(){
   var cfg = ensurePromotionsConfig();

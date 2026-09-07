@@ -252,13 +252,12 @@ function showOnlineOrderOverlay(orderId){
           cust.syncCustomerToFirebase(posOrder);
         } catch (e) { console.warn('顧客主檔更新失敗：', e); }
 
-
         if(!isReservation){
           try{
-            const { printOrderReceipt, printKitchenCopies } = await import('./print-service.js');
+            const { printKitchenCopies } = await import('./print-service.js');
             const cfg2 = ensureRealtimeConfig();
+            // 線上訂單=待付款：接單時只印廚房單（顧客單於之後 POS 結帳時才印）
             if(cfg2.autoPrintKitchenOnConfirm) printKitchenCopies(posOrder);
-            if(cfg2.autoPrintReceiptOnConfirm) printOrderReceipt(posOrder, 'customer');
           }catch(pe){ console.error('自動列印失敗：', pe); }
         }
       }
@@ -325,7 +324,7 @@ function startAlarm(orderId){
     stopAlarm();
     if(!autoOrderId) return;
     try{
-      const result = await confirmOnlineOrder(autoOrderId, 20, '系統自動接單，預計準備時間 20 分鐘');
+      const result = await confirmOnlineOrder(autoOrderId, 30, '系統自動接單，預計準備時間 30 分鐘');
       if(result){
                 const posOrder = buildRealtimeOrderForPOS(result);
         try {
@@ -345,10 +344,10 @@ function startAlarm(orderId){
 
 
         try{
-          const { printOrderReceipt, printKitchenCopies } = await import('./print-service.js');
+          const { printKitchenCopies } = await import('./print-service.js');
           const cfg2 = ensureRealtimeConfig();
+          // 線上訂單=待付款：接單時只印廚房單（顧客單於之後 POS 結帳時才印）
           if(cfg2.autoPrintKitchenOnConfirm) printKitchenCopies(posOrder);
-          if(cfg2.autoPrintReceiptOnConfirm) printOrderReceipt(posOrder, 'customer');
         }catch(pe){ console.error('自動接單列印失敗：', pe); }
       }
       if(typeof window.refreshAllViews === 'function') window.refreshAllViews();
@@ -653,8 +652,10 @@ export function buildRealtimeOrderForPOS(remote){
     // 折抵點數於接單 deductPointsOnConfirm 時再從 total 減。
   const remoteDiscount = Math.max(0, Number(remote.discount || 0));
   const remoteCouponCode = String(remote.couponCode || '').toUpperCase();
+  const payCashDiscount = Math.max(0, Number(remote.payCashDiscount || 0));
   const remoteCouponMessage = String(remote.couponMessage || '');
-  const grandTotal = Math.max(0, subtotal - remoteDiscount);
+  const grandTotal = Math.max(0, subtotal - remoteDiscount - payCashDiscount);
+
 
 
 
@@ -678,7 +679,7 @@ export function buildRealtimeOrderForPOS(remote){
     // 折扣欄位：用顧客端套用的優惠碼結果，而不是寫死 0
     discountType: 'amount',
     discountValue: remoteDiscount,
-    discountAmount: remoteDiscount,
+    discountAmount: remoteDiscount + payCashDiscount,
     couponCode: remoteCouponCode,
     couponMessage: remoteCouponMessage,
     pointsRequested: Math.max(0, Math.round(Number(remote.pointsRequested || 0))),
@@ -756,10 +757,10 @@ export async function syncMenuToFirebase(){
   if(!user) throw new Error('請先使用 POS Google 登入');
   await verifyPOSAccess();
 
-  const menuKey = cfg.projectId || 'default';
+  const menuKey = getStoreCode();
   const menuData = {
     categories: state.categories || [],
-    products: (state.products || []).map(function(p){
+    products: (state.products || []).filter(function(p){ return p.onlineVisible !== false; }).map(function(p){
   return {
     id: p.id,
     sku: p.sku || '',
@@ -768,10 +769,12 @@ export async function syncMenuToFirebase(){
     category: p.category,
     image: p.image || '',
     description: p.description || '',
-    modules: p.modules || [],
+    modules: p.modules || [], 
     sortOrder: p.sortOrder || 0,
-    enabled: p.enabled !== false,
+    sizes: Array.isArray(p.sizes) ? p.sizes.map(s => ({ name: String(s.name||'').trim(), price: Number(s.price||0) })) : [],
+    enabled: p.enabled !== false, 
     soldOut: p.soldOut === true
+
   };
 }),
     modules: state.modules || [],
@@ -787,11 +790,11 @@ export async function syncMenuToFirebase(){
 }
 
 
-export async function fetchMenuFromFirebase(){
+export async function fetchMenuFromFirebase(storeCode){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const menuKey = cfg.projectId || 'default';
-  const menuRef = await getRef('menu/' + menuKey);
+  const code = storeCode ? validateStoreCode(storeCode) : getStoreCode();
+  const menuRef = await getRef('menu/' + code);
   const snapshot = await dbApi.get(menuRef);
   const data = snapshot.val();
   if(!data) throw new Error('雲端尚無菜單資料，請先在 POS 同步菜單到雲端');
@@ -808,11 +811,11 @@ export async function fetchMenuFromFirebase(){
 }
 
 
-export async function fetchAndMergeMenuFromFirebase(){
+export async function fetchAndMergeMenuFromFirebase(storeCode){
 
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const menuKey = cfg.projectId || 'default';
+  const menuKey = storeCode ? validateStoreCode(storeCode) : getStoreCode();
   const menuRef = await getRef('menu/' + menuKey);
   const snapshot = await dbApi.get(menuRef);
   const data = snapshot.val();
@@ -860,10 +863,12 @@ export async function fetchAndMergeMenuFromFirebase(){
         modules: Array.isArray(cp.modules) ? cp.modules : [],
         sortOrder: Number(cp.sortOrder || 0),
         enabled,
+        sizes: Array.isArray(cp.sizes) ? cp.sizes : (lp && Array.isArray(lp.sizes) ? lp.sizes : []),
         soldOut
       });
       usedIds.add(cp.id);
       cloudCount++;
+
     });
     localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)){ merged.push(p); localKeptCount++; }});
     state.products = merged;
@@ -877,10 +882,10 @@ export async function fetchAndMergeMenuFromFirebase(){
 
 let menuWatchUnsub = null;
 let menuPollTimer = null;
-export async function startMenuAutoWatch(onUpdate){
+export async function startMenuAutoWatch(callback, storeCode){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const menuKey = cfg.projectId || 'default';
+  const menuKey = storeCode ? validateStoreCode(storeCode) : getStoreCode();
   const menuRef = await getRef('menu/' + menuKey);
 
   if(menuWatchUnsub){ try{ menuWatchUnsub(); }catch(e){} menuWatchUnsub = null; }
@@ -891,7 +896,7 @@ export async function startMenuAutoWatch(onUpdate){
     if(!data) return;
     try {
       applyCloudMenu(data);
-      if(typeof onUpdate === 'function') onUpdate();
+if(typeof callback === 'function') callback();
     } catch(e){ console.warn('menu watch handler failed:', e); }
   };
   dbApi.onValue(menuRef, handler);
@@ -901,7 +906,8 @@ export async function startMenuAutoWatch(onUpdate){
     try{
       const snap = await dbApi.get(menuRef);
       const data = snap.val();
-      if(data){ applyCloudMenu(data); if(typeof onUpdate === 'function') onUpdate(); }
+      if(data){ applyCloudMenu(data); if(typeof callback === 'function') callback();
+ }
     }catch(e){ /* 靜默 */ }
   }, 30000);
 }
@@ -938,7 +944,9 @@ function applyCloudMenu(data){
         category: cp.category || '未分類', image: cp.image || '',
         description: cp.description || '',
         modules: Array.isArray(cp.modules) ? cp.modules : [],
+        sizes: Array.isArray(cp.sizes) ? cp.sizes : (lp && Array.isArray(lp.sizes) ? lp.sizes : []),
         sortOrder: Number(cp.sortOrder || 0), enabled, soldOut
+
       });
       usedIds.add(cp.id);
     });
@@ -956,15 +964,14 @@ export function stopMenuAutoWatch(){
 export async function watchMenuFromFirebase(callback){
   await loadFirebaseModules();
   const cfg = ensureRealtimeConfig();
-  const menuKey = cfg.projectId || 'default';
+  const menuKey = getStoreCode();
   const menuRef = await getRef('menu/' + menuKey);
   dbApi.onValue(menuRef, (snapshot) => {
     const data = snapshot.val();
     if(!data) return;
-    if(Array.isArray(data.products)) state.products = data.products;
-    if(Array.isArray(data.modules))  state.modules  = data.modules;
-    if(Array.isArray(data.categories)) state.categories = data.categories;
+    applyCloudMenu(data);
     if(callback) callback(data);
+
   });
 }
 
@@ -1059,4 +1066,44 @@ export function stopReservationReminderLoop(){
     clearInterval(reservationReminderInterval);
     reservationReminderInterval = null;
   }
+}
+// ============================================================
+// 菜單發布（純以店鋪代碼 storeCode 做區隔）
+// ============================================================
+export async function publishMenuToFirebase(){
+  // 1. 取得 POS 設定中填寫的店鋪代碼（例如：STORE001）
+  const storeCode = getStoreCode();
+
+  // 2. 指定寫入 Firebase 的完整路徑為 menu/STORE001
+  const menuRef = await getRef(`menu/${storeCode}`);
+
+  // 3. 整理商品資料（確保 sizes 規格/份量完整匯出）
+  const cleanProducts = (state.products || []).map(p => ({
+    id: p.id,
+    sku: p.sku || '',
+    name: p.name || '',
+    price: Number(p.price || 0),
+    category: p.category || '未分類',
+    image: p.image || '',
+    enabled: p.enabled !== false,
+    soldOut: p.soldOut === true,
+    sortOrder: Number(p.sortOrder || 0),
+    sizes: Array.isArray(p.sizes) ? p.sizes.map(s => ({
+      name: String(s.name || '').trim(),
+      price: Number(s.price || 0)
+    })) : [],
+    modules: p.modules || []
+  }));
+
+  // 4. 將資料寫入該店鋪代碼目錄下
+  await dbApi.set(menuRef, {
+    storeCode: storeCode,
+    categories: state.categories || [],
+    modules: state.modules || [],
+    products: cleanProducts,
+    storeInfo: state.settings?.store || {},
+    updatedAt: new Date().toISOString()
+  });
+
+  updateSyncStatus(`線上菜單已成功同步至店鋪：${storeCode}`);
 }

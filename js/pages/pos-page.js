@@ -5,7 +5,7 @@ import { state, persistAll } from '../core/store.js';
 import { escapeHtml, money, id } from '../core/utils.js';
 import { getDiscountResult, getDiscountType, setDiscountType, handleDiscountInput } from '../modules/cart-service.js';
 import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-service.js';
-import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
+import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, printNumberTicket, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
 import { hasOpenSession } from '../modules/report-session.js';
 import { getRealtimeAuthUser, signInPOSWithGoogle, waitForAuthReady } from '../modules/realtime-order-service.js';
 // v20260525 新增：客顯同步（購物車更新時推送）
@@ -461,21 +461,31 @@ function finalizeOrder(paymentMethod){
 }
 
 
-// 列印顧客單（路由內部會自動選 Sunmi/藍牙/網路/瀏覽器）
-if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
-    try { printOrderReceipt(order, 'customer'); }
-    catch(e) { console.error('列印顧客單失敗:', e); }
+// ── 現場訂單列印（待付款只印廚房單；直接結帳印廚房單+顧客單）──
+if(order){
+       
+    // 顧客單：只有真正結帳（非待付款）才印
+    if(paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
+        try { printOrderReceipt(order, 'customer'); }
+        catch(e) { console.error('列印顧客單失敗:', e); }
+    }
+    // 號碼單：現場訂單依開關列印（號碼=訂單號碼後三碼）
+    if(printConfig.autoPrintNumberTicket){
+        try { printNumberTicket(order); }
+        catch(e) { console.error('列印號碼單失敗:', e); }
+    }
 }
+      if(paymentMethod === '待付款'){
+        showToast('已加入待付款', 500);
+      } else if(paymentMethod === '現金' && _cashReceived !== ''){
+        var _recv = Number(_cashReceived) || 0;
+        var _change = Math.max(0, _recv - _cashDue);
+        alert('已完成收款\n實收 $' + _recv + '　找零 $' + _change);
+      } else {
+        alert('已完成收款');
+      }
+      return;
 
-// 列印廚房單
-if(order && printConfig.autoPrintKitchen){
-    try { printKitchenCopies(order); }
-    catch(e) { console.error('列印廚房單失敗:', e); }
-}
-
-
-        alert(paymentMethod === '待付款' ? '仍維持待付款' : '已完成收款');
-        return;
     }
 
     order = createOrUpdateOrder(paymentMethod);
@@ -487,20 +497,35 @@ if(order && printConfig.autoPrintKitchen){
 if(order && paymentMethod === '現金'){
     openCashDrawer().catch(function(e){ console.error('開錢箱失敗:', e); });
 }
-// 列印顧客單（路由內部會自動選 Sunmi/藍牙/網路/瀏覽器）
-if(order && paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
-    try { printOrderReceipt(order, 'customer'); }
-    catch(e) { console.error('列印顧客單失敗:', e); }
+// ── 現場訂單列印（待付款只印廚房單；直接結帳印廚房單+顧客單）──
+if(order){
+    // 廚房單：待付款與結帳都印
+    if(printConfig.autoPrintKitchen){
+        try { printKitchenCopies(order); }
+        catch(e) { console.error('列印廚房單失敗:', e); }
+    }
+    // 顧客單：只有真正結帳（非待付款）才印
+    if(paymentMethod !== '待付款' && printConfig.autoPrintCheckout){
+        try { printOrderReceipt(order, 'customer'); }
+        catch(e) { console.error('列印顧客單失敗:', e); }
+    }
+    // 號碼單：現場訂單依開關列印（號碼=訂單號碼後三碼）
+    if(printConfig.autoPrintNumberTicket){
+        try { printNumberTicket(order); }
+        catch(e) { console.error('列印號碼單失敗:', e); }
+    }
+}
+  if(paymentMethod === '待付款'){
+          showToast('已加入待付款', 500);
+        } else if(paymentMethod === '現金' && _cashReceived !== ''){
+          var _recv = Number(_cashReceived) || 0;
+          var _change = Math.max(0, _recv - _cashDue);
+          alert('結帳完成\n實收 $' + _recv + '　找零 $' + _change);
+        } else {
+          alert('結帳完成');
+        }
 }
 
-// 列印廚房單
-if(order && printConfig.autoPrintKitchen){
-    try { printKitchenCopies(order); }
-    catch(e) { console.error('列印廚房單失敗:', e); }
-}
-
-        alert(paymentMethod === '待付款' ? '已加入待付款' : '結帳完成');
-}
 
 // ============================================================
 // v20260620 現金收款視窗（自製鍵盤，全程不調用系統鍵盤）
@@ -997,6 +1022,16 @@ async function refreshPosLockState(){
 
   // 第 3 層：已登入且已開班
   lock.style.display = 'none';
+}
+// 浮動提示：顯示 ms 毫秒後自動消失，不需手動按確定
+function showToast(msg, ms){
+  var t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);'
+    + 'background:rgba(15,23,42,0.92);color:#fff;padding:14px 26px;border-radius:12px;'
+    + 'font-size:16px;z-index:99999;box-shadow:0 10px 30px rgba(0,0,0,0.3);pointer-events:none';
+  document.body.appendChild(t);
+  setTimeout(function(){ if(t.parentNode) t.parentNode.removeChild(t); }, ms || 500);
 }
 
 

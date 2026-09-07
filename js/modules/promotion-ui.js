@@ -114,7 +114,7 @@ function buildSettingsModalHtml(){
 function renderCouponRow(coupon){
   var c = coupon || {};
   return '' +
-'<div class="promo-coupon-row" data-id="' + esc(c.id || '') + '" style="display:grid;grid-template-columns:auto 1.2fr 1.5fr 1fr 1fr 1fr auto auto;gap:6px;align-items:center;padding:8px;background:#f8fafc;border-radius:6px">' +
+'<div class="promo-coupon-row" data-id="' + esc(c.id || '') + '" style="display:grid;grid-template-columns:auto 1.2fr 1.5fr 1fr 1fr 1fr 1fr auto auto;gap:6px;align-items:center;padding:8px;background:#f8fafc;border-radius:6px">' +
 '  <label style="display:flex;align-items:center"><input type="checkbox" class="cp-enabled" ' + (c.enabled !== false ? 'checked' : '') + '></label>' +
 '  <input type="text" class="cp-code" placeholder="代碼" value="' + esc(c.code || '') + '" maxlength="24" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-family:monospace;text-transform:uppercase">' +
 '  <input type="text" class="cp-title" placeholder="顯示名稱" value="' + esc(c.title || '') + '" maxlength="80" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">' +
@@ -124,7 +124,12 @@ function renderCouponRow(coupon){
 '  </select>' +
 '  <input type="number" class="cp-value" placeholder="折扣值" value="' + Number(c.value || 0) + '" min="0" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">' +
 '  <input type="number" class="cp-minspend" placeholder="最低消費" value="' + Number(c.minSpend || 0) + '" min="0" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">' +
+'  <select class="cp-reward" title="回饋方式：轉點數(下次用) 或 直接折扣(當次折現金)" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px">' +
+'    <option value="points"' + (c.rewardMode === 'cash' ? '' : ' selected') + '>轉點數</option>' +
+'    <option value="cash"' + (c.rewardMode === 'cash' ? ' selected' : '') + '>直接折扣</option>' +
+'  </select>' +
 '  <label class="cp-show-wrap" title="是否顯示在客人點餐頁的可用優惠碼清單" style="display:flex;flex-direction:column;align-items:center;font-size:11px;color:#475569;gap:2px"><input type="checkbox" class="cp-show" ' + (c.showToCustomer !== false ? 'checked' : '') + '><span>顯示</span></label>' +
+
 '  <button type="button" class="cp-del" style="background:#fee2e2;color:#dc2626;border-radius:4px;padding:6px 10px;cursor:pointer">刪</button>' +
 '</div>';
 
@@ -180,10 +185,12 @@ function collectFormToConfig(){
       showToCustomer: row.querySelector('.cp-show') ? row.querySelector('.cp-show').checked : true,
       code: code,
       title: (row.querySelector('.cp-title').value || '').trim(),
-      type: row.querySelector('.cp-type').value,
+            type: row.querySelector('.cp-type').value,
       value: Number(row.querySelector('.cp-value').value || 0),
-      minSpend: Number(row.querySelector('.cp-minspend').value || 0)
+      minSpend: Number(row.querySelector('.cp-minspend').value || 0),
+      rewardMode: (row.querySelector('.cp-reward') && row.querySelector('.cp-reward').value === 'cash') ? 'cash' : 'points'
     });
+
 
   });
     return {

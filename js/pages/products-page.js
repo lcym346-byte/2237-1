@@ -617,9 +617,10 @@ export function resetProductForm(){
   if(skuErrEl) skuErrEl.classList.add('hidden');
   const descEl = document.getElementById('productDescription');
   if(descEl) descEl.value = '';
-
   if(imgDataEl) imgDataEl.value = '';
   if(enabledEl) enabledEl.value = 'true';
+  const ovEl2 = document.getElementById('productOnlineVisible');
+  if (ovEl2) ovEl2.value = 'true';
   renderCategoryOptions();
   if(catEl) catEl.value = '未分類';
   state.editModules = [];
@@ -670,6 +671,8 @@ function openProductForm(product){
   }
 
   document.getElementById('productEnabled').value = String(product.enabled!==false);
+  const ovEl = document.getElementById('productOnlineVisible');
+  if (ovEl) ovEl.value = String(product.onlineVisible !== false);
   renderCategoryOptions();
   document.getElementById('productCategory').value = product.category || '未分類';
   state.editModules = deepCopy(product.modules||[]);
@@ -1254,6 +1257,7 @@ export function initProductsPage(){
       description: (document.getElementById('productDescription')?.value || '').trim().slice(0, 60),
       modules: deepCopy(state.editModules || []),
       sizes: deepCopy(state.editSizes || []),
+      onlineVisible: (document.getElementById('productOnlineVisible')?.value ?? 'true') !== 'false',
       sortOrder: idEl?.value ? (state.products.find(p=>p.id===idEl.value)?.sortOrder ?? state.products.length) : state.products.length,
     };
     const idx = state.products.findIndex(p=>p.id===product.id);

@@ -304,9 +304,12 @@ function renderOrdersSection(wrap, orders, mode){
       <div class="stack small" style="margin-top:12px">
 
         ${o.items.map(i=>{
-          const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
-          return `<div>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</div>`;
-        }).join('')}
+  const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
+  const unit = Number(i.basePrice||0) + Number(i.extraPrice||0);
+  const lineTotal = unit * Number(i.qty||0);
+  return `<div class="row between"><span>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</span><span class="muted" style="white-space:nowrap">${money(unit)} / 小計 ${money(lineTotal)}</span></div>`;
+}).join('')}
+
       </div>
       <div class="row gap wrap" style="margin-top:12px">
         ${isVoid ? '' : '<button class="secondary-btn small-btn">加到購物車</button>'}

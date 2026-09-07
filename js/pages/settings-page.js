@@ -200,10 +200,11 @@ function loadPrintSettingsToForm() {
   if (el('printKitchenCopies')) el('printKitchenCopies').value = Number(cfg.kitchenCopies || 1);
    if (el('printFontKitchenItem')) el('printFontKitchenItem').value = Number(cfg.fontKitchenItem || 32);
   if (el('printFontKitchenInfo')) el('printFontKitchenInfo').value = Number(cfg.fontKitchenInfo || 24);
- 
   if (el('printAutoCheckout')) el('printAutoCheckout').checked = !!cfg.autoPrintCheckout;
   if (el('printAutoKitchen')) el('printAutoKitchen').checked = !!cfg.autoPrintKitchen;
-    // v20260620 每單別印表機路由
+  if (el('printAutoNumberTicket')) el('printAutoNumberTicket').checked = !!cfg.autoPrintNumberTicket;
+ 
+   // v20260620 每單別印表機路由
    const routes = cfg.routes || { receipt:'auto', kitchen:'auto', label:'auto' };
    if (el('printRouteReceipt')) el('printRouteReceipt').value = routes.receipt || 'auto';
    if (el('printRouteKitchen')) el('printRouteKitchen').value = routes.kitchen || 'auto';
@@ -886,12 +887,13 @@ function initCustomerDisplaySettings() {
      cfg.labelOffsetX = Number(document.getElementById('printLabelOffsetX')?.value) || 0;
     cfg.labelOffsetY = Number(document.getElementById('printLabelOffsetY')?.value) || 0;
     cfg.kitchenCopies = Math.max(1, Number(document.getElementById('printKitchenCopies')?.value) || 1);
-        cfg.fontKitchenItem = Math.min(60, Math.max(24, Number(document.getElementById('printFontKitchenItem')?.value) || 32));
+     cfg.fontKitchenItem = Math.min(60, Math.max(24, Number(document.getElementById('printFontKitchenItem')?.value) || 32));
     cfg.fontKitchenInfo = Math.min(60, Math.max(24, Number(document.getElementById('printFontKitchenInfo')?.value) || 24));
-
-    cfg.autoPrintCheckout = !!document.getElementById('printAutoCheckout')?.checked;
+     cfg.autoPrintCheckout = !!document.getElementById('printAutoCheckout')?.checked;
     cfg.autoPrintKitchen = !!document.getElementById('printAutoKitchen')?.checked;
-         // v20260620 每單別印表機路由（限定四個合法值，否則退回 auto）
+    cfg.autoPrintNumberTicket = !!document.getElementById('printAutoNumberTicket')?.checked;
+ 
+     // v20260620 每單別印表機路由（限定四個合法值，否則退回 auto）
     var _validRoute = function(v){
       return (v === 'sunmi' || v === 'bluetooth' || v === 'network') ? v : 'auto';
     };

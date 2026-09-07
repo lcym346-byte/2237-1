@@ -261,7 +261,7 @@
           <input id="productName" required>
           <div id="productNameError" class="field-error hidden">請輸入商品名稱</div>
         </div>
-                <div class="form-row">
+        <div class="form-row">
           <label>價格</label>
           <input id="productPrice" type="number" min="0" required>
           <div id="productPriceError" class="field-error hidden">請輸入正確商品價格</div>
@@ -289,8 +289,15 @@
               <option value="false">停用</option>
             </select>
           </div>
+          <div class="form-row">
+            <label>上架範圍</label>
+            <select id="productOnlineVisible">
+              <option value="true">線上點餐 + 本機POS</option>
+              <option value="false">僅本機POS</option>
+            </select>
+          </div>
         </div>
-                        <div class="form-row image-row">
+        <div class="form-row image-row">
           <label>商品圖片（由 SKU 自動對應，請先到設定 → 匯入 SKU 對應表）</label>
           <input id="productImageData" type="hidden">
           <div id="productImagePreview" class="product-image-preview muted">尚未對應圖片</div>
@@ -449,7 +456,8 @@
       <div class="sm-form-group"><label>廚房單列印份數</label><input id="printKitchenCopies" type="number" min="1" max="5"></div>
 
       <div class="sm-check-row"><input id="printAutoCheckout" type="checkbox"><span>結帳後自動列印顧客單</span></div>
-            <div class="sm-check-row"><input id="printAutoKitchen" type="checkbox"><span>點餐結帳或待付款時自動列印廚房單</span></div>
+      <div class="sm-check-row"><input id="printAutoKitchen" type="checkbox"><span>點餐結帳或待付款時自動列印廚房單</span></div>
+      <div class="sm-check-row"><input id="printAutoNumberTicket" type="checkbox"><span>結帳後自動列印號碼單</span></div>
 
       <div class="sm-section-title">指定印表機（每種單別各自選擇）</div>
       <div class="sm-info-box" style="font-size:12px;color:#64748b;margin-bottom:8px">
@@ -1339,8 +1347,8 @@
       <h2 style="margin:0; font-size:20px; color:#0f172a;">收到新的線上訂單！</h2>
     </div>
 
-    <!-- 訂單資訊（與原本卡片相同） -->
-    <div style="border:2px solid #f59e0b; border-radius:12px; padding:16px; background:#fffbeb;">
+    <!-- 訂單資訊（固定佔視窗 70%，內容過多時內部捲動） -->
+    <div style="border:2px solid #f59e0b; border-radius:12px; padding:16px; background:#fffbeb; width:70vw; height:70vh; box-sizing:border-box; overflow-y:auto;">
       <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px;">
         <div>
           <span id="overlayOrderNo" style="font-weight:bold; font-size:15px;"></span>
@@ -1374,6 +1382,7 @@
     </div>
   </div>
 </div>
+
 <style>
 @keyframes pulse-ring {
   0%{box-shadow:0 0 0 0 rgba(245,158,11,0.6);}
