@@ -80,7 +80,7 @@ function showOnlineToast(message){
 function getStoreName(){
   // 線上點餐抬頭：讀 POS「即時接單設定 → 線上點餐頁 → 店名」(onlineStoreTitle)，
   // 未設定時退回顯示店代碼，避免空白
-  return state.settings?.realtimeOrder?.onlineStoreTitle || (onlineState ? '民族店線上點餐' : onlineState.storeCode);
+  return state.settings?.realtimeOrder?.onlineStoreTitle || (onlineState ? '測試店線上點餐' : onlineState.storeCode);
 }
 
 
