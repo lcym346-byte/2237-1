@@ -48,4 +48,39 @@
 .cart-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:7000;display:flex;align-items:center;justify-content:center}
 .cart-modal{background:#fff;border-radius:18px;padding:20px;max-width:420px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)}
 
+/* ===== 品項設定彈窗：模組橫排＋橫向捲、上下固定（v20260912）===== */
+#productConfigModal .modal-dialog{
+  max-width: 96vw !important;
+  width: 96vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+#productConfigModules{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex: 1 1 auto;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+}
+
+#productConfigModules .module-block{
+  flex: 0 0 260px;
+  width: 260px;
+  max-height: 100%;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+#productConfigModal .modal-dialog > .row,
+#productConfigModal .modal-dialog > div:not(#productConfigModules),
+#productConfigModal .modal-dialog > .form-actions{
+  flex: 0 0 auto;
+}
 

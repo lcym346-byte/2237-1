@@ -2,6 +2,7 @@
 
 > 商用等級 Web POS 系統,專為 Sunmi T2 終端機設計,支援雲端三層備份、即時跨店看板、線上點餐、Google Sheets 同步,並可於 iPad、Windows、Android 等備援裝置運作。
 
+
 [![版本](https://img.shields.io/badge/version-v20260614-blue)]()
 [![授權](https://img.shields.io/badge/license-Private-red)]()
 [![部署](https://img.shields.io/badge/deploy-GitHub%20Pages-green)]()
