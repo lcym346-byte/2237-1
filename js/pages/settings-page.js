@@ -1312,15 +1312,16 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
     }
   });
 
-  // 從雲端讀取菜單（主機與從機都可用）
+    // 從雲端讀取菜單（即時接單專用：固定讀總部範本 menu/store001，上下架保留本機）
   document.getElementById('fetchMenuBtn')?.addEventListener('click', async function() {
-    if (typeof window.fetchMenuFromCloud === 'function') {
-      await window.fetchMenuFromCloud(this);
+    if (typeof window.fetchTemplateMenuFromCloud === 'function') {
+      await window.fetchTemplateMenuFromCloud(this);
       if (typeof window.refreshAllViews === 'function') window.refreshAllViews();
     } else {
       alert('讀取模組未載入');
     }
   });
+
 
   // deviceRole 變動時即時鎖定按鈕
   document.getElementById('deviceRole')?.addEventListener('change', function(){
@@ -1532,6 +1533,117 @@ document.getElementById('previewLabelPrintBtn')?.addEventListener('click', funct
     if (statusBox) statusBox.textContent = '尚未設定自訂提示音';
     alert('已移除自訂提示音');
   });
+  // ============================
+  // 雲端本機JSON：上傳 / 下載（繞過檔案選擇器，APK 可用）
+  // 直接走 Firebase posBackup/{storeId}/state，與 store.js 的自動備份同節點
+  // ============================
+  (function setupCloudJsonButtons(){
+    var exportBtn = document.getElementById('exportJsonBtn');
+    if (!exportBtn) return;                              // 找不到匯出鈕就不插
+    if (document.getElementById('cloudUploadJsonBtn')) return; // 避免重複插入
+
+    // storeId 來源與系統一致：dashboard.storeId 優先，其次 store.storeId
+    function getStoreId(){
+      var s = state.settings || {};
+      return (s.dashboard && s.dashboard.storeId)
+          || (s.store && s.store.storeId)
+          || '';
+    }
+
+    var wrap = document.createElement('div');
+    wrap.style.cssText = 'margin-top:10px;display:flex;flex-direction:column;gap:8px';
+
+    var info = document.createElement('div');
+    info.id = 'cloudJsonStoreInfo';
+    info.style.cssText = 'font-size:12px;line-height:1.5';
+
+    var upBtn = document.createElement('button');
+    upBtn.id = 'cloudUploadJsonBtn';
+    upBtn.className = 'primary-btn';
+    upBtn.textContent = '⬆ 上傳本機資料到雲端';
+    upBtn.style.cssText = 'width:100%;padding:12px;background:#3b82f6';
+
+    var downBtn = document.createElement('button');
+    downBtn.id = 'cloudDownloadJsonBtn';
+    downBtn.className = 'primary-btn';
+    downBtn.textContent = '⬇ 從雲端下載本機資料';
+    downBtn.style.cssText = 'width:100%;padding:12px;background:#10b981';
+
+    wrap.appendChild(info);
+    wrap.appendChild(upBtn);
+    wrap.appendChild(downBtn);
+    exportBtn.parentNode.insertBefore(wrap, exportBtn.nextSibling);
+
+    function refreshInfo(){
+      var sid = getStoreId();
+      info.textContent = sid
+        ? ('目前門市代碼 storeId：' + sid + '（雲端節點 posBackup/' + sid + '/state）')
+        : '⚠ 目前沒有 storeId！請用正確網址（含 ?storeId=）開啟，否則無法上傳/下載雲端。';
+      info.style.color = sid ? '#64748b' : '#dc2626';
+    }
+    refreshInfo();
+
+    // ── 上傳：直接呼叫 store.js 的 cloudBackupNow（寫 posBackup/{storeId}/state）──
+    upBtn.addEventListener('click', async function(){
+      var sid = getStoreId();
+      if (!sid) { alert('沒有 storeId，無法上傳。請用正確網址（含 ?storeId=）開啟。'); return; }
+      if (!confirm('確定把「本機目前全部資料」上傳到雲端 storeId=' + sid + '？\n（會覆蓋雲端上該門市的備份）')) return;
+      var oldText = upBtn.textContent;
+      upBtn.disabled = true;
+      upBtn.textContent = '上傳中…';
+      try {
+        if (typeof state.cloudBackupNow === 'function') {
+          await state.cloudBackupNow();
+          alert('✅ 上傳完成！雲端節點：posBackup/' + sid + '/state');
+        } else {
+          alert('找不到 cloudBackupNow，無法上傳（請確認 store.js 版本）');
+        }
+      } catch (e) {
+        alert('上傳失敗：' + (e && e.message ? e.message : e));
+      } finally {
+        upBtn.disabled = false;
+        upBtn.textContent = oldText;
+        refreshInfo();
+      }
+    });
+
+    // ── 下載：從 posBackup/{storeId}/state 讀回並套用（用已確認的 _getRef + _dbApi）──
+    downBtn.addEventListener('click', async function(){
+      var sid = getStoreId();
+      if (!sid) { alert('沒有 storeId，無法下載。請用正確網址（含 ?storeId=）開啟。'); return; }
+      if (!confirm('確定要從雲端下載 storeId=' + sid + ' 的備份，並覆蓋「本機目前資料」？\n（本機現有資料會被雲端版本取代）')) return;
+      var oldText = downBtn.textContent;
+      downBtn.disabled = true;
+      downBtn.textContent = '下載中…';
+      try {
+        var rt = await import('../modules/realtime-order-service.js');
+        // 先 await _getRef → 會觸發 loadFirebaseModules，之後 _dbApi() 才有值（與 voidOrder 同順序）
+        var ref = await rt._getRef('posBackup/' + sid + '/state');
+        var api = rt._dbApi();
+        if (!ref || !api) { alert('雲端連線尚未就緒，請稍後再試。'); return; }
+
+        var snapshot = await api.get(ref);
+        var val = snapshot && snapshot.val ? snapshot.val() : null;
+
+        if (!val || !val.data) {
+          alert('雲端沒有此門市的備份（posBackup/' + sid + '/state 是空的）。\n請先在有資料的裝置上按「上傳」。');
+          return;
+        }
+        if (typeof state.importAllData === 'function') {
+          state.importAllData(val.data);
+          alert('✅ 下載完成，即將重新載入…');
+          setTimeout(function(){ location.reload(); }, 800);
+        } else {
+          alert('找不到 importAllData，無法套用雲端資料（請確認 store.js 版本）。');
+        }
+      } catch (e) {
+        alert('下載失敗：' + (e && e.message ? e.message : e));
+      } finally {
+        downBtn.disabled = false;
+        downBtn.textContent = oldText;
+      }
+    });
+  })();
 
   // ============================
   // 初始化完成

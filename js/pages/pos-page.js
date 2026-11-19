@@ -7,7 +7,7 @@ import { getDiscountResult, getDiscountType, setDiscountType, handleDiscountInpu
 import { createOrUpdateOrder, markPendingOrderPaid } from '../modules/order-service.js';
 import { buildCartPreviewOrder, getPrintSettings, printOrderLabels, printOrderReceipt, printKitchenCopies, printNumberTicket, openCashDrawer, getReceiptHtml } from '../modules/print-service.js';
 import { hasOpenSession } from '../modules/report-session.js';
-import { getRealtimeAuthUser, signInPOSWithGoogle, waitForAuthReady } from '../modules/realtime-order-service.js';
+import { getRealtimeAuthUser, signInPOSWithGoogle, waitForAuthReady, _getRef, _dbApi } from '../modules/realtime-order-service.js';
 // v20260525 新增：客顯同步（購物車更新時推送）
 import { displayCart, displayIdle } from '../modules/customer-display-service.js';
 
@@ -441,6 +441,49 @@ export function renderCart(){
   const badge = document.getElementById('cartBadge');
   if(badge) badge.textContent = state.cart.reduce((s,x)=> s + x.qty, 0);
 }
+function resetOrderTypeFields(){
+    // v20260616: 結帳後重置訂單類型/桌號/預約時段，回到乾淨新單狀態
+    var _otReset = document.getElementById('orderType');
+    if(_otReset) _otReset.value = '內用';
+    var _tableReset = document.getElementById('tableNo');
+    if(_tableReset) _tableReset.value = '';
+    var _slotReset = document.getElementById('posReservationSlot');
+    if(_slotReset){ _slotReset.value = ''; _slotReset.style.display = 'none'; }
+}
+// 線上單結帳／狀態回寫 Firebase：讓顧客端查詢顯示已完成、並讓本機清空後重建能排除已結帳單
+// storeCode 一律用當店設定；失敗只 warn，絕不擋結帳流程（遵守多店防混淆與 Firebase 容錯規範）
+async function syncOnlineOrderStatusToCloud(order, newStatus){
+  try{
+    if(!order) return;
+    // 只處理線上單：id 以 online_ 開頭，還原成 Firebase 原始 id
+    const oid = String(order.id || '');
+    if(oid.indexOf('online_') !== 0) return;
+    const remoteId = oid.slice('online_'.length);
+    if(!remoteId) return;
+
+    const cfg = (state.settings && state.settings.dashboard) || {};
+    const storeCode = cfg.storeId;
+    if(!storeCode) return;
+
+    const ref = await _getRef(`onlineOrders/${storeCode}/${remoteId}`);
+    const api = _dbApi();
+    if(!ref || !api) return;
+
+    const patch = { status: newStatus, updatedAt: new Date().toISOString() };
+    if(newStatus === 'completed') patch.settledAt = new Date().toISOString();
+    await api.update(ref, patch);
+
+    // 同步顧客查詢節點 customerOrderLookup（顧客端「我的訂單」讀這份）
+    const lookupKey = String(order.customerLookupKey || order.customerPhone || '').replace(/\D/g,'');
+    const orderNo = order.orderNo || '';
+    if(lookupKey && remoteId){
+      const lookupRef = await _getRef(`customerOrderLookup/${storeCode}/${lookupKey}/${remoteId}`);
+      if(lookupRef) await api.update(lookupRef, { status: newStatus, updatedAt: new Date().toISOString() });
+    }
+  }catch(e){
+    console.warn('[online-sync] 回寫線上單狀態失敗（不影響結帳）：', e && e.message);
+  }
+}
 
 function finalizeOrder(paymentMethod){
     var mode = document.getElementById('paymentTargetMode').value || 'new';
@@ -449,11 +492,17 @@ function finalizeOrder(paymentMethod){
 
     var order = null;
 
-    if(mode === 'pending'){
+        if(mode === 'pending'){
         order = markPendingOrderPaid(targetOrderId, paymentMethod);
         document.getElementById('paymentModal').classList.add('hidden');
         persistAll();
         window.refreshAllViews();
+
+// 線上單結帳（非待付款）→ 回寫 Firebase，讓顧客端顯示已完成、並標記已結帳
+          if(paymentMethod !== '待付款' && order){
+          syncOnlineOrderStatusToCloud(order, 'completed');
+        }
+
 
         // 開錢箱（依設定 openDrawer，且僅結帳時）
      if(order && paymentMethod === '現金'){
@@ -469,13 +518,15 @@ if(order){
         try { printOrderReceipt(order, 'customer'); }
         catch(e) { console.error('列印顧客單失敗:', e); }
     }
-   // 號碼單：只有真正結帳（非待付款）才印
-    if(paymentMethod !== '待付款' && printConfig.autoPrintNumberTicket){
+        // 號碼單：現場訂單依開關列印；線上訂單一律不印號碼單
+  if(paymentMethod !== '待付款' && printConfig.autoPrintNumberTicket
+       && !(String(order.id).startsWith('online_') || order.orderType === '線上點餐')){
         try { printNumberTicket(order); }
         catch(e) { console.error('列印號碼單失敗:', e); }
     }
+
 }
-      if(paymentMethod === '待付款'){
+           if(paymentMethod === '待付款'){
         showToast('已加入待付款', 500);
       } else if(paymentMethod === '現金' && _cashReceived !== ''){
         var _recv = Number(_cashReceived) || 0;
@@ -484,7 +535,9 @@ if(order){
       } else {
         alert('已完成收款');
       }
+      resetOrderTypeFields();
       return;
+
 
     }
 
@@ -509,11 +562,12 @@ if(order){
         try { printOrderReceipt(order, 'customer'); }
         catch(e) { console.error('列印顧客單失敗:', e); }
     }
-    // 號碼單：現場訂單依開關列印（號碼=訂單號碼後三碼）
-    if(paymentMethod !== '待付款' && printConfig.autoPrintNumberTicket){
+       // 號碼單：現場訂單依開關列印（號碼=訂單號碼後三碼）
+  if(paymentMethod !== '待付款' && printConfig.autoPrintNumberTicket){
         try { printNumberTicket(order); }
-        catch(e) { console.error('列印號碼單失敗:', e);  }
+        catch(e) { console.error('列印號碼單失敗:', e); }
     }
+
 }
   if(paymentMethod === '待付款'){
           showToast('已加入待付款', 500);
@@ -522,8 +576,10 @@ if(order){
           var _change = Math.max(0, _recv - _cashDue);
           alert('結帳完成\n實收 $' + _recv + '　找零 $' + _change);
         } else {
-          alert('結帳完成');
+                    alert('結帳完成');
         }
+
+      resetOrderTypeFields();
 }
 
 
@@ -863,10 +919,11 @@ const selections = flattenSelections(product);
       document.getElementById('checkoutBtn').click();
     };
   }
-  if(document.getElementById('clearCartBtnModal')){
+   if(document.getElementById('clearCartBtnModal')){
     document.getElementById('clearCartBtnModal').onclick = ()=>{
       state.cart = [];
       state.editingOrderId = null;
+      resetOrderTypeFields();
       renderCart();
     };
   }
@@ -876,9 +933,11 @@ const selections = flattenSelections(product);
       if(!confirm('確定要清空購物車？')) return;
       state.cart = [];
       state.editingOrderId = null;
+      resetOrderTypeFields();
       renderCart();
     };
   }
+
     document.getElementById('discountAmountBtn').onclick = ()=>{
     openNumPad({
       title: '折扣金額',

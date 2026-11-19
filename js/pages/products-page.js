@@ -5,6 +5,7 @@ import { escapeHtml, escapeAttr, money, id, deepCopy } from '../core/utils.js';
 import { openCategoryManage, closeCategoryManage, renderCategoryManage, saveCategoryManage } from '../modules/product-category-manager.js';
 import { openModuleManage, closeModuleManage, renderModuleManage, saveModuleManage } from '../modules/product-module-manager.js';
 import { syncMenuToFirebase, getRealtimeConfig } from '../modules/realtime-order-service.js';
+import { enableDragSort } from '../modules/drag-sort.js';
 
 // 主機自動推送雲端：從機呼叫不會丟錯，只 console
 function autoPushIfMaster(){
@@ -141,9 +142,10 @@ function normalizeImportedRow(row){
     : [];
   const moduleNamesText = String(row['加購模組'] ?? row['modules'] ?? '').trim();
   const moduleNames = moduleNamesText ? moduleNamesText.split('|').map(s => s.trim()).filter(Boolean) : [];
-  return { sku, name, price, category, enabled, sizes, moduleNames };
+  const sortRaw = String(row['排序'] ?? row['順序'] ?? row['sortOrder'] ?? '').trim();
+  const sortOrder = sortRaw === '' ? null : (Number.isNaN(Number(sortRaw)) ? null : Number(sortRaw));
+  return { sku, name, price, category, enabled, sizes, moduleNames, sortOrder };
 }
-
 
 function importExcelRowsToPending(rows){
   const imported = [];
@@ -207,17 +209,18 @@ function importExcelRowsToPending(rows){
         return mod ? { moduleId: mod.id } : null;
       })
       .filter(Boolean);
-    imported.push({
-      id: id(), sku: item.sku, name: item.name, price: item.price,
-      category: item.category || '未分類', enabled: item.enabled,
-      sizes: item.sizes || [],
-      modules: importedModules, image,
-      sortOrder: state.products.length + imported.length, status: 'pending'
-    });
-
+      imported.push({
+        id: id(), sku: item.sku, name: item.name, price: item.price,
+        category: item.category || '未分類', enabled: item.enabled,
+        sizes: item.sizes || [],
+        modules: importedModules, image,
+        sortOrder: (item.sortOrder != null) ? item.sortOrder : (state.products.length + imported.length),
+        status: 'pending'
+      });
   });
 
   // 結果回報
+
   const msgs = [];
   if(updatedSkus.length) msgs.push('✓ 已補 SKU：' + updatedSkus.length + ' 筆');
   if(updatedImages.length) msgs.push('✓ 已套用圖片：' + updatedImages.length + ' 筆');
@@ -250,7 +253,8 @@ async function importExcelFile(file){
 
 function exportProductsToExcel(){
   if(!window.XLSX){ alert('Excel 套件尚未載入，請重新整理'); return; }
-    const rows = (state.products || []).map(p => ({
+  const rows = (state.products || []).slice().sort((a,b)=>(a.sortOrder||0)-(b.sortOrder||0)).map((p, i) => ({
+    排序: Number(p.sortOrder ?? i),
     SKU: p.sku || '',
     商品名稱: p.name || '',
     價格: Number(p.price || 0),
@@ -516,46 +520,111 @@ export function renderProductsTable(){
     return;
   }
 
-  if(viewMode === 'text'){
+    if(viewMode === 'text'){
+    // 字級：大中小（存 state.settings.productListFontScale）
+    const scale = (state.settings && state.settings.productListFontScale) || 'mid';
+    const fsName  = scale === 'big' ? 18 : (scale === 'small' ? 12 : 14);
+    const fsMeta  = scale === 'big' ? 15 : (scale === 'small' ? 11 : 12);
+    const rowPad  = scale === 'big' ? 12 : (scale === 'small' ? 5 : 8);
+
     const list = document.createElement('div');
     list.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+
     filtered.forEach((p)=>{
+      const off = p.enabled === false;
+      // 下架 = 紅色系；上架 = 正常
+      const dotColor  = off ? '#dc2626' : '#10b981';
+      const nameColor = off ? '#dc2626' : '#0f172a';
+      const priceColor= off ? '#dc2626' : '#1d4ed8';
+      const rowBg     = off ? '#fef2f2' : '#fff';
+
       const row = document.createElement('div');
-      row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 10px;border:1px solid #e2e8f0;border-radius:6px;background:' + (p.enabled===false ? '#f1f5f9' : '#fff') + ';font-size:14px';
-      row.innerHTML = `
-        <span style="flex:0 0 24px;text-align:center;color:${p.enabled===false ? '#94a3b8' : '#10b981'};font-size:16px">${p.enabled===false ? '⊘' : '●'}</span>
-        <span style="flex:1;font-weight:600;color:${p.enabled===false ? '#94a3b8' : '#0f172a'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name)}</span>
-        <span style="flex:0 0 100px;color:#64748b;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.category)}</span>
-        <span style="flex:0 0 70px;text-align:right;font-weight:700;color:${p.enabled===false ? '#94a3b8' : '#1d4ed8'}">${money(p.price)}</span>
-        <span style="display:inline-flex;gap:2px;flex:0 0 auto">
-          <button class="move-up" style="padding:2px 6px;font-size:12px">▲</button>
-          <button class="move-down" style="padding:2px 6px;font-size:12px">▼</button>
-          <button class="edit" style="padding:2px 8px;font-size:12px">編輯</button>
-          <button class="toggle" style="padding:2px 8px;font-size:12px">${p.enabled===false?'上架':'下架'}</button>
-          <button class="delete" style="padding:2px 8px;font-size:12px;color:#dc2626">刪</button>
-        </span>
-      `;
-      row.querySelector('.move-up').onclick = ()=> { moveProduct(p.id, 'up'); autoPushIfMaster(); };
-      row.querySelector('.move-down').onclick = ()=> { moveProduct(p.id, 'down'); autoPushIfMaster(); };
-      row.querySelector('.edit').onclick = ()=> openProductEditModal(p);
-      row.querySelector('.toggle').onclick = ()=>{
-        p.enabled = !(p.enabled!==false);
+      row.className = 'draggable';          // 給 drag-sort 用
+      row.dataset.id = p.id;                // 給 drag-sort / 跳位用
+      row.style.cssText =
+        'display:flex;align-items:center;gap:6px;padding:'+rowPad+'px 8px;'+
+        'border:1px solid '+(off?'#fca5a5':'#e2e8f0')+';border-radius:8px;'+
+        'background:'+rowBg+';font-size:'+fsName+'px';
+
+      row.innerHTML =
+        '<span class="drag-handle" style="flex:0 0 20px;text-align:center;cursor:grab;color:#94a3b8;font-size:'+fsName+'px">⣿</span>'+
+        '<span style="flex:0 0 24px;text-align:center;color:'+dotColor+';font-size:'+(fsName+2)+'px">'+(off?'⛔':'●')+'</span>'+
+        '<span style="flex:1;font-weight:600;color:'+nameColor+';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(p.name)+(off?'（已下架）':'')+'</span>'+
+        '<span style="flex:0 0 90px;color:'+(off?'#dc2626':'#64748b')+';font-size:'+fsMeta+'px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+escapeHtml(p.category)+'</span>'+
+        '<span style="flex:0 0 64px;text-align:right;font-weight:700;color:'+priceColor+'">'+money(p.price)+'</span>'+
+        '<input class="pos-input" type="number" min="1" title="輸入位置後按 Enter 直接跳位" '+
+          'style="flex:0 0 48px;width:48px;padding:2px;text-align:center;border:1px solid #cbd5e1;border-radius:6px;font-size:'+fsMeta+'px">'+
+        '<span style="display:inline-flex;gap:2px;flex:0 0 auto">'+
+          '<button class="move-up" style="padding:2px 6px;font-size:'+fsMeta+'px">▲</button>'+
+          '<button class="move-down" style="padding:2px 6px;font-size:'+fsMeta+'px">▼</button>'+
+          '<button class="edit" style="padding:2px 8px;font-size:'+fsMeta+'px">編輯</button>'+
+          '<button class="toggle" style="padding:2px 8px;font-size:'+fsMeta+'px;'+(off?'color:#16a34a;font-weight:700':'color:#dc2626')+'">'+(off?'上架':'下架')+'</button>'+
+          '<button class="delete" style="padding:2px 8px;font-size:'+fsMeta+'px;color:#dc2626">刪</button>'+
+        '</span>';
+
+      row.querySelector('.move-up').onclick   = ()=>{ moveProduct(p.id, 'up');   autoPushIfMaster(); };
+      row.querySelector('.move-down').onclick = ()=>{ moveProduct(p.id, 'down'); autoPushIfMaster(); };
+      row.querySelector('.edit').onclick      = ()=> openProductEditModal(p);
+      row.querySelector('.toggle').onclick    = ()=>{
+        p.enabled = !(p.enabled !== false);
         persistAll(); renderProductsTable();
         if(window.refreshPublicProducts) window.refreshPublicProducts();
         autoPushIfMaster();
       };
-      row.querySelector('.delete').onclick = ()=>{
+      row.querySelector('.delete').onclick    = ()=>{
         if(!confirm(`確定刪除「${p.name}」？`)) return;
         state.products = state.products.filter(x=>x.id!==p.id);
         persistAll(); renderProductsTable();
         if(window.refreshPublicProducts) window.refreshPublicProducts();
         autoPushIfMaster();
       };
+      // 數字跳位：輸入「要排第幾」按 Enter
+      const jump = row.querySelector('.pos-input');
+      jump.onkeydown = (e)=>{
+        if(e.key !== 'Enter') return;
+        const sorted = (state.products||[]).slice().sort((a,b)=>a.sortOrder-b.sortOrder);
+        let pos = Math.floor(Number(jump.value)||0);
+        if(pos < 1) return;
+        if(pos > sorted.length) pos = sorted.length;
+        const from = sorted.findIndex(x=>x.id===p.id);
+        if(from < 0) return;
+        const [moved] = sorted.splice(from, 1);
+        sorted.splice(pos-1, 0, moved);
+        sorted.forEach((x,i)=> x.sortOrder = i);
+        state.products.sort((a,b)=>a.sortOrder-b.sortOrder);
+        persistAll(); renderProductsTable();
+        if(window.refreshPublicProducts) window.refreshPublicProducts();
+        autoPushIfMaster();
+      };
+
       list.appendChild(row);
     });
     wrap.appendChild(list);
+
+    // 拖曳排序：拖完只重排「目前顯示的這批」之間的相對順序，不動被搜尋過濾掉的
+    enableDragSort(list, (ordered)=>{
+      const idOrder = ordered.map(o=>o.id);
+      const shownSet = new Set(idOrder);
+      // 取目前顯示這批原本的 sortOrder 值（由小到大），依新順序回填給這批
+      const slots = filtered
+        .filter(p=>shownSet.has(p.id))
+        .map(p=>p.sortOrder)
+        .sort((a,b)=>a-b);
+      idOrder.forEach((pid, i)=>{
+        const prod = state.products.find(x=>x.id===pid);
+        if(prod) prod.sortOrder = slots[i];
+      });
+      state.products.sort((a,b)=>a.sortOrder-b.sortOrder);
+      persistAll(); renderProductsTable();
+      if(window.refreshPublicProducts) window.refreshPublicProducts();
+      autoPushIfMaster();
+    });
+
+    // 大中小字級按鈕：動態插到「共 X 筆」那排（productCountLabel 旁），只插一次
+    injectFontScaleButtons();
     return;
   }
+
 
   // 預設：圖示模式（原本行為）
   const grid = document.createElement('div');
@@ -1313,4 +1382,39 @@ export function initProductsPage(){
   document.getElementById('saveModuleManageBtn')?.addEventListener('click', ()=>{ saveModuleManage(); persistAll(); window.refreshAllViews(); });
 
   resetProductForm();
+}
+
+function injectFontScaleButtons(){
+  const label = document.getElementById('productCountLabel');
+  if(!label) return;
+
+  let wrap = document.getElementById('productFontScaleWrap');
+  if(!wrap){
+    wrap = document.createElement('span');
+    wrap.id = 'productFontScaleWrap';
+    wrap.style.cssText = 'display:inline-flex;gap:4px;margin-left:12px;vertical-align:middle';
+    [['big','大'],['mid','中'],['small','小']].forEach(([key,txt])=>{
+      const b = document.createElement('button');
+      b.textContent = txt;
+      b.dataset.scale = key;
+      b.style.cssText = 'padding:2px 10px;font-size:13px;border:1px solid #cbd5e1;border-radius:6px;cursor:pointer';
+      b.onclick = ()=>{
+        if(!state.settings) state.settings = {};
+        state.settings.productListFontScale = key;
+        persistAll();
+        renderProductsTable();
+      };
+      wrap.appendChild(b);
+    });
+    label.parentNode.insertBefore(wrap, label.nextSibling);
+  }
+
+  // 每次都更新高亮（含首次）
+  const cur = (state.settings && state.settings.productListFontScale) || 'mid';
+  wrap.querySelectorAll('button').forEach(b=>{
+    const active = b.dataset.scale === cur;
+    b.style.background   = active ? '#2563eb' : '#fff';
+    b.style.color        = active ? '#fff'    : '#475569';
+    b.style.borderColor  = active ? '#2563eb' : '#cbd5e1';
+  });
 }

@@ -35,8 +35,14 @@ function isVoidedOrder(o){
   return s === 'void' || s === 'cancelled' || s === 'refunded';
 }
 function getValidOrders(orders){
-  return (orders || []).filter(o => !isVoidedOrder(o));
+  return (orders || []).filter(o => {
+    if(isVoidedOrder(o)) return false;
+    // 待付款（尚未收款）不算營業額，與 report-session.js summarizeOrders 一致
+    if(String(o.status || '').toLowerCase() === 'pending' || o.paymentMethod === '待付款') return false;
+    return true;
+  });
 }
+
 function getVoidedOrders(orders){
   return (orders || []).filter(o => isVoidedOrder(o));
 }
@@ -755,7 +761,7 @@ function calcReportData(session){
     if(i.productId === '_discount_') return;
     prodMap[i.name] = (prodMap[i.name]||0) + Number(i.qty||0);
   }));
-  const top = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const top = Object.entries(prodMap).sort((a,b)=>b[1]-a[1]);
 
   const hourMap = {};
   orders.forEach(o => {

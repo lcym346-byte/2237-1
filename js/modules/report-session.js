@@ -72,12 +72,17 @@ function summarizeOrders(orders, deliveryOpts){
   orders.forEach(o => {
     const total = Number(o.total || 0);
     const discount = Number(o.discountAmount || 0);
-    if(isVoidedStatus(o.status)){
+        if(isVoidedStatus(o.status)){
       stats.voidedCount++;
       stats.voidedAmount += total;
       return;
     }
+    // 待付款（尚未收款）不算進營業額：本機與線上待付款單 status 皆為 pending、paymentMethod 皆為「待付款」
+    if(String(o.status || '').toLowerCase() === 'pending' || o.paymentMethod === '待付款'){
+      return;
+    }
     const type = o.orderType || '未分類';
+
     const pay = o.paymentMethod || '未設定';
     stats.orderCount++;
     stats.salesTotal += total;

@@ -130,6 +130,13 @@ function fmtDate(s){
   const mm = String(d.getMinutes()).padStart(2,'0');
   return `${y}-${m}-${day} ${hh}:${mm}`;
 }
+// 預約取餐時間：有 reservationAt 或 orderType 為「預約」時回傳格式化字串，否則空字串
+function getReservationText(order){
+  if(!order) return '';
+  const r = order.reservationAt || order.reservationSlot || '';
+  if(!r) return '';
+  return fmtDate(r);
+}
 
 function sunmiPrintReceiptByFont(order, mode){
   if(!hasSunmi() || typeof window.SunmiPrinter.printTextWithFont !== 'function') return false;
@@ -376,6 +383,9 @@ export function getReceiptHtml(order, mode){
     const tableInfo = order.tableNo ? ` / ${escapeHtml(order.tableNo)}` : '';
     lines.push(`<div>類型：${escapeHtml(order.orderType || '')}${tableInfo}</div>`);
   }
+  // 預約單：顯示預約取餐時間（顧客單、廚房單都印）
+  const _resvText = getReservationText(order);
+  if(_resvText) lines.push(`<div class="bold">預約取餐：${escapeHtml(_resvText)}</div>`);
   if(fields.customerInfo){
     const cName = order.customerName ? escapeHtml(order.customerName) : '';
     const cPhone = customerPhoneMasked ? escapeHtml(customerPhoneMasked) : '';
@@ -614,10 +624,9 @@ function buildBridgePayload(order, mode){
     // 訂單資訊
     orderNumber: fields.orderNo  ? String(order.orderNo || order.id || '') : '',
     dateTime:    fields.dateTime ? fmtDate(order.createdAt) : '',
-    orderType:   fields.orderType
-                   ? ((order.orderType || '') + (order.tableNo ? ' / ' + order.tableNo : '')).trim()
-                   : '',
-    tableNo: order.tableNo || '',
+    orderType:   fields.orderType? (((order.orderType || '') + (order.tableNo ? ' / ' + order.tableNo : '')).trim()+ (getReservationText(order) ? '\n取餐:' + getReservationText(order) : '')): (getReservationText(order) ? '取餐:' + getReservationText(order) : ''),
+
+
 
     // 付款方式（僅顧客單）
     paymentMethod: (fields.paymentMethod && !isKitchen && !isLabel)
@@ -811,8 +820,35 @@ export async function printNumberTicket(order){
   const html = getNumberTicketHtml(order);
   await detectPrinters(true);
   const d = getDetect();
+
+  // T2 / Chrome 8080 橋接：走 http，送 APK 印（與顧客單同一條路，不再掉到瀏覽器 PDF）
+  if(d && d.mode === 'http'){
+    const payload = {
+      mode: 'number',
+      openDrawer: false,
+      shopName: '',
+      subtitle: '',
+      // 把號碼塞進 items 那一行，關掉數量與價格欄，避免印出 x1 $0
+      items: [{ name: no, qty: 1, price: 0 }],
+      fields: {
+        storeName:false, subtitle:false, items:true,
+        itemQty:false, itemPrice:false, itemSelections:false, itemNote:false,
+        storePhone:false, storeAddress:false, orderNo:false, dateTime:false,
+        orderType:false, paymentMethod:false, customerInfo:false,
+        customerNote:false, orderNote:false, subtotal:false, discount:false,
+        total:false, footer:false
+      },
+      // 號碼放大字級（APK 支援就放大，不支援則忽略）
+      fontKitchenItem: 96,
+      fontKitchenInfo: 24
+    };
+    const rr = await routedHttpPrint('label', payload, d);
+    if(rr.ok) return { route: rr.route, ok:true };
+    // http 失敗才往下退回
+  }
+
+  // Sunmi 內建（webview）
   if(d && d.mode === 'webview'){
-    // Sunmi 走大字直印
     if(hasSunmi() && typeof window.SunmiPrinter.printTextWithFont === 'function'){
       try{
         window.SunmiPrinter.printTextWithFont('\n' + no + '\n\n', '', 72);
@@ -821,10 +857,10 @@ export async function printNumberTicket(order){
       }catch(e){}
     }
   }
+
   await bridgeBrowserPrint(html);
   return { route:'browser', ok:true };
 }
-
 // ============================================================
 // 錢箱
 // ============================================================

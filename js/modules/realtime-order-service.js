@@ -215,8 +215,27 @@ function showOnlineOrderOverlay(orderId){
     itemsEl.innerHTML = '';
   }
 
-  document.getElementById('overlayPrepTime').value = isReservation ? 30 : 20;
-  document.getElementById('overlayMessage').value = '';
+    const prepEl = document.getElementById('overlayPrepTime');
+prepEl.textContent = isReservation ? 30 : 20; prepEl.setAttribute('data-value', isReservation ? 30 : 20);  document.getElementById('overlayMessage').value = '';
+
+  // v20260912：準備時間改用自製數字鍵盤，不叫系統鍵盤
+  prepEl.setAttribute('readonly', 'readonly');
+  prepEl.setAttribute('inputmode', 'none');
+  prepEl.style.cursor = 'pointer';
+  if(prepEl.dataset.numpadBound !== '1'){
+    prepEl.dataset.numpadBound = '1';
+    prepEl.addEventListener('click', ()=>{
+      if(typeof window.openNumPad !== 'function') return;
+      window.openNumPad({
+        title: '準備時間（分鐘）',
+        hint: '請輸入分鐘數',
+        onConfirm: (val)=>{
+          const m = Math.max(0, Math.floor(Number(val) || 0));
+prepEl.textContent = m; prepEl.setAttribute('data-value', m);        }
+      });
+    });
+  }
+
 
   overlay.style.display = 'flex';
 
@@ -224,8 +243,7 @@ function showOnlineOrderOverlay(orderId){
   acceptBtn.disabled = false;
   acceptBtn.textContent = isReservation ? '✓ 確認預約' : '確認接單';
   acceptBtn.onclick = async ()=>{
-    const prepTime = parseInt(document.getElementById('overlayPrepTime').value) || 20;
-    const defaultMsg = isReservation
+    const prepTime = parseInt(document.getElementById('overlayPrepTime').getAttribute('data-value')) || 20;    const defaultMsg = isReservation
       ? `已收到您的預約（${reservationText}），將於時段前備餐`
       : `預計 ${prepTime} 分鐘後可取餐`;
     const msg = document.getElementById('overlayMessage').value || defaultMsg;
@@ -243,7 +261,8 @@ function showOnlineOrderOverlay(orderId){
           if(used > 0) posOrder.total = Math.max(0, Number(posOrder.subtotal || 0) - used);
         } catch (e) { console.warn('接單預扣點數失敗：', e); }
         if(!Array.isArray(state.orders)) state.orders = [];
-        state.orders.unshift(posOrder);
+        if(!state.orders.some(x => x.id === posOrder.id)){state.orders.unshift(posOrder);}
+
         persistAll();
 
         try {
@@ -254,11 +273,14 @@ function showOnlineOrderOverlay(orderId){
 
         if(!isReservation){
           try{
+          // 預約單自動接單時不印（要等 30 分鐘前提醒才印），一般單才印
+          if(!posOrder.reservationAt){
             const { printKitchenCopies } = await import('./print-service.js');
             const cfg2 = ensureRealtimeConfig();
             // 線上訂單=待付款：接單時只印廚房單（顧客單於之後 POS 結帳時才印）
             if(cfg2.autoPrintKitchenOnConfirm) printKitchenCopies(posOrder);
-          }catch(pe){ console.error('自動列印失敗：', pe); }
+          }
+        }catch(pe){ console.error('自動接單列印失敗：', pe); } 
         }
       }
       if(typeof window.refreshAllViews === 'function') window.refreshAllViews();
@@ -333,7 +355,8 @@ function startAlarm(orderId){
           if(used > 0) posOrder.total = Math.max(0, Number(posOrder.subtotal || 0) - used);
         } catch (e) { console.warn('接單預扣點數失敗：', e); }
         if(!Array.isArray(state.orders)) state.orders = [];
-        state.orders.unshift(posOrder);
+        if(!state.orders.some(x => x.id === posOrder.id)){state.orders.unshift(posOrder);}
+
         persistAll();
 
         try {
@@ -378,7 +401,16 @@ export async function signInPOSWithGoogle(){
   const result = await authApi.signInWithPopup(authInstance, googleProvider);
   return result.user;
 }
-
+// ▼▼▼ 新增：email + 密碼登入（取代 Google，WebView 相容）▼▼▼
+export async function signInPOSWithEmail(email, password){
+  await loadFirebaseModules();
+  const mail = String(email || '').trim();
+  const pass = String(password || '');
+  if(!mail || !pass) throw new Error('請輸入 email 與密碼');
+  const result = await authApi.signInWithEmailAndPassword(authInstance, mail, pass);
+  return result.user;
+}
+// ▲▲▲ 新增結束 ▲▲▲
 export async function signOutPOSGoogle(){
   await loadFirebaseModules();
   await authApi.signOut(authInstance);
@@ -545,6 +577,27 @@ export async function startPOSRealtimeListener(onRefresh){
 
     state.onlineIncomingOrders = incoming;
 
+        // ===== 本機清空後：自動抓回「本班、已接單、未結帳」的線上單 =====
+    if(!Array.isArray(state.orders)) state.orders = [];
+    const _sess = getCurrentSession();
+    const _sessStart = _sess ? new Date(_sess.startedAt || 0).getTime() : 0;
+    incoming.forEach(row => {
+      if(!_sess) return;                              // 沒開班就不抓
+      if(row.status !== 'confirmed') return;          // 只抓已接單未結帳
+      if(row.posVoided === true) return;              // 已作廢的不抓回
+      const acceptedAt = new Date(row.updatedAt || row.createdAt || 0).getTime();
+      if(acceptedAt < _sessStart) return;             // 開班之前接的舊單不抓
+      const localId = 'online_' + row.id;
+      if(state.orders.some(o => o && o.id === localId)) return;
+      const rebuilt = buildRealtimeOrderForPOS(row);
+      rebuilt.sessionId = _sess.id;                   // 明確歸到本班
+      state.orders.unshift(rebuilt);
+    });
+    // ===== 抓回結束 =====
+
+
+
+
     let hasNewOrder = false;
     incoming.forEach(order => {
       if(order.status === 'pending_confirm' && !seen.has(order.id)){
@@ -675,6 +728,8 @@ export function buildRealtimeOrderForPOS(remote){
     storeCode: remote.storeCode || '',
     prepTimeMinutes: Number(remote.prepTimeMinutes || 0),
     estimatedReadyAt: remote.estimatedReadyAt || '',
+    reservationAt: remote.reservationAt || '',
+    reservationReminded: remote.reservationReminded === true,
     merchantReplyMessage: remote.replyMessage || '',
     // 折扣欄位：用顧客端套用的優惠碼結果，而不是寫死 0
     discountType: 'amount',
@@ -809,6 +864,82 @@ export async function fetchMenuFromFirebase(storeCode){
   }
   return data;
 }
+// ============================================================
+// 即時接單：讀「總部範本菜單」menu/store001（寫死，例外路徑）
+// 只更新品項名稱/價格/模組等基本資訊；上下架 enabled、售完 soldOut 一律保留本機，不被範本覆蓋。
+// 註：跨店路徑原則上用 storeId，但「總部統一範本」是刻意的例外，請勿改回 getStoreCode()。
+// ============================================================
+const HQ_TEMPLATE_STORE = 'store001';
+export async function fetchTemplateMenuFromHQ(){
+  await loadFirebaseModules();
+  const menuRef = await getRef('menu/' + HQ_TEMPLATE_STORE);
+  const snapshot = await dbApi.get(menuRef);
+  const data = snapshot.val();
+  if(!data) throw new Error('雲端尚無總部範本菜單（menu/' + HQ_TEMPLATE_STORE + '）');
+
+  let cloudCount = 0;
+  let localKeptCount = 0;
+
+  // 分類：以範本為主，本地獨有的補在後面
+  if(Array.isArray(data.categories)){
+    const localCats = state.categories || [];
+    const merged = [...data.categories];
+    localCats.forEach(c => { if(!merged.includes(c)) merged.push(c); });
+    if(!merged.includes('未分類')) merged.unshift('未分類');
+    state.categories = merged;
+  }
+
+  // 模組：以範本為主，本地獨有的保留
+  if(Array.isArray(data.modules)){
+    const localMods = state.modules || [];
+    const merged = [];
+    const usedIds = new Set();
+    data.modules.forEach(m => { if(m && m.id){ merged.push(m); usedIds.add(m.id); }});
+    localMods.forEach(m => { if(m && m.id && !usedIds.has(m.id)){ merged.push(m); localKeptCount++; }});
+    state.modules = merged;
+  }
+
+  // 商品：更新品項基本資訊，但 enabled / soldOut 一律保留本機
+  if(Array.isArray(data.products)){
+    const localProds = state.products || [];
+    const localMap = {};
+    localProds.forEach(p => { if(p && p.id) localMap[p.id] = p; });
+    const merged = [];
+    const usedIds = new Set();
+    data.products.forEach(cp => {
+      if(!cp || !cp.id) return;
+      const lp = localMap[cp.id];
+      // 關鍵：上下架 / 售完 一律用本機值（本機沒有這筆才用範本預設）
+      const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
+      const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
+      merged.push({
+        id: cp.id,
+        sku: cp.sku || '',
+        name: cp.name || '',
+        price: Number(cp.price || 0),
+        category: cp.category || '未分類',
+        image: cp.image || '',
+        description: cp.description || '',
+        modules: Array.isArray(cp.modules) ? cp.modules : [],
+        sortOrder: Number(cp.sortOrder || 0),
+        sizes: Array.isArray(cp.sizes) ? cp.sizes : (lp && Array.isArray(lp.sizes) ? lp.sizes : []),
+        enabled,
+        soldOut
+      });
+      usedIds.add(cp.id);
+      cloudCount++;
+    });
+    // 本機獨有、範本沒有的商品：整筆保留
+    localProds.forEach(p => { if(p && p.id && !usedIds.has(p.id)){ merged.push(p); localKeptCount++; }});
+    state.products = merged;
+  }
+
+  const cfg = ensureRealtimeConfig();
+  cfg.lastSyncStatus = `已讀取總部範本菜單：雲端 ${cloudCount} / 本地保留 ${localKeptCount}（上下架維持本機）`;
+  cfg.lastSyncTime = new Date().toISOString();
+  persistAll();
+  return { cloudCount, localKeptCount };
+}
 
 
 export async function fetchAndMergeMenuFromFirebase(storeCode){
@@ -847,11 +978,12 @@ export async function fetchAndMergeMenuFromFirebase(storeCode){
     localProds.forEach(p => { if(p && p.id) localMap[p.id] = p; });
     const merged = [];
     const usedIds = new Set();
-    data.products.forEach(cp => {
+        data.products.forEach(cp => {
       if(!cp || !cp.id) return;
       const lp = localMap[cp.id];
-      const enabled = lp ? (lp.enabled !== false) : (cp.enabled !== false);
-      const soldOut = lp ? (lp.soldOut === true) : (cp.soldOut === true);
+      // 菜單管理讀取：上下架 / 售完 一律以雲端（自己 storeId 上次上傳）為準
+      const enabled = (cp.enabled !== false);
+      const soldOut = (cp.soldOut === true);
       merged.push({
         id: cp.id,
         sku: cp.sku || '', 

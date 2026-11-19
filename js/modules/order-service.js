@@ -52,11 +52,12 @@ export function markPendingOrderPaid(orderId, paymentMethod){
   order.status = paymentMethod === '待付款' ? 'pending' : 'completed';
   order.paymentMethod = paymentMethod;
   order.updatedAt = new Date().toISOString();
-  // 06.16/4：補登當前班次
-  if(!order.sessionId){
+    // 收款完成時歸到「真正收錢」的當前班次（原本卡在建單那一班，會導致營業額錯班）
+  if(paymentMethod !== '待付款'){
     const cur = getCurrentSession();
     if(cur) order.sessionId = cur.id;
   }
+
 
     // v20260525 新增：待付款改為完成時也推送客顯
   if (paymentMethod !== '待付款') {
