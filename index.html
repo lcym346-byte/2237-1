@@ -985,21 +985,18 @@
     padding:16px 0;font-size:22px;font-weight:700;border:1px solid #cbd5e1;
     background:#fff;color:#0f172a;border-radius:10px;cursor:pointer;
     user-select:none;-webkit-tap-highlight-color:transparent;
-    transition:none !important;
   }
   .cash-key:active{ background:#e2e8f0; }
   .cash-quick{
     padding:14px 0;font-size:18px;font-weight:700;border:1px solid #93c5fd;
     background:#dbeafe;color:#1e40af;border-radius:10px;cursor:pointer;user-select:none;
-    transition:none !important;
   }
   .cash-quick:active{ background:#bfdbfe; }
 </style>
-
 <!-- ===== 通用數字輸入 Modal（折扣等用，自製鍵盤）v20260620 ===== -->
 <div id="numPadModal" class="modal hidden" style="z-index:10000">
   <div class="modal-backdrop" id="numPadBackdrop"></div>
-  <div class="modal-dialog" style="max-width:360px;width:92%;box-shadow:none;border:2px solid #cbd5e1">
+  <div class="modal-dialog" style="max-width:360px;width:92%">
     <div class="row between wrap">
       <h2 id="numPadTitle" style="margin:0">輸入數字</h2>
       <button id="numPadCloseBtn" class="ghost-btn">✕</button>
@@ -1036,7 +1033,7 @@
 <!-- ===== 開始值班 Modal ===== -->
 <div id="startSessionModal" class="modal hidden">
   <div class="modal-backdrop"></div>
-  <div class="modal-dialog" style="max-width:420px;box-shadow:none;border:2px solid #cbd5e1">
+  <div class="modal-dialog" style="max-width:420px">
     <div class="row between wrap">
       <h2>🕐 開始值班</h2>
       <button class="ghost-btn" onclick="document.getElementById('startSessionModal').classList.add('hidden')">✕</button>
@@ -1069,8 +1066,8 @@
 </div>
 
 <!-- ===== 預約 30 分鐘前提醒 Modal ===== -->
-<div id="reservationReminderOverlay" onclick="if(event.target===this){this.style.display='none';}" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.65);z-index:99998;align-items:center;justify-content:center;padding:20px">
-  <div style="background:#fff;border-radius:16px;max-width:480px;width:100%;padding:24px;border:3px solid #f59e0b;max-height:92vh;overflow-y:auto">
+<div id="reservationReminderOverlay" onclick="if(event.target===this){this.style.display='none';}" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.75);z-index:99998;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#fff;border-radius:16px;max-width:480px;width:100%;padding:24px;border:3px solid #f59e0b;box-shadow:0 20px 60px rgba(0,0,0,0.35);max-height:92vh;overflow-y:auto">
     <div style="font-size:22px;font-weight:700;color:#b45309;margin-bottom:6px">⏰ 預約取餐 30 分鐘內</div>
     <div style="font-size:13px;color:#64748b;margin-bottom:14px">該開始備餐囉！按下方按鈕會自動列印廚房單與顧客單。</div>
 
@@ -1093,6 +1090,309 @@
   </div>
 </div>
 
+<!-- ===== 結束值班 Modal ===== -->
+<div id="endSessionModal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-dialog" style="max-width:480px;max-height:92vh;overflow-y:auto">
+    <div class="row between wrap">
+      <h2>🕐 結束值班</h2>
+      <button class="ghost-btn" onclick="document.getElementById('endSessionModal').classList.add('hidden')">✕</button>
+    </div>
+
+    <div id="endSessionInfo" style="font-size:13px;color:#64748b;margin-top:6px"></div>
+
+    <div style="margin-top:14px;padding:12px;background:#fef3c7;border-radius:8px;border:1px solid #fcd34d">
+      <div style="font-size:14px;font-weight:600;color:#78350f;margin-bottom:8px">💰 應收現金（系統計算）</div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span>開班備用金</span><span id="endOpeningCash">$0</span></div>
+      <div style="display:flex;justify-content:space-between;font-size:13px"><span>本班現金訂單</span><span id="endCashSales">$0</span></div>
+      <div style="display:flex;justify-content:space-between;margin-top:6px;padding-top:6px;border-top:1px solid #fcd34d;font-weight:bold">
+        <span>應有現金</span><span id="endExpectedCash" style="color:#78350f">$0</span>
+      </div>
+    </div>
+
+    <div style="margin-top:14px">
+      <label style="font-size:14px;font-weight:600">💵 結束現金清點</label>
+      <div id="endCashGrid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px"></div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;padding:10px;background:#f1f5f9;border-radius:8px">
+        <span>實收現金</span>
+        <strong id="endClosingCash">$0</strong>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;padding:10px;border-radius:8px;background:#f0fdf4">
+        <span>誤差</span>
+        <strong id="endCashDiff" style="color:#10b981">$0 ✓</strong>
+      </div>
+    </div>
+    
+<!-- ===== 外送平台金額（手動輸入，計入「其他」付款，不影響現金） ===== -->
+    <div style="margin-top:14px;padding:12px;background:#eff6ff;border-radius:8px;border:1px solid #bfdbfe">
+      <div style="font-size:14px;font-weight:600;color:#1e3a8a;margin-bottom:8px">🛵 外送平台金額（手動輸入）</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <label style="flex:0 0 100px;font-size:13px;color:#334155">熊貓 Grod</label>
+        <span style="color:#64748b">$</span>
+        <input id="endDeliveryPanda" type="number" inputmode="numeric" min="0" step="1" value="0"
+               style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:15px;text-align:right">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label style="flex:0 0 100px;font-size:13px;color:#334155">Uber</label>
+        <span style="color:#64748b">$</span>
+        <input id="endDeliveryUber" type="number" inputmode="numeric" min="0" step="1" value="0"
+               style="flex:1;padding:8px;border:1px solid #cbd5e1;border-radius:6px;font-size:15px;text-align:right">
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;border-top:1px dashed #bfdbfe;font-size:13px">
+        <span style="color:#334155">外送合計（計入「其他」付款）</span>
+        <strong id="endDeliveryTotal" style="color:#1e3a8a">$0</strong>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:#64748b">※ 外送金額不影響現金清點與誤差</div>
+    </div>
+    
+    <div style="margin-top:14px">
+      <label style="font-size:14px;font-weight:600">結束人員</label>
+      <select id="endStaffSelect" style="width:100%;padding:10px;margin-top:4px;border:1px solid #cbd5e1;border-radius:8px;font-size:15px">
+        <option value="A1">A1</option>
+        <option value="A2">A2</option>
+        <option value="A3">A3</option>
+        <option value="A4">A4</option>
+      </select>
+    </div>
+
+    <div style="margin-top:12px">
+      <label style="font-size:14px;font-weight:600">備註</label>
+      <input id="endSessionNote" placeholder="（可選）例如：誤差原因說明" style="width:100%;padding:10px;margin-top:4px;border:1px solid #cbd5e1;border-radius:8px;box-sizing:border-box">
+    </div>
+
+    <div class="form-actions" style="margin-top:16px">
+      <button id="confirmEndSessionBtn" class="primary-btn" style="flex:1;background:#ef4444">🔴 確認結束</button>
+      <button class="secondary-btn" onclick="document.getElementById('endSessionModal').classList.add('hidden')">取消</button>
+    </div>
+
+  </div>
+</div>
+    <!-- ===== 班次摘要 Modal（結束值班後顯示） ===== -->
+<div id="sessionSummaryModal" class="modal hidden">
+  <div class="modal-backdrop"></div>
+  <div class="modal-dialog" style="max-width:520px;max-height:92vh;overflow-y:auto">
+    <div class="row between wrap">
+      <h2>📋 班次摘要</h2>
+      <button class="ghost-btn" onclick="document.getElementById('sessionSummaryModal').classList.add('hidden')">✕</button>
+    </div>
+
+    <div id="summaryStaffInfo" style="font-size:13px;color:#64748b;margin-top:6px"></div>
+
+    <div id="summaryCashDiffBanner" style="margin-top:12px;padding:14px;border-radius:10px;text-align:center;font-size:16px;font-weight:bold"></div>
+
+    <div class="stat-grid" id="summaryStats" style="margin-top:14px"></div>
+
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 8px;font-size:15px">🍱 訂單類型</h3>
+      <div id="summaryOrderTypes" style="font-size:14px"></div>
+    </div>
+
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 8px;font-size:15px">💳 付款方式</h3>
+      <div id="summaryPayments" style="font-size:14px"></div>
+    </div>
+
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 8px;font-size:15px">🔥 熱銷 TOP5</h3>
+      <div id="summaryTopProducts" style="font-size:14px"></div>
+    </div>
+
+    <div class="form-actions" style="margin-top:18px;flex-wrap:wrap;gap:8px">
+      <button id="summaryPrintBtn" class="primary-btn" style="flex:1;min-width:140px;background:#3b82f6">🖨 列印報表</button>
+      <button id="summaryExportBtn" class="secondary-btn" style="flex:1;min-width:140px">📥 匯出 Excel</button>
+      <button id="summaryDoneBtn" class="primary-btn" style="flex:1;min-width:140px;background:#10b981">✓ 完成</button>
+    </div>
+  </div>
+</div>
+
+  </div>
+</div>
+
+  <!-- ===== 列印欄位選擇 Modal ===== -->
+<div id="printFieldsModal" class="modal hidden" style="z-index:9000">
+  <div class="modal-backdrop" data-close="print-fields"></div>
+  <div class="modal-dialog" style="max-width:420px">
+    <div class="row between wrap">
+      <h2 id="printFieldsTitle">選擇列印欄位</h2>
+      <button id="closePrintFieldsModal" class="ghost-btn">✕</button>
+    </div>
+    <div class="stack" style="margin-top:12px">
+      <label class="inline-check"><input type="checkbox" id="pf_storeName" checked> 店名</label>
+      <label class="inline-check"><input type="checkbox" id="pf_storePhone" checked> 電話</label>
+      <label class="inline-check"><input type="checkbox" id="pf_storeAddress" checked> 地址</label>
+      <label class="inline-check"><input type="checkbox" id="pf_orderNo" checked> 單號</label>
+      <label class="inline-check"><input type="checkbox" id="pf_createdAt" checked> 時間</label>
+      <label class="inline-check"><input type="checkbox" id="pf_orderType" checked> 訂單類型 / 桌號</label>
+      <label class="inline-check"><input type="checkbox" id="pf_paymentMethod" checked> 付款方式</label>
+      <label class="inline-check"><input type="checkbox" id="pf_itemSelections" checked> 品項模組選項</label>
+      <label class="inline-check"><input type="checkbox" id="pf_itemNote" checked> 品項備註</label>
+      <label class="inline-check"><input type="checkbox" id="pf_itemPrice" checked> 品項價格 / 小計</label>
+      <label class="inline-check"><input type="checkbox" id="pf_totalSection" checked> 合計 / 折扣區塊</label>
+      <label class="inline-check"><input type="checkbox" id="pf_footer" checked> 收據備註（頁尾）</label>
+    </div>
+    <div class="row gap wrap" style="margin-top:16px">
+      <button id="printFieldsConfirmBtn" class="primary-btn">確認預覽</button>
+      <button id="printFieldsCancelBtn" class="secondary-btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 列印預覽浮動視窗 ===== -->
+<div id="printPreviewModal" class="modal hidden" style="z-index:9100">
+  <div class="modal-backdrop" data-close="print-preview"></div>
+  <div class="modal-dialog wide" style="max-width:480px;padding:0;overflow:hidden;max-height:90vh;display:flex;flex-direction:column;">
+    <div class="row between wrap" style="padding:16px 20px;border-bottom:1px solid var(--line);">
+      <h2 id="printPreviewTitle">列印預覽</h2>
+      <div class="row gap">
+        <button id="printPreviewPrintBtn" class="primary-btn small-btn">列印</button>
+        <button id="closePrintPreviewModal" class="ghost-btn">✕</button>
+      </div>
+    </div>
+    <iframe id="printPreviewFrame" style="flex:1;width:100%;min-height:500px;border:none;background:#fff;"></iframe>
+  </div>
+</div>
+
+
+<!-- 班次列印選項 -->
+<div id="printOptionsModal" class="modal hidden" style="z-index:10000">
+  <div class="modal-backdrop"></div>
+  <div class="modal-dialog" style="max-width:480px;width:92vw;max-height:90vh;overflow-y:auto">
+    <div class="row between wrap">
+      <h2 style="margin:0">🖨 列印選項</h2>
+      <button class="ghost-btn" onclick="document.getElementById('printOptionsModal').classList.add('hidden')">✕</button>
+    </div>
+
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 8px;font-size:15px">📋 列印內容</h3>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optSummary" checked style="flex-shrink:0">
+        <span style="flex:1">💰 班次總覽（營業額／現金差異）</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optOrderTypes" checked style="flex-shrink:0">
+        <span style="flex:1">🍱 訂單類型統計</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optPayments" checked style="flex-shrink:0">
+        <span style="flex:1">💳 付款方式統計</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optTopProducts" checked style="flex-shrink:0">
+        <span style="flex:1">🔥 熱銷 TOP10</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optHourly" checked style="flex-shrink:0">
+        <span style="flex:1">🕐 時段分布</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="checkbox" id="optOrderList" style="flex-shrink:0">
+        <span style="flex:1">📝 訂單明細清單</span>
+      </label>
+    </div>
+
+    <div style="margin-top:14px">
+      <h3 style="margin:0 0 8px;font-size:15px">📄 紙張格式</h3>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="radio" name="paperSize" value="A4" checked style="flex-shrink:0">
+        <span style="flex:1">A4（標準）</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;padding:8px;border:1px solid #e2e8f0;border-radius:6px;margin-bottom:6px;cursor:pointer">
+        <input type="radio" name="paperSize" value="80mm" style="flex-shrink:0">
+        <span style="flex:1">80mm 熱感紙（收據機）</span>
+      </label>
+    </div>
+
+    <div class="form-actions" style="margin-top:18px;display:flex;gap:8px">
+      <button id="confirmPrintBtn" class="primary-btn" style="flex:1;background:#3b82f6">🖨 開始列印</button>
+      <button class="secondary-btn" style="flex:1" onclick="document.getElementById('printOptionsModal').classList.add('hidden')">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- 歷史紀錄 Modal -->
+<div id="historySessionsModal" class="modal hidden" style="z-index:1200">
+  <div class="modal-backdrop"></div>
+  <div class="modal-dialog" style="max-width:600px;width:92vw;max-height:88vh;display:flex;flex-direction:column">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:14px 18px;border-bottom:1px solid #e2e8f0">
+      <strong>📋 歷史班次紀錄</strong>
+      <button id="closeHistorySessionsModal" class="ghost-btn" style="font-size:20px;border:none;background:none;cursor:pointer">✕</button>
+    </div>
+    <div style="padding:12px 18px;border-bottom:1px solid #e2e8f0;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <label style="font-size:13px;color:#64748b">從</label>
+      <input type="date" id="historyDateFrom" style="padding:6px;border:1px solid #cbd5e1;border-radius:6px">
+      <label style="font-size:13px;color:#64748b">到</label>
+      <input type="date" id="historyDateTo" style="padding:6px;border:1px solid #cbd5e1;border-radius:6px">
+      <button id="historyDateFilterBtn" class="primary-btn" style="padding:6px 12px;font-size:13px">篩選</button>
+      <button id="historyDateResetBtn" class="ghost-btn" style="padding:6px 12px;font-size:13px">近30天</button>
+    </div>
+    <div id="historySessionsList" style="flex:1;overflow-y:auto;padding:12px 18px"></div>
+  </div>
+</div>
+
+
+<!-- ===== 外部腳本 ===== -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://apis.google.com/js/api.js"></script>
+<script type="module" src="js/app.js"></script>
+<script type="module" src="js/modules/sheets-sync.js"></script>
+  
+<!-- 線上訂單全螢幕通知 -->
+<div id="onlineOrderOverlay" onclick="if(event.target===this){this.style.display='none';}"
+ style="display:none; position:fixed; inset:0; z-index:9999; background:rgba(0,0,0,0.85); align-items:center; justify-content:center; flex-direction:column;">
+    <div style="text-align:center; margin-bottom:16px;">
+      <div id="overlayPulse" style="width:60px; height:60px; margin:0 auto 12px; border-radius:50%; background:#f59e0b;
+        animation:pulse-ring 1.5s infinite; display:flex; align-items:center; justify-content:center;">
+        <span style="font-size:28px;">🔔</span>
+      </div>
+      <h2 style="margin:0; font-size:20px; color:#0f172a;">收到新的線上訂單！</h2>
+    </div>
+
+    <div style="border:2px solid #f59e0b; border-radius:12px; padding:16px; background:#fffbeb; width:70vw; max-height:85vh; box-sizing:border-box; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:start; margin-bottom:8px; flex:0 0 auto;">
+        <div>
+          <span id="overlayOrderNo" style="font-weight:bold; font-size:15px;"></span>
+          <span style="background:#f59e0b; color:#fff; font-size:12px; padding:2px 8px; border-radius:4px; margin-left:8px;">待確認</span>
+        </div>
+        <span id="overlayTotal" style="font-size:18px; font-weight:bold; color:#ef4444;"></span>
+      </div>
+      <div id="overlayMeta" style="font-size:13px; color:#64748b; margin-bottom:4px; flex:0 0 auto;"></div>
+      <div id="overlayCustomer" style="font-size:13px; color:#64748b; margin-bottom:12px; flex:0 0 auto;"></div>
+
+      <!-- 品項列表：內容多時這區自己縮，不捲動 -->
+      <div id="overlayItems" style="flex:1 1 auto; min-height:0; overflow:auto; margin-bottom:16px; font-size:14px; color:#334155; display:grid; grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); gap:6px 16px; align-content:start;"></div>
+
+
+      <!-- 備餐時間：固定（v20260620-v2 改用 div，徹底不叫系統鍵盤） -->
+      <div style="margin-bottom:12px; flex:0 0 auto;">
+        <label style="font-size:14px; font-weight:600; color:#334155;">備餐時間（分鐘）</label>
+        <div id="overlayPrepTime" data-value="20"
+          onclick="window.openNumPad && window.openNumPad({title:'備餐時間（分鐘）',hint:'請輸入分鐘數',onConfirm:function(v){var el=document.getElementById('overlayPrepTime');var n=Math.max(0,Math.floor(Number(v)||0));el.setAttribute('data-value',n);el.textContent=n;}})"
+          style="width:100%; padding:10px; margin-top:4px; border:1px solid #cbd5e1; border-radius:8px; font-size:16px; box-sizing:border-box; cursor:pointer; background:#fff;">20</div>
+      </div>
+
+      <!-- 回覆顧客訊息：固定 -->
+      <div style="margin-bottom:16px; flex:0 0 auto;">
+        <label style="font-size:14px; font-weight:600; color:#334155;">回覆顧客訊息</label>
+        <input type="text" id="overlayMessage" placeholder="例如：大約 20 分鐘後可取餐" style="width:100%; padding:10px; margin-top:4px; border:1px solid #cbd5e1; border-radius:8px; font-size:16px; box-sizing:border-box;" />
+      </div>
+
+      <!-- 按鈕：固定 -->
+      <div style="display:flex; gap:12px; flex:0 0 auto;">
+        <button id="overlayAcceptBtn" style="flex:1; padding:14px; font-size:16px; font-weight:bold; border:none; border-radius:10px; background:#3b82f6; color:#fff; cursor:pointer;">確認接單</button>
+        <button id="overlayRejectBtn" style="flex:1; padding:14px; font-size:16px; font-weight:bold; border:none; border-radius:10px; background:#fff; color:#ef4444; border:2px solid #ef4444; cursor:pointer;">拒絕訂單</button>
+      </div>
+    </div>
+</div>
+
+
+<style>
+@keyframes pulse-ring {
+  0%{box-shadow:0 0 0 0 rgba(245,158,11,0.6);}
+  70%{box-shadow:0 0 0 20px rgba(245,158,11,0);}
+  100%{box-shadow:0 0 0 0 rgba(245,158,11,0);}
+}
+</style>
 
 </body>
 </html>
