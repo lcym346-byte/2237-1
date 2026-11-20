@@ -7,7 +7,8 @@
 .product-card h3{font-size:20px}
 .product-card .price{font-size:22px;font-weight:800;color:#1d4ed8}
 .product-card .meta{font-size:13px;color:var(--muted)}
-.product-card.disabled{opacity:.7;background:var(--disabled-bg);border-style:dashed}
+/* 舊款 POS 機優化：取消半透明圖層混合，改用實色文字區隔售完狀態 */
+.product-card.disabled{opacity:1;background:var(--disabled-bg);border-style:dashed;color:var(--disabled-text)}
 .product-card.disabled .price{color:var(--disabled-text)}
 .product-card.disabled button{background:#e2e8f0;color:#64748b;cursor:not-allowed}
 .cart-panel{display:flex;flex-direction:column}
@@ -46,13 +47,15 @@
 .pos-topbar-row select{padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:80px}
 .pos-topbar-row input{padding:6px 8px;border:1px solid var(--line);border-radius:8px;font-size:13px;width:130px}
 .cart-modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:7000;display:flex;align-items:center;justify-content:center}
-.cart-modal{background:#fff;border-radius:18px;padding:20px;max-width:420px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,0.2)}
+/* 舊款 POS 機優化：移除購物車彈窗陰影，改用 1px 實線邊框 */
+.cart-modal{background:#fff;border:1px solid var(--line);border-radius:18px;padding:20px;max-width:420px;width:92%;max-height:85vh;overflow-y:auto;box-shadow:none}
 
 /* ===== 品項設定彈窗：模組橫排＋橫向捲、上下固定（v20260912）===== */
 #productConfigModal .modal-dialog{
-  max-width: 96vw !important;
-  width: 96vw;
-  max-height: 90vh;
+  max-width: 560px !important;
+  width: min(560px, 92vw);
+  max-height: 88vh;
+  padding: 16px;
   display: flex;
   flex-direction: column;
 }

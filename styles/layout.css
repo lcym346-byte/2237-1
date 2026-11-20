@@ -12,7 +12,8 @@
 .content-grid{display:grid;grid-template-columns:1.15fr .85fr;gap:20px}
 .content-grid.one{grid-template-columns:1fr}
 .content-grid.two{grid-template-columns:1fr 1fr}
-.card{background:var(--card);border-radius:24px;padding:20px;box-shadow:0 8px 30px rgba(15,23,42,.06)}
+/* 舊款 POS 機優化：移除卡片陰影，改用 1px 實線邊框 */
+.card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:20px;box-shadow:none}
 .row{display:flex;align-items:center}
 .row.between{justify-content:space-between}
 .row.gap{gap:12px}
@@ -27,7 +28,8 @@
 .list-row{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;border:1px solid var(--line);border-radius:16px;padding:12px}
 .modal{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:999}
 .modal-backdrop{position:absolute;inset:0;background:rgba(15,23,42,.45)}
-.modal-dialog{position:relative;background:#fff;border-radius:24px;padding:20px;max-width:720px;width:min(92vw,720px);max-height:88vh;overflow:auto;box-shadow:0 20px 60px rgba(15,23,42,.2)}
+/* 舊款 POS 機優化：移除彈窗超大陰影，改用 1px 實線邊框 */
+.modal-dialog{position:relative;background:#fff;border:1px solid var(--line);border-radius:24px;padding:20px;max-width:720px;width:min(92vw,720px);max-height:88vh;overflow:auto;box-shadow:none}
 .modal-dialog.wide{max-width:860px;width:min(94vw,860px)}
 .small-btn{padding:10px 12px;border-radius:12px}
 .toolbar{margin-bottom:16px}
@@ -48,3 +50,4 @@
 @media (max-width:560px){
   .responsive-filters{grid-template-columns:1fr}
 }
+

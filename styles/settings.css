@@ -1,8 +1,8 @@
 /* ============================================================
-   设定页 — 简洁按钮列表 + 浮动视窗
+   設定頁 — 簡潔按鈕列表 + 浮動視窗
    ============================================================ */
 
-/* 设定页主画面：功能按钮网格 */
+/* 設定頁主畫面：功能按鈕網格 */
 .settings-btn-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
@@ -11,6 +11,7 @@
   max-width: 900px;
 }
 
+/* 舊款 POS 機優化：關閉過渡動畫 */
 .settings-btn-grid .setting-tile {
   display: flex;
   flex-direction: column;
@@ -22,15 +23,17 @@
   border: 1px solid #e2e8f0;
   background: #fff;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: none;
   min-height: 100px;
   text-align: center;
 }
 
+/* 舊款 POS 機優化：移除懸停陰影與位移特效，改用實色邊框與底色變化 */
 .settings-btn-grid .setting-tile:hover {
   border-color: #3b82f6;
-  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.15);
-  transform: translateY(-2px);
+  background: #eff6ff;
+  box-shadow: none;
+  transform: none;
 }
 
 .settings-btn-grid .setting-tile .tile-icon {
@@ -49,7 +52,7 @@
   color: #94a3b8;
 }
 
-/* 设定浮动视窗 */
+/* 設定浮動視窗 */
 .settings-modal-backdrop {
   display: none;
   position: fixed;
@@ -64,15 +67,17 @@
   display: flex;
 }
 
+/* 舊款 POS 機優化：移除浮動視窗超大陰影，改用 1px 實線邊框 */
 .settings-modal {
   background: #fff;
+  border: 1px solid #cbd5e1;
   border-radius: 14px;
   width: 94%;
   max-width: 600px;
   max-height: 88vh;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -120,7 +125,7 @@
   background: #f8fafc;
 }
 
-/* 浮动视窗内表单 */
+/* 浮動視窗內表單 */
 .sm-form-group {
   margin-bottom: 16px;
 }
@@ -143,11 +148,12 @@
   box-sizing: border-box;
 }
 
+/* 舊款 POS 機優化：移除輸入框聚焦外發光陰影 */
 .sm-form-group input:focus,
 .sm-form-group select:focus {
   outline: none;
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+  border-color: #2563eb;
+  box-shadow: none;
 }
 
 .sm-check-row {
@@ -186,6 +192,7 @@
   margin-top: 12px;
 }
 
+/* 舊款 POS 機優化：關閉按鈕過渡動畫 */
 .sm-btn {
   padding: 8px 16px;
   border: 1px solid #cbd5e1;
@@ -193,7 +200,7 @@
   background: #fff;
   font-size: 13px;
   cursor: pointer;
-  transition: all 0.1s;
+  transition: none;
 }
 
 .sm-btn:hover {
@@ -222,7 +229,7 @@
   border-color: #86efac;
 }
 
-/* 状态标示 */
+/* 狀態標示 */
 .sm-status {
   display: inline-flex;
   align-items: center;
@@ -248,7 +255,7 @@
   color: #64748b;
 }
 
-/* 印表机信息面板 */
+/* 印表機資訊面板 */
 .sm-info-box {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -260,7 +267,7 @@
   line-height: 1.6;
 }
 
-/* 响应式 */
+/* 響應式 */
 @media (max-width: 600px) {
   .settings-btn-grid {
     grid-template-columns: repeat(2, 1fr);
@@ -311,3 +318,4 @@
   width:100%;font-size:13px;border:1px dashed #94a3b8;background:#f8fafc;color:#475569;
 }
 .bh-add-slot:disabled{opacity:0.4;cursor:not-allowed}
+

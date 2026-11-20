@@ -40,3 +40,11 @@ input[type=radio]{
 input[type=radio]{
   border-radius:50% !important;
 }
+/* 舊款 POS 機效能優化：全域關閉過渡動畫與毛玻璃特效 */
+*, *::before, *::after {
+  transition: none !important;
+  animation: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
