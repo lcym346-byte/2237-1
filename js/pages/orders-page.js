@@ -5,12 +5,19 @@
  *  - 狀態字串與 dashboard-publish.js 既有過濾規則一致（'void'）
  *  - 新增「已作廢」摺疊區塊（在已完成下方）
  *  - 作廢單不可再修改，但可重新列印（追溯用）
+ * v20261120 效能優化（舊款 POS 機）：
+ *  - 已完成訂單改為預設顯示 10 筆，滑到底自動載入（IntersectionObserver）+ 手動載入按鈕
+ *  - 使用 DocumentFragment 批次掛載 DOM，減少重排卡頓
  */
 import { state, persistAll } from '../core/store.js';
 import { buildRealtimeOrderForPOS, confirmOnlineOrder, getRealtimeConfig, rejectOnlineOrder } from '../modules/realtime-order-service.js';
 import { printKitchenCopies, printOrderLabels, printOrderReceipt, getReceiptHtml, getLabelHtml, previewInModal } from '../modules/print-service.js';
 import { hasOpenSession, getCurrentSession } from '../modules/report-session.js';
 import { escapeHtml, deepCopy, money, fmtLocalDateTime, id } from '../core/utils.js';
+
+const COMPLETED_PAGE_SIZE = 10;
+let completedDisplayLimit = COMPLETED_PAGE_SIZE;
+let completedLoadObserver = null;
 
 function renderIncomingOnlineOrders(){
   const wrap = document.getElementById('incomingOnlineOrdersList');
@@ -21,6 +28,7 @@ function renderIncomingOnlineOrders(){
     wrap.innerHTML = '<div class="muted">目前沒有線上待確認訂單</div>';
     return;
   }
+  const frag = document.createDocumentFragment();
   list.forEach(o=>{
     const isReservation = !!o.reservationAt;
     const reservationText = isReservation ? fmtLocalDateTime(o.reservationAt) : '';
@@ -36,7 +44,7 @@ function renderIncomingOnlineOrders(){
           <div class="muted">${escapeHtml(o.customerName || '')}${o.customerPhone ? ' / ' + escapeHtml(o.customerPhone) : ''}</div>
           ${o.customerNote ? `<div class="muted">顧客備註：${escapeHtml(o.customerNote)}</div>` : ''}
         </div>
-                <div style="text-align:right">
+        <div style="text-align:right">
           ${Number(o.discount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money((o.items || []).reduce((s,x)=>s + ((Number(x.basePrice||0)+Number(x.extraPrice||0))*Number(x.qty||0)), 0))}</div>` : ''}
           <strong>${money(Number(o.total) || (o.items || []).reduce((s,x)=>s + ((Number(x.basePrice||0)+Number(x.extraPrice||0))*Number(x.qty||0)), 0))}</strong>
         </div>
@@ -47,7 +55,6 @@ function renderIncomingOnlineOrders(){
         <strong style="color:#16a34a">-${money(Number(o.discount||0))}</strong>
       </div>` : ''}
       <div class="stack small" style="margin-top:12px">
-
         ${(o.items || []).map(i=>{
           const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
           return `<div>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</div>`;
@@ -84,7 +91,6 @@ function renderIncomingOnlineOrders(){
         persistAll();
 
         const realtimeCfg = getRealtimeConfig();
-        // 預約單接單時不立即列印（要等 30 分鐘前再列印），一般單才立即列印
         if(!isReservation){
           if(realtimeCfg.autoPrintKitchenOnConfirm) printKitchenCopies(posOrder);
           if(realtimeCfg.autoPrintReceiptOnConfirm) printOrderReceipt(posOrder, 'customer');
@@ -111,10 +117,10 @@ function renderIncomingOnlineOrders(){
         }
       };
     }
-    wrap.appendChild(row);
+    frag.appendChild(row);
   });
+  wrap.appendChild(frag);
 }
-
 
 export function getFilteredOrders(){
   const kw = document.getElementById('orderItemSearch').value.trim();
@@ -134,23 +140,18 @@ export function getFilteredOrders(){
     const paymentOk = !paymentMethod || o.paymentMethod === paymentMethod;
     const cur = getCurrentSession();
     const curSessionId = cur ? cur.id : null;
-    // 待付款單一律顯示（不管掛在哪一班），其餘只顯示當班；有手動日期則不套班次過濾
     const isPending = String(o.status || '').toLowerCase() === 'pending';
     const sessionOk = (from || to) ? true : (isPending || !curSessionId || o.sessionId === curSessionId);
     return kwOk && dateOk && amtOk && paymentOk && sessionOk;
-
-
   }).sort((a,b)=> new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt));
 }
 
-// v20260613：「修改」改為「加到購物車」，原訂單保持原樣，要修改請另外按作廢
 function addOrderToCart(orderId){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
   const o = state.orders.find(x=>x.id===orderId);
   if(!o) return;
   if(o.status === 'void') return alert('此訂單已作廢，無法加到購物車');
 
-  // B 選項：直接覆蓋購物車（不詢問）
   state.cart = deepCopy(o.items);
 
   document.getElementById('tableNo').value = o.tableNo || '';
@@ -160,8 +161,6 @@ function addOrderToCart(orderId){
   document.getElementById('posView').classList.add('active');
   window.refreshAllViews();
 
-  // 線上單的分類可能是「線上點餐-外帶」「線上點餐-預約」這種複合值，
-  // POS 的 select 沒有這種 option，要對應回單純選項
   const rawType = String(o.orderType || '');
   setTimeout(()=>{
     const otSel = document.getElementById('orderType');
@@ -176,7 +175,6 @@ function addOrderToCart(orderId){
       otSel.value = wantedType;
       if(!otSel.value) otSel.value = '內用';
 
-      // 預約單：回填預約時段並顯示欄位
       if(wantedType === '預約' && o.reservationAt){
         const slotSel = document.getElementById('posReservationSlot');
         if(slotSel){
@@ -199,13 +197,6 @@ function addOrderToCart(orderId){
   alert('已將訂單 ' + (o.orderNo || '') + ' 的品項加到購物車。\n\n⚠️ 此為「重新建單」流程，原訂單仍存在；如需取代，請另外作廢原訂單。');
 }
 
-
-
-// ── 作廢訂單（取代刪除）──
-// 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
-// ── 作廢訂單（取代刪除）──
-// 狀態字串使用 'void'，與 dashboard-publish.js calcTodayStats 既有過濾規則一致
-// v20260620：作廢原因改為「選單式」按鈕，全程不調用系統鍵盤
 const VOID_REASONS = [
   '客人取消',
   '點錯餐 / 輸入錯誤',
@@ -222,24 +213,22 @@ function voidOrder(orderId){
   if(!o) return;
   if(o.status === 'void') return alert('此訂單已作廢');
 
-    openVoidReasonModal(o, async (reason)=>{
+  openVoidReasonModal(o, async (reason)=>{
     const currentSession = getCurrentSession();
     const staffId = currentSession ? currentSession.staffId : '';
+    const nowIso = new Date().toISOString();
 
-    // 記錄原始狀態，方便日後追溯//
-      const nowIso = new Date().toISOString();
     state.orders.forEach(x=>{
-  if(x.orderNo === o.orderNo && x.status !== 'void' && x.status !== 'completed'){
-    x.statusBeforeVoid = x.status || '';
-    x.status = 'void';
-    x.voidedAt = nowIso;
-    x.voidedReason = reason;
-    x.voidedBy = staffId;
-    x.sessionId = currentSession ? currentSession.id : x.sessionId;  
-    x.updatedAt = nowIso;
-  }
-});
-
+      if(x.orderNo === o.orderNo && x.status !== 'void' && x.status !== 'completed'){
+        x.statusBeforeVoid = x.status || '';
+        x.status = 'void';
+        x.voidedAt = nowIso;
+        x.voidedReason = reason;
+        x.voidedBy = staffId;
+        x.sessionId = currentSession ? currentSession.id : x.sessionId;  
+        x.updatedAt = nowIso;
+      }
+    });
 
     if(o.statusBeforeVoid === 'pending' && Number(o.pointsUsed||0) > 0){
       try{
@@ -247,7 +236,7 @@ function voidOrder(orderId){
         await cust.refundPointsOnCancel(o);
       }catch(err){ console.warn('作廢退點失敗：', err); }
     }
-    // ===== 線上單作廢 → 回寫 Firebase，避免監聽器把它又抓回待付款區 =====
+
     try{
       const rt = await import('../modules/realtime-order-service.js');
       const dbApi = rt._dbApi();
@@ -271,14 +260,13 @@ function voidOrder(orderId){
     }catch(e){
       console.warn('線上單作廢回寫 Firebase 失敗（不影響本機作廢）：', e && e.message);
     }
-    // ===== 作廢回寫結束 =====
 
     persistAll();
- window.refreshAllViews();
+    window.refreshAllViews();
     alert(`已作廢訂單「${o.orderNo}」\n原因：${reason}`);
   });
 }
-// ── 批量作廢：一次作廢多張勾選的待付款單 ──
+
 async function batchVoidOrders(orderIds){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
   if(!orderIds || !orderIds.length) return alert('請先勾選要作廢的訂單');
@@ -288,26 +276,23 @@ async function batchVoidOrders(orderIds){
     const staffId = currentSession ? currentSession.staffId : '';
     const nowIso = new Date().toISOString();
 
-    // 逐筆標記作廢（沿用單筆規則：同 orderNo、非 void/completed 才改）
     const targetNos = new Set();
     orderIds.forEach(id=>{
       const o = state.orders.find(x=>x.id===id);
       if(o) targetNos.add(o.orderNo);
     });
     state.orders.forEach(x=>{
-  if(targetNos.has(x.orderNo) && x.status !== 'void' && x.status !== 'completed'){
-    x.statusBeforeVoid = x.status || '';
-    x.status = 'void';
-    x.voidedAt = nowIso;
-    x.voidedReason = reason;
-    x.voidedBy = staffId;
-    x.sessionId = currentSession ? currentSession.id : x.sessionId;  
-    x.updatedAt = nowIso;
-  }
-});
+      if(targetNos.has(x.orderNo) && x.status !== 'void' && x.status !== 'completed'){
+        x.statusBeforeVoid = x.status || '';
+        x.status = 'void';
+        x.voidedAt = nowIso;
+        x.voidedReason = reason;
+        x.voidedBy = staffId;
+        x.sessionId = currentSession ? currentSession.id : x.sessionId;  
+        x.updatedAt = nowIso;
+      }
+    });
 
-
-    // 退點（本班待付款且有折抵點數的）
     for(const id of orderIds){
       const o = state.orders.find(x=>x.id===id);
       if(o && o.statusBeforeVoid === 'pending' && Number(o.pointsUsed||0) > 0){
@@ -318,7 +303,6 @@ async function batchVoidOrders(orderIds){
       }
     }
 
-    // 線上單回寫 Firebase posVoided:true（沿用單筆邏輯）
     try{
       const rt = await import('../modules/realtime-order-service.js');
       const dbApi = rt._dbApi();
@@ -348,16 +332,16 @@ async function batchVoidOrders(orderIds){
     alert(`已批量作廢 ${orderIds.length} 筆訂單\n原因：${reason}`);
   });
 }
-// ── 批量／合併結帳：勾選多張待付款單，併成一張暫時單，走原本結帳流程（可算找零）──
+
 function batchCheckoutOrders(orderIds){
   if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
 
   const targets = orderIds
+
     .map(x => state.orders.find(o => o.id === x))
     .filter(o => o && o.status === 'pending');
   if(!targets.length) return alert('勾選項目中沒有可結帳的待付款單');
 
-  // 只勾一張 → 直接走原本單筆流程
   if(targets.length === 1){
     document.getElementById('paymentTargetMode').value = 'pending';
     document.getElementById('paymentTargetOrderId').value = targets[0].id;
@@ -365,7 +349,6 @@ function batchCheckoutOrders(orderIds){
     return;
   }
 
-  // 多張 → 併成一張暫時單
   const mergedItems = [];
   targets.forEach(o => (o.items || []).forEach(it => mergedItems.push(deepCopy(it))));
   const subtotal = targets.reduce((s,o)=> s + Number(o.subtotal || o.total || 0), 0);
@@ -400,8 +383,6 @@ function batchCheckoutOrders(orderIds){
   document.getElementById('paymentModal').classList.remove('hidden');
 }
 
-// ── 收尾：把已結帳完成的合併單，其子單標 merged（不計營業額）+ 線上子單回寫 Firebase ──
-// 由 renderOrders() 開頭呼叫，每次訂單頁重繪自動檢查
 async function settleMergedOrders(){
   const done = (state.orders || []).filter(o =>
     o && o.isMerged && o.status === 'completed' && !o.mergedSettled && Array.isArray(o.mergedFrom));
@@ -412,7 +393,7 @@ async function settleMergedOrders(){
     for(const childId of mo.mergedFrom){
       const child = state.orders.find(o => o.id === childId);
       if(!child || child.status === 'void') continue;
-      child.status = 'merged';          // calcTodayStats 只算 completed/pending → merged 自動不計入
+      child.status = 'merged';
       child.paymentMethod = mo.paymentMethod;
       child.mergedInto = mo.id;
       child.updatedAt = nowIso;
@@ -440,9 +421,7 @@ async function settleMergedOrders(){
   persistAll();
 }
 
-// 作廢原因選單 modal（動態建立，不需改 index.html，全程不打字）
 function openVoidReasonModal(order, onPick){
-  // 移除舊的（避免重複）
   const old = document.getElementById('voidReasonModal');
   if(old) old.remove();
 
@@ -456,7 +435,7 @@ function openVoidReasonModal(order, onPick){
   ).join('');
 
   modal.innerHTML = `
-    <div style="background:#fff;border-radius:14px;max-width:420px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);overflow:hidden">
+    <div style="background:#fff;border:1px solid #cbd5e1;border-radius:14px;max-width:420px;width:100%;overflow:hidden">
       <div style="padding:16px 18px;border-bottom:1px solid #f1f5f9;display:flex;justify-content:space-between;align-items:center">
         <h2 style="margin:0;font-size:18px;color:#dc2626">作廢訂單</h2>
         <button type="button" id="voidReasonClose" style="border:none;background:none;font-size:22px;cursor:pointer;color:#94a3b8">✕</button>
@@ -489,189 +468,190 @@ function openVoidReasonModal(order, onPick){
 }
 
 
-function renderOrdersSection(wrap, orders, mode){
-  // mode: 'pending' | 'completed' | 'void'
-  wrap.innerHTML = '';
-  if(!orders.length){
-    wrap.innerHTML = '<div class="muted">沒有資料</div>';
-    return;
-  }
+function createOrderCardElement(o, mode){
   const isPending = mode === 'pending';
   const isVoid = mode === 'void';
-  orders.forEach(o=>{
-    const row = document.createElement('div');
-    row.className = 'order-card' + (isPending ? ' pending' : '') + (isVoid ? ' voided' : '');
-    if(isVoid){
-      row.style.cssText = 'opacity:0.7;background:#fef2f2;border-left:4px solid #ef4444;';
-    }
-    const prepMeta = o.prepTimeMinutes ? ` ・ 備餐 ${escapeHtml(String(o.prepTimeMinutes))} 分鐘` : '';
-    const readyMeta = (!o.reservationAt && o.estimatedReadyAt) ? ` ・ 預計完成 ${escapeHtml(fmtLocalDateTime(o.estimatedReadyAt))}` : '';
-    const reservationMeta = o.reservationAt ? `<div style="color:#b45309;font-weight:600;margin-top:4px">📅 預約取餐：${escapeHtml(fmtLocalDateTime(o.reservationAt))}</div>` : '';
-    const replyMeta = o.merchantReplyMessage ? `<div class="muted">店家回覆：${escapeHtml(o.merchantReplyMessage)}</div>` : '';
-    const voidMeta = isVoid
-      ? `<div style="color:#dc2626;font-weight:600;margin-top:6px;font-size:13px">⚠️ 已作廢：${escapeHtml(o.voidedReason || '無原因')}<br><span class="muted" style="font-weight:normal">作廢時間：${escapeHtml(fmtLocalDateTime(o.voidedAt))}${o.voidedBy ? ' ・ 作廢人：' + escapeHtml(o.voidedBy) : ''}</span></div>`
-      : '';
-    const badgeText = isVoid ? '已作廢' : (isPending ? '待付款' : '已完成');
-    const badgeClass = isVoid ? 'voided' : (isPending ? 'pending' : 'done');
-        row.innerHTML = `
-      ${isPending ? `<label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:14px;color:#475569"><input type="checkbox" class="batch-void-check" data-id="${escapeHtml(o.id)}" style="width:18px;height:18px">勾選以批量作廢</label>` : ''}
-      <div class="row between wrap">
+  const row = document.createElement('div');
+  row.className = 'order-card' + (isPending ? ' pending' : '') + (isVoid ? ' voided' : '');
+  if(isVoid) row.style.cssText = 'background:#fef2f2;border-left:4px solid #ef4444;';
+  const prepMeta = o.prepTimeMinutes ? ` ・ 備餐 ${escapeHtml(String(o.prepTimeMinutes))} 分鐘` : '';
+  const readyMeta = (!o.reservationAt && o.estimatedReadyAt) ? ` ・ 預計完成 ${escapeHtml(fmtLocalDateTime(o.estimatedReadyAt))}` : '';
+  const reservationMeta = o.reservationAt ? `<div style="color:#b45309;font-weight:600;margin-top:4px">📅 預約取餐：${escapeHtml(fmtLocalDateTime(o.reservationAt))}</div>` : '';
+  const replyMeta = o.merchantReplyMessage ? `<div class="muted">店家回覆：${escapeHtml(o.merchantReplyMessage)}</div>` : '';
+  const voidMeta = isVoid ? `<div style="color:#dc2626;font-weight:600;margin-top:6px;font-size:13px">⚠️ 已作廢：${escapeHtml(o.voidedReason || '無原因')}<br><span class="muted" style="font-weight:normal">作廢時間：${escapeHtml(fmtLocalDateTime(o.voidedAt))}${o.voidedBy ? ' ・ 作廢人：' + escapeHtml(o.voidedBy) : ''}</span></div>` : '';
+  const badgeText = isVoid ? '已作廢' : (isPending ? '待付款' : '已完成');
+  const badgeClass = isVoid ? 'voided' : (isPending ? 'pending' : 'done');
 
-        <div>
-          <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escapeHtml(o.orderNo)}</strong>
-          <span class="badge ${badgeClass}" style="${isVoid ? 'background:#fecaca;color:#991b1b' : ''}">${badgeText}</span>
-          <div class="muted">${escapeHtml(fmtLocalDateTime(o.createdAt))} ・ ${escapeHtml(o.orderType)} ${o.tableNo ? '・' + escapeHtml(o.tableNo) : ''}${!isPending && !isVoid && o.paymentMethod ? ' ・ 付款：' + escapeHtml(o.paymentMethod) : ''}${prepMeta}${readyMeta}</div>
-          ${o.payMethod === '現金' || o.payMethod === '電子支付' ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;${o.payMethod === '現金' ? 'background:#dcfce7;color:#15803d' : 'background:#dbeafe;color:#1d4ed8'}">顧客選擇：${escapeHtml(o.payMethod)}</span></div>` : ''}
-          ${replyMeta}
-          ${reservationMeta}
-          ${voidMeta}
-        </div>
-
-               <div style="text-align:right">
-          ${Number(o.discountAmount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money(Number(o.subtotal||0))}</div>` : ''}
-          <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong>
-        </div>
+  row.innerHTML = `
+    ${isPending ? `<label style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-size:14px;color:#475569"><input type="checkbox" class="batch-void-check" data-id="${escapeHtml(o.id)}" style="width:18px;height:18px">勾選以批量作廢</label>` : ''}
+    <div class="row between wrap">
+      <div>
+        <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escapeHtml(o.orderNo)}</strong>
+        <span class="badge ${badgeClass}" style="${isVoid ? 'background:#fecaca;color:#991b1b' : ''}">${badgeText}</span>
+        <div class="muted">${escapeHtml(fmtLocalDateTime(o.createdAt))} ・ ${escapeHtml(o.orderType)} ${o.tableNo ? '・' + escapeHtml(o.tableNo) : ''}${!isPending && !isVoid && o.paymentMethod ? ' ・ 付款：' + escapeHtml(o.paymentMethod) : ''}${prepMeta}${readyMeta}</div>
+        ${o.payMethod === '現金' || o.payMethod === '電子支付' ? `<div style="margin-top:4px"><span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:12px;font-weight:600;${o.payMethod === '現金' ? 'background:#dcfce7;color:#15803d' : 'background:#dbeafe;color:#1d4ed8'}">顧客選擇：${escapeHtml(o.payMethod)}</span></div>` : ''}
+        ${replyMeta}${reservationMeta}${voidMeta}
       </div>
-      ${Number(o.discountAmount||0) > 0 ? `
-      <div class="row between" style="margin-top:6px;padding:6px 10px;background:#ecfdf5;border:1px dashed #10b981;border-radius:6px;font-size:13px">
-        <span style="color:#047857">🎁 優惠折扣${o.couponCode ? '（' + escapeHtml(o.couponCode) + '）' : ''}${o.couponMessage ? ' <span class="muted">' + escapeHtml(o.couponMessage) + '</span>' : ''}</span>
-        <strong style="color:#16a34a">-${money(Number(o.discountAmount||0))}</strong>
-      </div>` : ''}
-            ${Number(o.pointsUsed||0) > 0 ? `
-      <div class="row between" style="margin-top:6px;padding:6px 10px;background:#fef9c3;border:1px dashed #eab308;border-radius:6px;font-size:13px">
-        <span style="color:#a16207">⭐ 點數折抵（使用 ${money(Number(o.pointsUsed||0))} 點${o.pointsBalanceAfter!=null ? '，折抵後剩餘 '+money(Number(o.pointsBalanceAfter))+' 點' : ''}）</span>
-        <strong style="color:#ca8a04">-${money(Number(o.pointsUsed||0))}</strong>
-      </div>` : ''}
-
-      <div class="stack small" style="margin-top:12px">
-
-        ${o.items.map(i=>{
-  const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
-  const unit = Number(i.basePrice||0) + Number(i.extraPrice||0);
-  const lineTotal = unit * Number(i.qty||0);
-  return `<div class="row between"><span>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</span><span class="muted" style="white-space:nowrap">${money(unit)} / 小計 ${money(lineTotal)}</span></div>`;
-}).join('')}
-
+      <div style="text-align:right">
+        ${Number(o.discountAmount||0) > 0 ? `<div class="muted" style="font-size:12px;text-decoration:line-through">${money(Number(o.subtotal||0))}</div>` : ''}
+        <strong style="${isVoid ? 'text-decoration:line-through;color:#94a3b8' : ''}">${money(o.total)}</strong>
       </div>
-      <div class="row gap wrap" style="margin-top:12px">
-        ${isVoid ? '' : '<button class="secondary-btn small-btn">加到購物車</button>'}
-        ${isVoid ? '' : '<button class="danger-btn small-btn">作廢</button>'}
-        <button class="secondary-btn small-btn">列印顧客單</button>
-        <button class="secondary-btn small-btn">列印廚房單</button>
-        <button class="secondary-btn small-btn">列印標籤</button>
-        ${isPending ? '<button class="primary-btn small-btn">結帳</button>' : ''}
-      </div>
-    `;
-    const btns = Array.from(row.querySelectorAll('button'));
-    let idx = 0;
-        if(!isVoid){
-      btns[idx++].onclick = ()=> addOrderToCart(o.id);
-      btns[idx++].onclick = ()=> voidOrder(o.id);
-    }
-    btns[idx++].onclick = ()=> printOrderReceipt(o, 'customer');
-    btns[idx++].onclick = ()=> printKitchenCopies(o);
-    btns[idx++].onclick = ()=> printOrderLabels(o);
+    </div>
+    ${Number(o.discountAmount||0) > 0 ? `<div class="row between" style="margin-top:6px;padding:6px 10px;background:#ecfdf5;border:1px dashed #10b981;border-radius:6px;font-size:13px"><span style="color:#047857">🎁 優惠折扣${o.couponCode ? '（' + escapeHtml(o.couponCode) + '）' : ''}${o.couponMessage ? ' <span class="muted">' + escapeHtml(o.couponMessage) + '</span>' : ''}</span><strong style="color:#16a34a">-${money(Number(o.discountAmount||0))}</strong></div>` : ''}
+    ${Number(o.pointsUsed||0) > 0 ? `<div class="row between" style="margin-top:6px;padding:6px 10px;background:#fef9c3;border:1px dashed #eab308;border-radius:6px;font-size:13px"><span style="color:#a16207">⭐ 點數折抵（使用 ${money(Number(o.pointsUsed||0))} 點${o.pointsBalanceAfter!=null ? '，折抵後剩餘 '+money(Number(o.pointsBalanceAfter))+' 點' : ''}）</span><strong style="color:#ca8a04">-${money(Number(o.pointsUsed||0))}</strong></div>` : ''}
+    <div class="stack small" style="margin-top:12px">
+      ${o.items.map(i=>{
+        const desc = (i.selections||[]).map(s=>`${s.moduleName}:${s.optionName}`).join(' / ');
+        const unit = Number(i.basePrice||0) + Number(i.extraPrice||0);
+        return `<div class="row between"><span>${escapeHtml(i.name)}${desc ? ' / ' + escapeHtml(desc) : ''} x ${i.qty}${i.note ? '（' + escapeHtml(i.note) + '）' : ''}</span><span class="muted" style="white-space:nowrap">${money(unit)} / 小計 ${money(unit * Number(i.qty||0))}</span></div>`;
+      }).join('')}
+    </div>
+    <div class="row gap wrap" style="margin-top:12px">
+      ${isVoid ? '' : '<button class="secondary-btn small-btn">加到購物車</button>'}
+      ${isVoid ? '' : '<button class="danger-btn small-btn">作廢</button>'}
+      <button class="secondary-btn small-btn">列印顧客單</button>
+      <button class="secondary-btn small-btn">列印廚房單</button>
+      <button class="secondary-btn small-btn">列印標籤</button>
+      ${isPending ? '<button class="primary-btn small-btn">結帳</button>' : ''}
+    </div>
+  `;
 
-    if(isPending && btns[idx]){
-      btns[idx].onclick = ()=>{
-        if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
-        document.getElementById('paymentTargetMode').value='pending';
-        document.getElementById('paymentTargetOrderId').value = o.id;
-        document.getElementById('paymentModal').classList.remove('hidden');
-      };
-    }
-    wrap.appendChild(row);
-  });
+  const btns = Array.from(row.querySelectorAll('button'));
+  let idx = 0;
+  if(!isVoid){
+    btns[idx++].onclick = ()=> addOrderToCart(o.id);
+    btns[idx++].onclick = ()=> voidOrder(o.id);
+  }
+  btns[idx++].onclick = ()=> printOrderReceipt(o, 'customer');
+  btns[idx++].onclick = ()=> printKitchenCopies(o);
+  btns[idx++].onclick = ()=> printOrderLabels(o);
+  if(isPending && btns[idx]){
+    btns[idx].onclick = ()=>{
+      if(!hasOpenSession()) return alert('🔒 尚未開始值班，請先到報表頁開班');
+      document.getElementById('paymentTargetMode').value='pending';
+      document.getElementById('paymentTargetOrderId').value = o.id;
+      document.getElementById('paymentModal').classList.remove('hidden');
+    };
+  }
+  return row;
 }
 
-export function renderOrders(){
+function renderOrdersSection(wrap, orders, mode){
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  if(!orders.length){ wrap.innerHTML = '<div class="muted">沒有資料</div>'; return; }
+  const frag = document.createDocumentFragment();
+  orders.forEach(o => frag.appendChild(createOrderCardElement(o, mode)));
+  wrap.appendChild(frag);
+}
+
+function renderCompletedOrdersPaginated(completedOrders){
+  const wrap = document.getElementById('completedOrdersList');
+  if(!wrap) return;
+  if(completedLoadObserver){ completedLoadObserver.disconnect(); completedLoadObserver = null; }
+  wrap.innerHTML = '';
+  if(!completedOrders.length){ wrap.innerHTML = '<div class="muted">沒有資料</div>'; return; }
+
+  const visibleOrders = completedOrders.slice(0, completedDisplayLimit);
+  const frag = document.createDocumentFragment();
+  visibleOrders.forEach(o => frag.appendChild(createOrderCardElement(o, 'completed')));
+
+  const remaining = completedOrders.length - visibleOrders.length;
+  if(remaining > 0){
+    const loaderBox = document.createElement('div');
+    loaderBox.id = 'completedLoadMoreTrigger';
+    loaderBox.style.cssText = 'text-align:center;padding:12px 0;';
+    loaderBox.innerHTML = `<button type="button" class="secondary-btn full" id="completedLoadMoreBtn">載入更多已完成訂單（目前顯示 ${visibleOrders.length} / ${completedOrders.length} 筆，還有 ${remaining} 筆）</button>`;
+    
+    let isLoadingNext = false;
+    const loadNextBatch = ()=>{
+      if(isLoadingNext) return;
+      isLoadingNext = true;
+      completedDisplayLimit += COMPLETED_PAGE_SIZE;
+      renderCompletedOrdersPaginated(completedOrders);
+    };
+    loaderBox.querySelector('#completedLoadMoreBtn').onclick = loadNextBatch;
+    frag.appendChild(loaderBox);
+    wrap.appendChild(frag);
+
+    if('IntersectionObserver' in window){
+      completedLoadObserver = new IntersectionObserver((entries)=>{
+        const ordersView = document.getElementById('ordersView');
+        // 關鍵修正：只有當「訂單查詢分頁處於顯示狀態（offsetParent !== null）」且按鈕真的進入畫面時才載入
+        const isViewVisible = ordersView && ordersView.classList.contains('active') && ordersView.offsetParent !== null;
+        if(isViewVisible && entries.some(e => e.isIntersecting && e.intersectionRatio > 0)){
+          loadNextBatch();
+        }
+      }, { rootMargin: '60px', threshold: 0.1 });
+      completedLoadObserver.observe(loaderBox);
+    }
+  } else {
+    wrap.appendChild(frag);
+  }
+}
+
+
+export function renderOrders(resetPagination = false){
+  if(resetPagination) completedDisplayLimit = COMPLETED_PAGE_SIZE;
   settleMergedOrders();
   renderSessionBanner();
   renderIncomingOnlineOrders();
   const filtered = getFilteredOrders();
-
-  // 分三類：待付款、已完成、已作廢
   const pending = filtered.filter(o => o.status === 'pending');
   const completed = filtered.filter(o => o.status === 'completed');
   const voided = filtered.filter(o => o.status === 'void');
 
   renderOrdersSection(document.getElementById('pendingOrdersList'), pending, 'pending');
   renderBatchVoidBar(pending);
-  renderOrdersSection(document.getElementById('completedOrdersList'), completed, 'completed');
-
-  // 已作廢區塊（動態插入到 completedOrdersList 後面）
+  renderCompletedOrdersPaginated(completed);
   renderVoidedSection(voided);
 }
+
 function renderBatchVoidBar(pendingOrders){
   const listEl = document.getElementById('pendingOrdersList');
   if(!listEl || !listEl.parentNode) return;
-
   let bar = document.getElementById('batchVoidBar');
-  if(!pendingOrders.length){
-    if(bar) bar.remove();
-    return;
-  }
+  if(!pendingOrders.length){ if(bar) bar.remove(); return; }
   if(!bar){
     bar = document.createElement('div');
     bar.id = 'batchVoidBar';
     bar.style.cssText = 'display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0;padding:8px 12px;background:#fff7ed;border:1px solid #fdba74;border-radius:8px';
     listEl.parentNode.insertBefore(bar, listEl);
   }
-    bar.innerHTML = `
-    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:#9a3412;font-weight:600">
-      <input type="checkbox" id="batchVoidSelectAll" style="width:18px;height:18px">全選待付款
-    </label>
+  bar.innerHTML = `
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:#9a3412;font-weight:600"><input type="checkbox" id="batchVoidSelectAll" style="width:18px;height:18px">全選待付款</label>
     <button class="primary-btn small-btn" id="batchCheckoutBtn">批量結帳（<span id="batchCheckoutCount">0</span>）</button>
     <button class="danger-btn small-btn" id="batchVoidRunBtn">批量作廢勾選項（<span id="batchVoidCount">0</span>）</button>
   `;
-
-
-    const updateCount = ()=>{
+  const updateCount = ()=>{
     const n = document.querySelectorAll('.batch-void-check:checked').length;
-    const c1 = document.getElementById('batchVoidCount');
-    const c2 = document.getElementById('batchCheckoutCount');
-    if(c1) c1.textContent = n;
-    if(c2) c2.textContent = n;
+    const c1 = document.getElementById('batchVoidCount'), c2 = document.getElementById('batchCheckoutCount');
+    if(c1) c1.textContent = n; if(c2) c2.textContent = n;
   };
-
-  document.querySelectorAll('.batch-void-check').forEach(chk=>{
-    chk.onchange = updateCount;
-  });
-  const selectAll = bar.querySelector('#batchVoidSelectAll');
-  selectAll.onchange = ()=>{
-    document.querySelectorAll('.batch-void-check').forEach(chk=>{ chk.checked = selectAll.checked; });
+  document.querySelectorAll('.batch-void-check').forEach(chk=>{ chk.onchange = updateCount; });
+  bar.querySelector('#batchVoidSelectAll').onchange = (e)=>{
+    document.querySelectorAll('.batch-void-check').forEach(chk=>{ chk.checked = e.target.checked; });
     updateCount();
   };
     bar.querySelector('#batchVoidRunBtn').onclick = ()=>{
     const ids = Array.from(document.querySelectorAll('.batch-void-check:checked')).map(c=>c.dataset.id);
     if(!ids.length) return alert('請先勾選要作廢的訂單');
-    if(!confirm(`確定要作廢勾選的 ${ids.length} 筆訂單？`)) return;
-    batchVoidOrders(ids);
+    if(confirm(`確定要作廢勾選的 ${ids.length} 筆訂單？`)) batchVoidOrders(ids);
   };
-
   const coBtn = bar.querySelector('#batchCheckoutBtn');
   if(coBtn) coBtn.onclick = ()=>{
     const ids = Array.from(document.querySelectorAll('.batch-void-check:checked')).map(c=>c.dataset.id);
     if(!ids.length) return alert('請先勾選要結帳的訂單');
     batchCheckoutOrders(ids);
   };
-
   updateCount();
 }
-
 
 function renderVoidedSection(voidedOrders){
   let wrap = document.getElementById('voidedOrdersWrap');
   const view = document.getElementById('ordersView');
   if(!view) return;
-
-  // 若無作廢訂單則隱藏整個區塊
-  if(!voidedOrders.length){
-    if(wrap) wrap.style.display = 'none';
-    return;
-  }
-
-  // 建立區塊
+  if(!voidedOrders.length){ if(wrap) wrap.style.display = 'none'; return; }
   if(!wrap){
     wrap = document.createElement('div');
     wrap.id = 'voidedOrdersWrap';
@@ -684,23 +664,17 @@ function renderVoidedSection(voidedOrders){
       <div id="voidedOrdersList" style="display:none"></div>
     `;
     const completedWrap = document.getElementById('completedOrdersList');
-    if(completedWrap && completedWrap.parentNode){
-      completedWrap.parentNode.appendChild(wrap);
-    } else {
-      view.appendChild(wrap);
-    }
-    const toggleBtn = wrap.querySelector('#voidedToggleBtn');
-    const listEl = wrap.querySelector('#voidedOrdersList');
-    const toggleHeader = wrap.querySelector('#voidedToggle');
+    if(completedWrap && completedWrap.parentNode) completedWrap.parentNode.appendChild(wrap);
+    else view.appendChild(wrap);
+    const toggleBtn = wrap.querySelector('#voidedToggleBtn'), listEl = wrap.querySelector('#voidedOrdersList');
     const toggle = ()=>{
       const open = listEl.style.display === 'none';
       listEl.style.display = open ? 'block' : 'none';
       toggleBtn.textContent = open ? '收合 ▲' : '展開 ▼';
     };
     toggleBtn.onclick = (e)=>{ e.stopPropagation(); toggle(); };
-    toggleHeader.onclick = toggle;
+    wrap.querySelector('#voidedToggle').onclick = toggle;
   }
-
   wrap.style.display = 'block';
   const countEl = wrap.querySelector('#voidedCount');
   if(countEl){
@@ -714,18 +688,12 @@ function renderSessionBanner(){
   let banner = document.getElementById('ordersSessionBanner');
   const view = document.getElementById('ordersView');
   if(!view) return;
-  if(hasOpenSession()){
-    if(banner) banner.remove();
-    return;
-  }
+  if(hasOpenSession()){ if(banner) banner.remove(); return; }
   if(!banner){
     banner = document.createElement('div');
     banner.id = 'ordersSessionBanner';
     banner.style.cssText = 'background:#fef3c7;border:1px solid #f59e0b;color:#92400e;padding:10px 14px;border-radius:8px;margin:8px 0;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;';
-    banner.innerHTML = `
-      <span>⚠️ 尚未開班，僅能檢視/列印訂單，無法修改、作廢或處理線上單。</span>
-      <button class="primary-btn small-btn" id="ordersBannerGoReports">📊 前往報表頁開班</button>
-    `;
+    banner.innerHTML = `<span>⚠️ 尚未開班，僅能檢視/列印訂單，無法修改、作廢或處理線上單。</span><button class="primary-btn small-btn" id="ordersBannerGoReports">📊 前往報表頁開班</button>`;
     view.insertBefore(banner, view.firstChild);
     document.getElementById('ordersBannerGoReports').onclick = ()=>{
       document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
@@ -736,14 +704,14 @@ function renderSessionBanner(){
   }
 }
 
-
 export function initOrdersPage(){
   ['orderItemSearch','orderDateFrom','orderDateTo','orderMinAmount','orderMaxAmount'].forEach(idv=>{
-    document.getElementById(idv).addEventListener('input', renderOrders);
+    document.getElementById(idv).addEventListener('input', ()=> renderOrders(true));
   });
-  document.getElementById('orderPaymentMethodFilter').addEventListener('change', renderOrders);
+  document.getElementById('orderPaymentMethodFilter').addEventListener('change', ()=> renderOrders(true));
   document.getElementById('clearOrderFiltersBtn').onclick = ()=>{
     ['orderItemSearch','orderDateFrom','orderDateTo','orderMinAmount','orderMaxAmount','orderPaymentMethodFilter'].forEach(idv=> document.getElementById(idv).value = '');
-    renderOrders();
+    renderOrders(true);
   };
 }
+

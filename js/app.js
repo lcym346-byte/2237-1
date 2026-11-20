@@ -91,6 +91,8 @@ function setupNavigation(){
       btn.classList.add('active');
       document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
       document.getElementById(btn.dataset.view)?.classList.add('active');
+      // 切換到訂單查詢時，強制重置回只顯示前 10 筆，確保滑動最順暢
+      if(btn.dataset.view === 'ordersView') renderOrders(true);
     });
   });
 }
